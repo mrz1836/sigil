@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+sigil
+
+# Test binary
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go
+go.work
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - NEVER COMMIT
+*.key
+*.pem
+*.wif
+.env
+.env.*
+secrets/
+keys/

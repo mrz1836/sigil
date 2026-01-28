@@ -1,25 +1,32 @@
-# Sigil
+# 🔮 Sigil
 
 > Personal multi-chain wallet CLI — unlock your BSV, BTC, and ETH
 
-## Vision
+<br>
 
-Sigil is a personal wallet CLI to manage keys and recover funds across multiple chains. Built for power users who want full control.
+Sigil is a secure, terminal-based wallet for power users. Full control over your keys across **BSV, BTC, BCH, ETH, and USDC**.
 
-## Quick Start
+<br>
 
-TODO: Add quick start instructions
+## 📚 Documentation
 
-## Installation
+| Document | Description |
+|----------|-------------|
+| **[VISION.md](./VISION.md)** | Why Sigil exists — philosophy, principles, goals |
+| **[PRD.md](./PRD.md)** | What we're building — features, phases, architecture |
 
-TODO: Add installation instructions
+<br>
 
-## Supported Chains
+## Status
 
-- **Bitcoin (BSV)** — Native support
-- **Bitcoin (BTC)** — Legacy chain support
-- **Ethereum (ETH)** — ERC-20 tokens
+🚧 **In Development** — Phase 1 (MVP)
 
-## License
+<br>
 
-Private — Personal use only
+---
+
+<br>
+
+<p align="center">
+  <sub>Built with 🧠 by Z</sub>
+</p>

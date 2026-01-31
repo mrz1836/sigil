@@ -2,7 +2,7 @@
 
 > Personal multi-chain wallet CLI — unlock your BSV, BTC, and ETH
 
-**Read first:** [VISION.md](./VISION.md) — the *why* behind Sigil
+**Read first:** [VISION.md](VISION.md) — the *why* behind Sigil
 
 ---
 

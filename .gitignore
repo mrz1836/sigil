@@ -1,39 +1,41 @@
-# Binaries
+# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-bin/
-dist/
-sigil
 
-# Test binary
+# Test binary, build with `go test -c`
 *.test
+
+# Go List
+go.list
+
+# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-coverage.txt
-coverage.html
 
-# Go
-go.work
-vendor/
+# OS files
+*.db
+*.DS_Store
 
-# IDE
+# Jetbrains
 .idea/
-.vscode/
-*.swp
-*.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
+# Eclipse
+.project
 
-# Secrets - NEVER COMMIT
-*.key
-*.pem
-*.wif
-.env
-.env.*
-secrets/
-keys/
+# Notes
+todo.md
+
+# Distribution
+dist
+
+# Code coverage
+coverage.txt
+coverage.out
+
+# Fuzz Tests
+testdata
+
+# Node modules
+node_modules/

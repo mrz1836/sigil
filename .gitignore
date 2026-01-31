@@ -39,3 +39,8 @@ testdata
 
 # Node modules
 node_modules/
+
+# Speckit
+.specify/scripts/
+.specify/templates/
+.claude/

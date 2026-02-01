@@ -87,6 +87,8 @@ func ExitCode(err error) int {
 }
 
 // initGlobals initializes global configuration, logger, and formatter.
+//
+//nolint:gocognit // Initialization logic requires multiple conditional branches
 func initGlobals(cmd *cobra.Command) error {
 	// Determine home directory
 	home := homeDir
@@ -102,9 +104,16 @@ func initGlobals(cmd *cobra.Command) error {
 	var err error
 	cfg, err = config.Load(configPath)
 	if err != nil {
-		// Use defaults if config doesn't exist
-		cfg = config.Defaults()
-		cfg.Home = home
+		if os.IsNotExist(err) {
+			// Expected case: no config file yet, use defaults
+			cfg = config.Defaults()
+			cfg.Home = home
+		} else {
+			// Unexpected error: log warning but continue with defaults
+			fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
+			cfg = config.Defaults()
+			cfg.Home = home
+		}
 	}
 
 	// Apply environment variable overrides

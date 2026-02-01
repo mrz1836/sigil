@@ -113,8 +113,8 @@ type Backup struct {
 
 // Backup-related errors.
 var (
-	ErrBackupNotFound       = Error{Code: "BACKUP_NOT_FOUND", Message: "backup file not found"}
-	ErrBackupCorrupted      = Error{Code: "BACKUP_CORRUPTED", Message: "backup file is corrupted - checksum mismatch"}
+	ErrBackupNotFound           = Error{Code: "BACKUP_NOT_FOUND", Message: "backup file not found"}
+	ErrBackupCorrupted          = Error{Code: "BACKUP_CORRUPTED", Message: "backup file is corrupted - checksum mismatch"}
 	ErrBackupVersionUnsupported = Error{Code: "BACKUP_VERSION_UNSUPPORTED", Message: "backup version not supported"}
-	ErrBackupDecryptFailed  = Error{Code: "BACKUP_DECRYPT_FAILED", Message: "backup decryption failed - wrong password"}
+	ErrBackupDecryptFailed      = Error{Code: "BACKUP_DECRYPT_FAILED", Message: "backup decryption failed - wrong password"}
 )

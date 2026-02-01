@@ -170,11 +170,11 @@ type DerivationService interface {
 
 // Wallet-related errors.
 var (
-	ErrWalletNotFound     = Error{Code: "WALLET_NOT_FOUND", Message: "wallet not found"}
-	ErrWalletExists       = Error{Code: "WALLET_EXISTS", Message: "wallet already exists"}
-	ErrWalletLocked       = Error{Code: "WALLET_LOCKED", Message: "wallet is locked"}
-	ErrInvalidMnemonic    = Error{Code: "INVALID_MNEMONIC", Message: "invalid mnemonic phrase"}
-	ErrDecryptionFailed   = Error{Code: "DECRYPTION_FAILED", Message: "decryption failed - wrong password or corrupted file"}
-	ErrInvalidWalletName  = Error{Code: "INVALID_WALLET_NAME", Message: "wallet name must be alphanumeric with underscores"}
-	ErrInvalidWordCount   = Error{Code: "INVALID_WORD_COUNT", Message: "mnemonic must be 12 or 24 words"}
+	ErrWalletNotFound    = Error{Code: "WALLET_NOT_FOUND", Message: "wallet not found"}
+	ErrWalletExists      = Error{Code: "WALLET_EXISTS", Message: "wallet already exists"}
+	ErrWalletLocked      = Error{Code: "WALLET_LOCKED", Message: "wallet is locked"}
+	ErrInvalidMnemonic   = Error{Code: "INVALID_MNEMONIC", Message: "invalid mnemonic phrase"}
+	ErrDecryptionFailed  = Error{Code: "DECRYPTION_FAILED", Message: "decryption failed - wrong password or corrupted file"}
+	ErrInvalidWalletName = Error{Code: "INVALID_WALLET_NAME", Message: "wallet name must be alphanumeric with underscores"}
+	ErrInvalidWordCount  = Error{Code: "INVALID_WORD_COUNT", Message: "mnemonic must be 12 or 24 words"}
 )

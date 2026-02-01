@@ -32,15 +32,15 @@ type ConfigService interface {
 // Config represents the complete application configuration.
 // See data-model.md for full structure definition.
 type Config struct {
-	Version    int               `yaml:"version"`
-	Home       string            `yaml:"home"`
-	Encryption EncryptionConfig  `yaml:"encryption"`
-	Networks   NetworksConfig    `yaml:"networks"`
-	Fees       FeesConfig        `yaml:"fees"`
-	Derivation DerivationConfig  `yaml:"derivation"`
-	Security   SecurityConfig    `yaml:"security"`
-	Output     OutputConfig      `yaml:"output"`
-	Logging    LoggingConfig     `yaml:"logging"`
+	Version    int              `yaml:"version"`
+	Home       string           `yaml:"home"`
+	Encryption EncryptionConfig `yaml:"encryption"`
+	Networks   NetworksConfig   `yaml:"networks"`
+	Fees       FeesConfig       `yaml:"fees"`
+	Derivation DerivationConfig `yaml:"derivation"`
+	Security   SecurityConfig   `yaml:"security"`
+	Output     OutputConfig     `yaml:"output"`
+	Logging    LoggingConfig    `yaml:"logging"`
 }
 
 // EncryptionConfig defines encryption settings.

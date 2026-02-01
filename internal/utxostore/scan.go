@@ -134,3 +134,100 @@ func (s *Store) updateGapCounter(current int, hasActivity bool) int {
 	}
 	return current + 1
 }
+
+// Refresh re-scans all known addresses and merges changes.
+// New UTXOs are added; UTXOs no longer in chain response are marked spent.
+func (s *Store) Refresh(ctx context.Context, chainID chain.ID, client ChainClient) (*ScanResult, error) {
+	// Get addresses to scan (copy under lock)
+	addresses := s.getAddressesForChain(chainID)
+	if len(addresses) == 0 {
+		return &ScanResult{}, nil
+	}
+
+	result := &ScanResult{}
+	seenUTXOs := make(map[string]bool)
+
+	// Scan all known addresses
+	for _, addr := range addresses {
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+
+		s.refreshAddress(ctx, addr, chainID, client, result, seenUTXOs)
+	}
+
+	// Mark UTXOs not seen in this scan as spent
+	s.markMissingAsSpent(chainID, seenUTXOs)
+
+	// Save changes
+	if err := s.Save(); err != nil {
+		return result, fmt.Errorf("saving UTXOs: %w", err)
+	}
+
+	return result, nil
+}
+
+// getAddressesForChain returns a copy of addresses for a chain.
+func (s *Store) getAddressesForChain(chainID chain.ID) []*AddressMetadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	addresses := make([]*AddressMetadata, 0, len(s.data.Addresses))
+	for _, addr := range s.data.Addresses {
+		if addr.ChainID == chainID {
+			addresses = append(addresses, addr)
+		}
+	}
+	return addresses
+}
+
+// refreshAddress scans a single address during refresh and tracks seen UTXOs.
+func (s *Store) refreshAddress(ctx context.Context, addr *AddressMetadata, chainID chain.ID, client ChainClient, result *ScanResult, seenUTXOs map[string]bool) {
+	result.AddressesScanned++
+
+	utxos, err := client.ListUTXOs(ctx, addr.Address)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Errorf("address %s: %w", addr.Address, err))
+		return
+	}
+
+	// Update address scan time
+	addr.LastScanned = time.Now()
+	s.AddAddress(addr)
+
+	// Process and track UTXOs
+	for _, u := range utxos {
+		key := fmt.Sprintf("%s:%s:%d", chainID, u.TxID, u.Vout)
+		seenUTXOs[key] = true
+
+		stored := &StoredUTXO{
+			ChainID:       chainID,
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			ScriptPubKey:  u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Spent:         false,
+		}
+		s.AddUTXO(stored)
+		result.UTXOsFound++
+		result.TotalBalance += u.Amount
+	}
+}
+
+// markMissingAsSpent marks UTXOs not seen in the scan as spent.
+func (s *Store) markMissingAsSpent(chainID chain.ID, seenUTXOs map[string]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, utxo := range s.data.UTXOs {
+		if utxo.ChainID != chainID || utxo.Spent {
+			continue
+		}
+		if !seenUTXOs[key] {
+			utxo.Spent = true
+			utxo.LastUpdated = time.Now()
+		}
+	}
+}

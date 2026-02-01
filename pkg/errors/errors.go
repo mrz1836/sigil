@@ -31,10 +31,19 @@ type SigilError struct {
 }
 
 func (e *SigilError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%s: %v", e.Message, e.Cause)
+	msg := e.Message
+
+	// Include details in error message
+	if len(e.Details) > 0 {
+		for k, v := range e.Details {
+			msg = fmt.Sprintf("%s (%s: %s)", msg, k, v)
+		}
 	}
-	return e.Message
+
+	if e.Cause != nil {
+		return fmt.Sprintf("%s: %v", msg, e.Cause)
+	}
+	return msg
 }
 
 func (e *SigilError) Unwrap() error {
@@ -174,6 +183,121 @@ var (
 	ErrNotSupported = &SigilError{
 		Code:     "NOT_SUPPORTED",
 		Message:  "operation not supported for this chain",
+		ExitCode: ExitInput,
+	}
+
+	// Transaction-specific errors.
+	ErrAmountRequired = &SigilError{
+		Code:     "AMOUNT_REQUIRED",
+		Message:  "amount is required",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidChecksum = &SigilError{
+		Code:     "INVALID_CHECKSUM",
+		Message:  "invalid address checksum",
+		ExitCode: ExitInput,
+	}
+
+	ErrUnsupportedVersion = &SigilError{
+		Code:     "UNSUPPORTED_VERSION",
+		Message:  "unsupported address version",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidGasSpeed = &SigilError{
+		Code:     "INVALID_GAS_SPEED",
+		Message:  "invalid gas speed",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidValue = &SigilError{
+		Code:     "INVALID_VALUE",
+		Message:  "invalid value",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidGasPrice = &SigilError{
+		Code:     "INVALID_GAS_PRICE",
+		Message:  "gas price cannot be nil",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidChainID = &SigilError{
+		Code:     "INVALID_CHAIN_ID",
+		Message:  "chain ID cannot be nil",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidGasLimit = &SigilError{
+		Code:     "INVALID_GAS_LIMIT",
+		Message:  "gas limit cannot be zero",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidPublicKey = &SigilError{
+		Code:     "INVALID_PUBLIC_KEY",
+		Message:  "error casting public key to ECDSA",
+		ExitCode: ExitInput,
+	}
+
+	ErrUnknownConfigKey = &SigilError{
+		Code:     "UNKNOWN_CONFIG_KEY",
+		Message:  "unknown config key",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidAmount = &SigilError{
+		Code:     "INVALID_AMOUNT",
+		Message:  "invalid amount format",
+		ExitCode: ExitInput,
+	}
+
+	ErrTransactionNotFound = &SigilError{
+		Code:     "TRANSACTION_NOT_FOUND",
+		Message:  "transaction not found",
+		ExitCode: ExitNotFound,
+	}
+
+	ErrTokenNotFound = &SigilError{
+		Code:     "TOKEN_NOT_FOUND",
+		Message:  "token not found",
+		ExitCode: ExitNotFound,
+	}
+
+	ErrInvalidTransaction = &SigilError{
+		Code:     "INVALID_TRANSACTION",
+		Message:  "invalid transaction",
+		ExitCode: ExitInput,
+	}
+
+	ErrDataTooLarge = &SigilError{
+		Code:     "DATA_TOO_LARGE",
+		Message:  "data exceeds maximum size",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidFormat = &SigilError{
+		Code:     "INVALID_FORMAT",
+		Message:  "invalid format",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidMethod = &SigilError{
+		Code:     "INVALID_METHOD",
+		Message:  "invalid method",
+		ExitCode: ExitInput,
+	}
+
+	ErrInvalidRecipient = &SigilError{
+		Code:     "INVALID_RECIPIENT",
+		Message:  "invalid recipient",
+		ExitCode: ExitInput,
+	}
+
+	ErrNoUTXOs = &SigilError{
+		Code:     "NO_UTXOS",
+		Message:  "no UTXOs available",
 		ExitCode: ExitInput,
 	}
 )

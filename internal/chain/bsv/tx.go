@@ -257,7 +257,11 @@ func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			c.debug("failed to close broadcast response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

@@ -115,6 +115,8 @@ func (c *Client) Call(ctx context.Context, method string, params ...any) (json.R
 	if err != nil {
 		return nil, fmt.Errorf("sending HTTP request: %w", err)
 	}
+	// Body.Close error is intentionally ignored as it only fails if the
+	// connection is already broken, and there's no recovery action.
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)

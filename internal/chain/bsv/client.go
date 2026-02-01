@@ -64,6 +64,12 @@ var (
 	base58Regex = regexp.MustCompile("^[13][1-9A-HJ-NP-Za-km-z]{25,34}$")
 )
 
+// DebugLogger is the interface for debug logging.
+// This allows the client to accept different logger implementations.
+type DebugLogger interface {
+	Debug(format string, args ...any)
+}
+
 // ClientOptions contains optional configuration for the BSV client.
 type ClientOptions struct {
 	// BaseURL overrides the default WhatsOnChain API URL.
@@ -74,6 +80,9 @@ type ClientOptions struct {
 
 	// Network specifies mainnet or testnet.
 	Network Network
+
+	// Logger is an optional debug logger for diagnostic output.
+	Logger DebugLogger
 }
 
 // Compile-time interface check
@@ -85,6 +94,7 @@ type Client struct {
 	apiKey     string
 	network    Network
 	httpClient *http.Client
+	logger     DebugLogger
 }
 
 // NewClient creates a new BSV client.
@@ -154,7 +164,11 @@ func (c *Client) GetBalance(ctx context.Context, address string) (*big.Int, erro
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			c.debug("failed to close balance response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: status %d", sigilerr.ErrNetworkError, resp.StatusCode)
@@ -195,7 +209,11 @@ func (c *Client) ListUTXOs(ctx context.Context, address string) ([]UTXO, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			c.debug("failed to close UTXO response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// Drain body to allow connection reuse
@@ -317,5 +335,15 @@ func (c *Client) applyOptions(opts *ClientOptions) {
 		if opts.BaseURL == "" {
 			c.baseURL = fmt.Sprintf("https://api.whatsonchain.com/v1/bsv/%s", opts.Network)
 		}
+	}
+	if opts.Logger != nil {
+		c.logger = opts.Logger
+	}
+}
+
+// debug logs a debug message if a logger is configured.
+func (c *Client) debug(format string, args ...any) {
+	if c.logger != nil {
+		c.logger.Debug(format, args...)
 	}
 }

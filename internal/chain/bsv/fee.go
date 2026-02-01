@@ -68,7 +68,7 @@ type TAALPayload struct {
 
 // GetFeeQuote fetches the current fee quote from TAAL Merchant API.
 //
-//nolint:gocognit // API response parsing is necessarily complex
+//nolint:gocognit,gocyclo // API response parsing is necessarily complex
 func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TAALMerchantAPIURL, nil)
 	if err != nil {
@@ -78,23 +78,31 @@ func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// Fallback to default fee rate on network error
+		c.debug("fee API request failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			c.debug("failed to close fee response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// Fallback to default fee rate on error
+		c.debug("fee API returned status %d, using default rate", resp.StatusCode)
 		return defaultFeeQuote(), nil
 	}
 
 	var taalResp TAALFeeQuoteResponse
 	if err := json.NewDecoder(resp.Body).Decode(&taalResp); err != nil {
+		c.debug("fee API response decode failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
 
 	// Parse the payload
 	var payload TAALPayload
 	if err := json.Unmarshal([]byte(taalResp.Payload), &payload); err != nil {
+		c.debug("fee API payload parse failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
 

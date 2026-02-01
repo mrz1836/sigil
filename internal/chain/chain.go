@@ -90,31 +90,66 @@ func ParseChainID(s string) (ID, bool) {
 	return id, id.IsValid()
 }
 
-// Chain defines the interface that all blockchain implementations must satisfy.
-type Chain interface {
+// Identifier provides chain identification.
+type Identifier interface {
 	// ID returns the chain identifier.
 	ID() ID
+}
 
+// BalanceReader provides balance querying capabilities.
+type BalanceReader interface {
 	// GetBalance retrieves the native token balance for an address.
 	// Returns balance as a big.Int in the smallest unit (wei, satoshis).
 	GetBalance(ctx context.Context, address string) (*big.Int, error)
+}
 
+// AddressValidator provides address validation.
+type AddressValidator interface {
+	// ValidateAddress checks if an address is valid for this chain.
+	ValidateAddress(address string) error
+}
+
+// Reader combines read-only chain operations.
+type Reader interface {
+	Identifier
+	BalanceReader
+	AddressValidator
+}
+
+// FeeEstimator provides fee estimation capabilities.
+type FeeEstimator interface {
 	// EstimateFee estimates the fee for a transaction.
 	// For ETH: returns gas price * estimated gas.
 	// For BSV: returns fee rate * estimated tx size.
 	EstimateFee(ctx context.Context, from, to string, amount *big.Int) (*big.Int, error)
+}
+
+// TransactionSender provides transaction sending capabilities.
+type TransactionSender interface {
+	FeeEstimator
 
 	// Send builds, signs, and broadcasts a transaction.
 	Send(ctx context.Context, req SendRequest) (*TransactionResult, error)
+}
 
-	// ValidateAddress checks if an address is valid for this chain.
-	ValidateAddress(address string) error
-
+// AmountFormatter provides amount formatting and parsing.
+// The standalone ParseDecimalAmount and FormatDecimalAmount functions in
+// amount.go can be used directly as an alternative to this interface.
+type AmountFormatter interface {
 	// FormatAmount converts a big.Int to human-readable string with proper decimals.
 	FormatAmount(amount *big.Int) string
 
 	// ParseAmount converts a human-readable string to big.Int.
 	ParseAmount(amount string) (*big.Int, error)
+}
+
+// Chain defines the full interface that all blockchain implementations must satisfy.
+// This combines all sub-interfaces for backwards compatibility.
+// Prefer using the smaller interfaces (Reader, TransactionSender) when possible.
+type Chain interface {
+	Reader
+	TransactionSender
+	AmountFormatter
 }
 
 // TokenChain extends Chain with ERC-20 token operations.

@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
 
+	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -53,11 +55,22 @@ type Client struct {
 	idCounter  atomic.Uint64
 }
 
-// NewClient creates a new RPC client.
+// NewClient creates a new RPC client with connection pooling.
 func NewClient(url string) *Client {
+	transport := &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 	return &Client{
-		url:        url,
-		httpClient: &http.Client{},
+		url: url,
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   45 * time.Second,
+		},
 	}
 }
 
@@ -89,51 +102,10 @@ func (e *rpcError) Error() string {
 
 // Call performs a JSON-RPC call.
 func (c *Client) Call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
-	if params == nil {
-		params = []any{}
-	}
-
-	req := request{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  params,
-		ID:      c.idCounter.Add(1),
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	httpResp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("sending HTTP request: %w", err)
-	}
-	// Body.Close error is intentionally ignored as it only fails if the
-	// connection is already broken, and there's no recovery action.
-	defer func() { _ = httpResp.Body.Close() }()
-
-	respBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
-	}
-
-	var resp response
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshaling response: %w", err)
-	}
-
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-
-	return resp.Result, nil
+	start := time.Now()
+	result, err := c.callInternal(ctx, method, params...)
+	metrics.Global.RecordRPCCall("eth", time.Since(start), err)
+	return result, err
 }
 
 // ChainID returns the chain ID.
@@ -327,8 +299,58 @@ func parseHexBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
-// Close closes the client.
+// Close closes the client and releases idle connections.
 func (c *Client) Close() {
-	// HTTP client doesn't need explicit closing, but we include this
-	// for interface compatibility
+	if t, ok := c.httpClient.Transport.(*http.Transport); ok {
+		t.CloseIdleConnections()
+	}
+}
+
+// callInternal performs the actual JSON-RPC call.
+func (c *Client) callInternal(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+	if params == nil {
+		params = []any{}
+	}
+
+	req := request{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  params,
+		ID:      c.idCounter.Add(1),
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating HTTP request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("sending HTTP request: %w", err)
+	}
+	// Body.Close error is intentionally ignored as it only fails if the
+	// connection is already broken, and there's no recovery action.
+	defer func() { _ = httpResp.Body.Close() }()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body: %w", err)
+	}
+
+	var resp response
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshaling response: %w", err)
+	}
+
+	if resp.Error != nil {
+		return nil, resp.Error
+	}
+
+	return resp.Result, nil
 }

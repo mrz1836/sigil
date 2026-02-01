@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -145,6 +146,16 @@ type UTXO struct {
 
 // GetBalance retrieves the BSV balance for an address.
 func (c *Client) GetBalance(ctx context.Context, address string) (*big.Int, error) {
+	start := time.Now()
+	result, err := c.doGetBalance(ctx, address)
+	metrics.Global.RecordRPCCall("bsv", time.Since(start), err)
+	return result, err
+}
+
+// doGetBalance performs the actual balance lookup.
+//
+//nolint:funcorder // Helper method grouped with its public caller
+func (c *Client) doGetBalance(ctx context.Context, address string) (*big.Int, error) {
 	if err := c.ValidateAddress(address); err != nil {
 		return nil, err
 	}
@@ -190,6 +201,16 @@ func (c *Client) GetTokenBalance(_ context.Context, _, _ string) (*big.Int, erro
 
 // ListUTXOs returns unspent transaction outputs for an address.
 func (c *Client) ListUTXOs(ctx context.Context, address string) ([]UTXO, error) {
+	start := time.Now()
+	result, err := c.doListUTXOs(ctx, address)
+	metrics.Global.RecordRPCCall("bsv", time.Since(start), err)
+	return result, err
+}
+
+// doListUTXOs performs the actual UTXO listing.
+//
+//nolint:funcorder // Helper method grouped with its public caller
+func (c *Client) doListUTXOs(ctx context.Context, address string) ([]UTXO, error) {
 	if err := c.ValidateAddress(address); err != nil {
 		return nil, err
 	}

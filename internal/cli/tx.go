@@ -117,7 +117,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	defer wallet.ZeroBytes(seed)
 
 	// Get the address for this chain
-	addresses, ok := wlt.Addresses[wallet.ChainID(chainID)]
+	addresses, ok := wlt.Addresses[chainID]
 	if !ok || len(addresses) == 0 {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,

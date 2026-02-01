@@ -1,8 +1,12 @@
 // Package cli implements the Sigil command-line interface.
 //
-// This package uses global variables to manage CLI state, which is the standard
-// pattern for Cobra-based CLI applications. The globals are initialized in
-// PersistentPreRunE and cleaned up in PersistentPostRun.
+// This package provides two ways to access CLI state:
+//  1. Global variables (legacy) - for backwards compatibility
+//  2. Context-based access (recommended) - via GetCmdContext(cmd)
+//
+// The globals are initialized in PersistentPreRunE and cleaned up in
+// PersistentPostRun. New code should prefer GetCmdContext(cmd) for better
+// testability and explicit dependency passing.
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level state
 package cli
@@ -48,8 +52,8 @@ Example:
   sigil tx send --wallet main --to 0x... --amount 0.1 --chain eth`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-		return initGlobals()
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		return initGlobals(cmd)
 	},
 	PersistentPostRun: func(_ *cobra.Command, _ []string) {
 		cleanup()
@@ -83,7 +87,7 @@ func ExitCode(err error) int {
 }
 
 // initGlobals initializes global configuration, logger, and formatter.
-func initGlobals() error {
+func initGlobals(cmd *cobra.Command) error {
 	// Determine home directory
 	home := homeDir
 	if home == "" {
@@ -133,6 +137,10 @@ func initGlobals() error {
 
 	// Create command context
 	cmdCtx = NewCommandContext(cfg, logger, formatter)
+
+	// Also store in cobra context for context-based access
+	// This allows commands to use GetCmdContext(cmd) instead of globals
+	SetCmdContext(cmd, cmdCtx)
 
 	return nil
 }

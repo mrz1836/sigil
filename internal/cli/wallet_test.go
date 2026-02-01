@@ -17,8 +17,16 @@ import (
 )
 
 // setupTestEnv creates a temporary environment for CLI testing.
+// It saves and restores global state to avoid test pollution.
+// Tests using this function should NOT use t.Parallel() as they
+// modify package-level globals.
 func setupTestEnv(t *testing.T) (string, func()) {
 	t.Helper()
+
+	// Save original global state
+	origCfg := cfg
+	origLogger := logger
+	origFormatter := formatter
 
 	tmpDir, err := os.MkdirTemp("", "sigil-cli-test")
 	require.NoError(t, err)
@@ -27,21 +35,25 @@ func setupTestEnv(t *testing.T) (string, func()) {
 	walletsDir := filepath.Join(tmpDir, "wallets")
 	require.NoError(t, os.MkdirAll(walletsDir, 0o750))
 
-	// Set up global config for tests
-	cfg = config.Defaults()
-	cfg.Home = tmpDir
+	// Set up test-specific global config
+	testCfg := config.Defaults()
+	testCfg.Home = tmpDir
+	cfg = testCfg
 
-	// Set up null logger
+	// Set up null logger for tests
 	logger = config.NullLogger()
 
-	// Set up text formatter
+	// Set up text formatter for tests
 	formatter = output.NewFormatter(output.FormatText, os.Stdout)
 
 	cleanup := func() {
+		// Restore original global state
+		cfg = origCfg
+		logger = origLogger
+		formatter = origFormatter
+
+		// Clean up temp directory
 		_ = os.RemoveAll(tmpDir)
-		cfg = nil
-		logger = nil
-		formatter = nil
 	}
 
 	return tmpDir, cleanup

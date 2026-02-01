@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/mrz1836/sigil/internal/chain"
-	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 const (
@@ -187,12 +186,6 @@ func (c *Client) EstimateFee(ctx context.Context, from, to string, amount *big.I
 	// Fee = gasPrice * gasLimit
 	fee := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
 	return fee, nil
-}
-
-// Send builds, signs, and broadcasts a transaction.
-func (c *Client) Send(_ context.Context, _ chain.SendRequest) (*chain.TransactionResult, error) {
-	// TODO: Implement in Phase 6 (T071-T074)
-	return nil, sigilerr.ErrNotImplemented
 }
 
 // ValidateAddress checks if an address is valid for Ethereum.

@@ -254,12 +254,6 @@ func (c *Client) EstimateFee(_ context.Context, _, _ string, _ *big.Int) (*big.I
 	return big.NewInt(fee), nil
 }
 
-// Send builds, signs, and broadcasts a transaction.
-func (c *Client) Send(_ context.Context, _ chain.SendRequest) (*chain.TransactionResult, error) {
-	// TODO: Implement in Phase 8 (T088-T090)
-	return nil, sigilerr.ErrNotImplemented
-}
-
 // ValidateAddress checks if an address is valid for BSV.
 func (c *Client) ValidateAddress(address string) error {
 	if address == "" {

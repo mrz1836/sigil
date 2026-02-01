@@ -224,8 +224,9 @@ func (s *FileStorage) walletPath(name string) string {
 	expectedSuffix := string(filepath.Separator) + name + walletFileExtension
 
 	if !strings.HasSuffix(cleanPath, expectedSuffix) {
-		// Should be impossible after ValidateWalletName, but defense in depth
-		panic(fmt.Sprintf("wallet path validation failed: %s", name))
+		// Return empty string - caller will fail with file-not-found error
+		// This is defense-in-depth; ValidateWalletName should prevent this
+		return ""
 	}
 
 	return cleanPath

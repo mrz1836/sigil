@@ -207,7 +207,10 @@ func deriveETHAddress(key *bip32.Key) (address, pubKeyHex string, err error) {
 	addrBytes := hash.Sum(nil)[12:]    // Take last 20 bytes
 
 	// Apply EIP-55 checksum
-	address = toChecksumAddress(addrBytes)
+	address, err = toChecksumAddress(addrBytes)
+	if err != nil {
+		return "", "", fmt.Errorf("checksum address: %w", err)
+	}
 
 	// Return uncompressed public key without the 04 prefix for storage
 	pubKeyHex = hex.EncodeToString(pubKeyUncompressed[1:])
@@ -257,14 +260,17 @@ func checksumChar(c, hashByte byte, isOddPosition bool) byte {
 	return c // Lowercase
 }
 
+// ErrInvalidAddressLength indicates the address byte slice has incorrect length.
+var ErrInvalidAddressLength = errors.New("invalid address length")
+
 // toChecksumAddress converts a 20-byte address to EIP-55 checksummed hex string.
-func toChecksumAddress(addr []byte) string {
+func toChecksumAddress(addr []byte) (string, error) {
 	const ethAddressBytes = 20
 
-	// Input validation - prevent panics from malformed input
+	// Input validation - return error for malformed input
 	if len(addr) != ethAddressBytes {
-		panic(fmt.Sprintf("invalid address length: expected %d bytes, got %d",
-			ethAddressBytes, len(addr)))
+		return "", fmt.Errorf("%w: expected %d bytes, got %d",
+			ErrInvalidAddressLength, ethAddressBytes, len(addr))
 	}
 
 	addrHex := hex.EncodeToString(addr) // Always 40 chars for 20 bytes
@@ -282,7 +288,7 @@ func toChecksumAddress(addr []byte) string {
 		result[i] = checksumChar(addrHex[i], hashBytes[i/2], i%2 == 1)
 	}
 
-	return "0x" + string(result)
+	return "0x" + string(result), nil
 }
 
 // isHexChar checks if a rune is a valid hexadecimal character.

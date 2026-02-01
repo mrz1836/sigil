@@ -25,11 +25,11 @@ const (
 // Service provides backup operations.
 type Service struct {
 	backupDir string
-	storage   *wallet.FileStorage
+	storage   wallet.Storage
 }
 
 // NewService creates a new backup service.
-func NewService(backupDir string, walletStorage *wallet.FileStorage) *Service {
+func NewService(backupDir string, walletStorage wallet.Storage) *Service {
 	return &Service{
 		backupDir: backupDir,
 		storage:   walletStorage,

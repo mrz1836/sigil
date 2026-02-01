@@ -45,6 +45,13 @@
                     "gomoddirectives"
                 ],
                 "source": "replace sigil/functions/pkg/config"
+            },
+            {
+                "linters": [
+                    "revive"
+                ],
+                "path": "(internal/crypto|pkg/errors)",
+                "text": "var-naming.*avoid package names that conflict"
             }
         ],
         "uniq-by-line": true

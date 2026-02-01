@@ -146,8 +146,40 @@ func Formatter() *output.Formatter {
 	return formatter
 }
 
+// Version information, set at build time.
+//
+//nolint:gochecknoglobals // Version info set at build time via ldflags
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildDate = "unknown"
+)
+
+// versionCmd shows version information.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show version information",
+	Long:  `Display the version, build commit, and build date.`,
+	Run: func(cmd *cobra.Command, _ []string) {
+		if formatter != nil && formatter.Format() == output.FormatJSON {
+			cmd.Println("{")
+			cmd.Printf(`  "version": "%s",`+"\n", Version)
+			cmd.Printf(`  "commit": "%s",`+"\n", GitCommit)
+			cmd.Printf(`  "date": "%s"`+"\n", BuildDate)
+			cmd.Println("}")
+		} else {
+			cmd.Printf("sigil version %s\n", Version)
+			cmd.Printf("  commit: %s\n", GitCommit)
+			cmd.Printf("  built:  %s\n", BuildDate)
+		}
+	},
+}
+
 //nolint:gochecknoinits // Cobra CLI pattern requires init for flag registration
 func init() {
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.PersistentFlags().StringVar(&homeDir, "home", "", "sigil data directory (default: ~/.sigil)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "auto", "output format: text, json, auto")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")

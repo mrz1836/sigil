@@ -140,7 +140,7 @@ func TestWalletCreateDuplicatePrevention(t *testing.T) {
 	defer wallet.ZeroBytes(seed)
 
 	require.NoError(t, w.DeriveAddresses(seed, 1))
-	require.NoError(t, storage.Save(w, seed, "testpassword"))
+	require.NoError(t, storage.Save(w, seed, []byte("testpassword")))
 
 	// Try to create wallet with same name
 	err = validateWalletCreationParams("existing", 12, storage)
@@ -195,7 +195,7 @@ func TestCreateAndSaveWallet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Save with test password
-	err = storage.Save(w, seed, "testpassword123")
+	err = storage.Save(w, seed, []byte("testpassword123"))
 	require.NoError(t, err)
 
 	// Verify wallet was saved
@@ -210,7 +210,7 @@ func TestCreateAndSaveWallet(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
 	// Load and verify wallet contents
-	loadedW, loadedSeed, err := storage.Load("testcreate", "testpassword123")
+	loadedW, loadedSeed, err := storage.Load("testcreate", []byte("testpassword123"))
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(loadedSeed)
 
@@ -257,7 +257,7 @@ func TestWalletListMultiple(t *testing.T) {
 		mnemonic, _ := wallet.GenerateMnemonic(12)
 		seed, _ := wallet.MnemonicToSeed(mnemonic, "")
 		require.NoError(t, w.DeriveAddresses(seed, 1))
-		require.NoError(t, storage.Save(w, seed, "password"))
+		require.NoError(t, storage.Save(w, seed, []byte("password")))
 		wallet.ZeroBytes(seed)
 	}
 
@@ -412,7 +412,7 @@ func TestWalletCreateE2E(t *testing.T) {
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	walletName := "e2e_test_wallet"
 	wordCount := 12
-	password := "secure_password_123"
+	password := []byte("secure_password_123")
 
 	// Step 1: Validate inputs
 	err := validateWalletCreationParams(walletName, wordCount, storage)
@@ -515,7 +515,7 @@ func TestWalletRestoreFromMnemonic(t *testing.T) {
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	walletName := "restored_wallet"
-	password := "test_password_123"
+	password := []byte("test_password_123")
 
 	// Use the standard BIP39 test vector mnemonic
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -664,7 +664,7 @@ func TestWalletRestoreDuplicatePrevention(t *testing.T) {
 	defer wallet.ZeroBytes(seed)
 
 	require.NoError(t, existingWallet.DeriveAddresses(seed, 1))
-	require.NoError(t, storage.Save(existingWallet, seed, "password"))
+	require.NoError(t, storage.Save(existingWallet, seed, []byte("password")))
 
 	// Verify it exists
 	exists, err := storage.Exists("existing")
@@ -681,7 +681,7 @@ func TestWalletRestoreDuplicatePrevention(t *testing.T) {
 	require.NoError(t, newWallet.DeriveAddresses(newSeed, 1))
 
 	// This should fail because wallet already exists
-	err = storage.Save(newWallet, newSeed, "password")
+	err = storage.Save(newWallet, newSeed, []byte("password"))
 	require.Error(t, err)
 	require.ErrorIs(t, err, wallet.ErrWalletExists)
 }

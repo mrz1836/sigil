@@ -191,9 +191,19 @@ func (s *Store) refreshAddress(ctx context.Context, addr *AddressMetadata, chain
 		return
 	}
 
-	// Update address scan time
-	addr.LastScanned = time.Now()
-	s.AddAddress(addr)
+	// Create a copy to avoid racing on the original pointer's fields.
+	// The original addr came from getAddressesForChain which returns pointers
+	// to internal data, so modifying it directly would race with other access.
+	updatedAddr := &AddressMetadata{
+		Address:        addr.Address,
+		ChainID:        addr.ChainID,
+		DerivationPath: addr.DerivationPath,
+		Index:          addr.Index,
+		Label:          addr.Label,
+		LastScanned:    time.Now(),
+		HasActivity:    addr.HasActivity || len(utxos) > 0,
+	}
+	s.AddAddress(updatedAddr)
 
 	// Process and track UTXOs
 	for _, u := range utxos {

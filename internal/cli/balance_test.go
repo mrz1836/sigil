@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,31 @@ import (
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/config"
 )
+
+// mockConfigProvider implements ConfigProvider for testing.
+type mockConfigProvider struct {
+	home         string
+	ethRPC       string
+	fallbackRPCs []string
+	bsvAPIKey    string
+	logLevel     string
+	logFile      string
+	outputFormat string
+	verbose      bool
+	security     config.SecurityConfig
+}
+
+func (m *mockConfigProvider) GetHome() string                    { return m.home }
+func (m *mockConfigProvider) GetETHRPC() string                  { return m.ethRPC }
+func (m *mockConfigProvider) GetETHFallbackRPCs() []string       { return m.fallbackRPCs }
+func (m *mockConfigProvider) GetBSVAPIKey() string               { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetLoggingLevel() string            { return m.logLevel }
+func (m *mockConfigProvider) GetLoggingFile() string             { return m.logFile }
+func (m *mockConfigProvider) GetOutputFormat() string            { return m.outputFormat }
+func (m *mockConfigProvider) IsVerbose() bool                    { return m.verbose }
+func (m *mockConfigProvider) GetSecurity() config.SecurityConfig { return m.security }
 
 func TestFormatCacheAge(t *testing.T) {
 	tests := []struct {
@@ -216,4 +241,193 @@ func TestBalanceCacheIntegration(t *testing.T) {
 	entry, exists, _ := loaded.Get(chain.ETH, "0x123", "")
 	require.True(t, exists)
 	assert.Equal(t, "1.0", entry.Balance)
+}
+
+// TestConnectETHClient_EmptyURL tests that connectETHClient returns error for empty URL.
+func TestConnectETHClient_EmptyURL(t *testing.T) {
+	t.Parallel()
+
+	// Test with empty primary and no fallbacks
+	_, err := connectETHClient("", nil)
+	require.Error(t, err)
+
+	// Test with empty primary and empty fallbacks
+	_, err = connectETHClient("", []string{""})
+	require.Error(t, err)
+}
+
+// TestConnectETHClient_ValidURL tests that connectETHClient returns client for valid URL.
+func TestConnectETHClient_ValidURL(t *testing.T) {
+	t.Parallel()
+
+	// Test with valid-looking primary URL (actual connection tested elsewhere)
+	client, err := connectETHClient("https://example.com", nil)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	client.Close()
+}
+
+// TestConnectETHClient_FallbackToValid tests fallback when primary is empty.
+func TestConnectETHClient_FallbackToValid(t *testing.T) {
+	t.Parallel()
+
+	// Test with empty primary but valid fallback
+	client, err := connectETHClient("", []string{"https://fallback.example.com"})
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	client.Close()
+}
+
+// TestFetchETHBalances_NoRPC tests fetchETHBalances with no RPC configured.
+func TestFetchETHBalances_NoRPC(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethRPC:       "",
+		fallbackRPCs: nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// Should return error when RPC is not configured and no cache
+	_, _, err := fetchETHBalances(ctx, "0x123", balanceCache, cfg)
+	require.Error(t, err)
+}
+
+// TestFetchETHBalances_NoRPC_WithCache tests fetchETHBalances returns cached data when RPC empty.
+func TestFetchETHBalances_NoRPC_WithCache(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethRPC:       "",
+		fallbackRPCs: nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0x123",
+		Balance:  "2.5",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+	ctx := context.Background()
+
+	// Should return cached data when RPC is not configured
+	entries, stale, err := fetchETHBalances(ctx, "0x123", balanceCache, cfg)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "2.5", entries[0].Balance)
+	// Recent cache shouldn't be stale
+	assert.False(t, stale)
+}
+
+// TestFetchETHBalances_InvalidRPCWithFallback tests fallback on connection failure.
+func TestFetchETHBalances_InvalidRPCWithFallback(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethRPC:       "invalid://primary",
+		fallbackRPCs: []string{"also-invalid://fallback1", "still-invalid://fallback2"},
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0x456",
+		Balance:  "3.0",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+	ctx := context.Background()
+
+	// All RPCs are invalid, so should fall back to cache
+	entries, stale, err := fetchETHBalances(ctx, "0x456", balanceCache, cfg)
+	// Cache should be returned even if err is non-nil
+	require.Len(t, entries, 1)
+	assert.Equal(t, "3.0", entries[0].Balance)
+	// With connection error, stale depends on cache age
+	_ = stale
+	_ = err
+}
+
+// TestFetchETHBalances_InvalidRPCNoFallbackNoCache tests error when everything fails.
+func TestFetchETHBalances_InvalidRPCNoFallbackNoCache(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethRPC:       "invalid://primary",
+		fallbackRPCs: nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// No valid RPC, no fallbacks, no cache - should return error
+	entries, stale, err := fetchETHBalances(ctx, "0x789", balanceCache, cfg)
+	// Should get an error since nothing worked and no cache
+	require.Error(t, err)
+	assert.Empty(t, entries)
+	assert.True(t, stale)
+}
+
+// TestMockConfigProvider_Interface verifies mockConfigProvider implements ConfigProvider.
+func TestMockConfigProvider_Interface(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockConfigProvider{
+		home:         "/test/home",
+		ethRPC:       "https://test-rpc.example.com",
+		fallbackRPCs: []string{"https://fallback1.example.com", "https://fallback2.example.com"},
+		bsvAPIKey:    "test-key",
+		logLevel:     "debug",
+		logFile:      "/test/log.txt",
+		outputFormat: "json",
+		verbose:      true,
+		security: config.SecurityConfig{
+			SessionEnabled:    true,
+			SessionTTLMinutes: 30,
+		},
+	}
+
+	// Verify all interface methods work
+	var cfg ConfigProvider = mock
+	assert.Equal(t, "/test/home", cfg.GetHome())
+	assert.Equal(t, "https://test-rpc.example.com", cfg.GetETHRPC())
+	assert.Len(t, cfg.GetETHFallbackRPCs(), 2)
+	assert.Equal(t, "https://fallback1.example.com", cfg.GetETHFallbackRPCs()[0])
+	assert.Equal(t, "test-key", cfg.GetBSVAPIKey())
+	assert.Equal(t, "debug", cfg.GetLoggingLevel())
+	assert.Equal(t, "/test/log.txt", cfg.GetLoggingFile())
+	assert.Equal(t, "json", cfg.GetOutputFormat())
+	assert.True(t, cfg.IsVerbose())
+	assert.True(t, cfg.GetSecurity().SessionEnabled)
+	assert.Equal(t, 30, cfg.GetSecurity().SessionTTLMinutes)
+}
+
+// TestFetchETHBalances_FallbackRPCOrder tests that fallbacks are tried in order.
+func TestFetchETHBalances_FallbackRPCOrder(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that when primary fails, fallbacks are attempted
+	// We can't easily test successful fallback without a mock server,
+	// but we can verify the function handles multiple fallback failures gracefully
+
+	cfg := &mockConfigProvider{
+		ethRPC: "invalid://primary",
+		fallbackRPCs: []string{
+			"invalid://fallback1",
+			"invalid://fallback2",
+			"invalid://fallback3",
+		},
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// All fail, should get an error
+	_, stale, err := fetchETHBalances(ctx, "0xabc", balanceCache, cfg)
+	require.Error(t, err)
+	assert.True(t, stale) // Should be stale since we couldn't fetch
 }

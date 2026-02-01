@@ -87,8 +87,10 @@ func init() {
 
 //nolint:gocognit,gocyclo // CLI entry point has inherent complexity
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+
 	// Load wallet to get addresses (using session if available)
-	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
+	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
 
 	w, seed, err := loadWalletWithSession(balanceWalletName, storage, cmd)
 	if err != nil {
@@ -97,7 +99,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	wallet.ZeroBytes(seed)
 
 	// Load or create cache
-	cachePath := filepath.Join(cfg.Home, "cache", "balances.json")
+	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
 	cacheStorage := cache.NewFileStorage(cachePath)
 	balanceCache, err := cacheStorage.Load()
 	if err != nil {
@@ -128,7 +130,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		for _, addr := range addresses {
 			// Create per-address context with its own timeout
 			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
-			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, chainID, addr.Address, balanceCache)
+			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, chainID, addr.Address, balanceCache, cmdCtx.Cfg)
 			addrCancel()
 
 			if fetchErr != nil {
@@ -167,7 +169,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	// Save updated cache
 	if err := cacheStorage.Save(balanceCache); err != nil {
-		logger.Error("failed to save balance cache: %v", err)
+		cmdCtx.Log.Error("failed to save balance cache: %v", err)
 	}
 
 	// Add warning if any fetches failed and using stale data
@@ -176,7 +178,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Output results
-	if formatter.Format() == output.FormatJSON {
+	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		outputBalanceJSON(cmd.OutOrStdout(), response)
 	} else {
 		outputBalanceText(cmd.OutOrStdout(), response)
@@ -187,14 +189,14 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 // fetchBalancesForAddress fetches balances for a single address.
 // Returns balances, whether data is stale, and any error.
-func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
+func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
 	var entries []cache.BalanceCacheEntry
 	var stale bool
 	var fetchErr error
 
 	switch chainID {
 	case wallet.ChainETH:
-		entries, stale, fetchErr = fetchETHBalances(ctx, address, balanceCache)
+		entries, stale, fetchErr = fetchETHBalances(ctx, address, balanceCache, cfg)
 	case wallet.ChainBSV:
 		entries, stale, fetchErr = fetchBSVBalances(ctx, address, balanceCache)
 	case wallet.ChainBTC, wallet.ChainBCH:
@@ -205,43 +207,84 @@ func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, addres
 	return entries, stale, fetchErr
 }
 
+// connectETHClient attempts to connect to the primary RPC, falling back to alternates on failure.
+func connectETHClient(rpcURL string, fallbackRPCs []string) (*eth.Client, error) {
+	client, err := eth.NewClient(rpcURL, nil)
+	if err == nil {
+		return client, nil
+	}
+	// Try fallback RPCs
+	for _, fallbackURL := range fallbackRPCs {
+		client, err = eth.NewClient(fallbackURL, nil)
+		if err == nil {
+			return client, nil
+		}
+	}
+	return nil, err
+}
+
+// fetchETHBalanceWithFallback fetches ETH balance, trying fallback RPCs on failure.
+func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, address, primaryRPC string, fallbackRPCs []string) (*eth.Balance, *eth.Client, error) {
+	// Try primary client first
+	balance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
+		bal, fetchErr := client.GetNativeBalance(ctx, address)
+		if fetchErr != nil {
+			return nil, chain.WrapRetryable(fetchErr)
+		}
+		return bal, nil
+	})
+	if err == nil {
+		return balance, client, nil
+	}
+
+	// Try fallback RPCs
+	for _, fallbackURL := range fallbackRPCs {
+		if fallbackURL == primaryRPC {
+			continue
+		}
+		fallbackClient, clientErr := eth.NewClient(fallbackURL, nil)
+		if clientErr != nil {
+			continue
+		}
+		balance, err = fallbackClient.GetNativeBalance(ctx, address)
+		if err == nil {
+			client.Close()
+			return balance, fallbackClient, nil
+		}
+		fallbackClient.Close()
+	}
+
+	return nil, client, err
+}
+
 // fetchETHBalances fetches ETH and USDC balances.
-func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
+func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
 	var entries []cache.BalanceCacheEntry
 	var stale bool
 
 	// Get ETH RPC URL from config
-	rpcURL := cfg.Networks.ETH.RPC
+	rpcURL := cfg.GetETHRPC()
 	if rpcURL == "" {
-		// RPC explicitly disabled - try cache first
 		cached, isStale, cacheErr := getCachedETHBalances(address, balanceCache)
 		if cacheErr == nil {
 			return cached, isStale, nil
 		}
-		// No cache, return clear error
 		return nil, true, sigilerr.WithSuggestion(
 			sigilerr.ErrNetworkError,
 			"ETH RPC not configured. Set SIGIL_ETH_RPC or configure networks.eth.rpc in config.yaml",
 		)
 	}
 
-	client, err := eth.NewClient(rpcURL, nil)
+	fallbackRPCs := cfg.GetETHFallbackRPCs()
+	client, err := connectETHClient(rpcURL, fallbackRPCs)
 	if err != nil {
 		return getCachedETHBalances(address, balanceCache)
 	}
 	defer client.Close()
 
-	// Fetch ETH balance with retry logic for transient failures
-	ethBalance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
-		bal, fetchErr := client.GetNativeBalance(ctx, address)
-		if fetchErr != nil {
-			// Wrap network errors as retryable
-			return nil, chain.WrapRetryable(fetchErr)
-		}
-		return bal, nil
-	})
+	// Fetch ETH balance with fallback support
+	ethBalance, client, err := fetchETHBalanceWithFallback(ctx, client, address, rpcURL, fallbackRPCs)
 	if err != nil {
-		// Fall back to cache
 		cachedEntries, isStale, _ := getCachedETHBalances(address, balanceCache)
 		return cachedEntries, isStale, err
 	}

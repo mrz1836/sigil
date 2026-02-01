@@ -1,7 +1,6 @@
 // Package contracts defines the interface contracts for Sigil MVP.
 // These are design artifacts - not compiled code.
 // Actual implementations go in internal/output/
-
 package contracts
 
 import (
@@ -11,6 +10,7 @@ import (
 // OutputFormat represents supported output formats.
 type OutputFormat string
 
+// Output format constants.
 const (
 	OutputFormatText OutputFormat = "text"
 	OutputFormatJSON OutputFormat = "json"

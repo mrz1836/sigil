@@ -1,35 +1,14 @@
-// Package contracts defines the interface contracts for Sigil MVP.
-// These are design artifacts - not compiled code.
-// Actual implementations go in internal/config/
-package contracts
+// Package config provides configuration management for Sigil.
+package config
 
 import (
-	"context"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
-// ConfigService defines the interface for configuration management.
-type ConfigService interface {
-	// Load reads configuration from file and environment.
-	Load(ctx context.Context) (*Config, error)
-
-	// Save writes configuration to file.
-	Save(ctx context.Context, config *Config) error
-
-	// Get retrieves a configuration value by path (e.g., "networks.eth.rpc").
-	Get(path string) (interface{}, error)
-
-	// Set updates a configuration value by path.
-	Set(path string, value interface{}) error
-
-	// Init creates a default configuration file.
-	Init(ctx context.Context) error
-
-	// Validate checks configuration for errors.
-	Validate(config *Config) error
-}
-
-// Config represents the complete application configuration.
-// See data-model.md for full structure definition.
+// Config represents the application configuration.
 type Config struct {
 	Version    int              `yaml:"version"`
 	Home       string           `yaml:"home"`
@@ -127,75 +106,48 @@ type LoggingConfig struct {
 	File  string `yaml:"file"`
 }
 
-// ConfigDefaults returns the default configuration.
-func ConfigDefaults() *Config {
-	return &Config{
-		Version: 1,
-		Home:    "~/.sigil",
-		Encryption: EncryptionConfig{
-			Method:        "age",
-			IdentityFile:  "~/.sigil/identity.age",
-			KeyDerivation: "argon2id",
-		},
-		Networks: NetworksConfig{
-			ETH: ETHNetworkConfig{
-				Enabled: true,
-				RPC:     "", // User must configure
-				ChainID: 1,
-				Tokens: []TokenConfig{
-					{
-						Symbol:   "USDC",
-						Address:  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-						Decimals: 6,
-					},
-				},
-			},
-			BSV: BSVNetworkConfig{
-				Enabled:   true,
-				API:       "whatsonchain",
-				Broadcast: "taal",
-				APIKey:    "",
-			},
-			BTC: BTCNetworkConfig{
-				Enabled: false, // Phase 2
-				API:     "mempool",
-			},
-			BCH: BCHNetworkConfig{
-				Enabled: false, // Phase 2
-				API:     "fullstack",
-			},
-		},
-		Fees: FeesConfig{
-			Provider:            "taal",
-			FallbackSatsPerByte: 1,
-			MaxSatsPerByte:      100,
-			ETHGasStrategy:      "medium",
-		},
-		Derivation: DerivationConfig{
-			DefaultAccount: 0,
-			AddressGap:     20,
-			Paths:          map[string]string{},
-		},
-		Security: SecurityConfig{
-			AutoLockSeconds:     0, // Disabled for MVP
-			RequireConfirmAbove: 0, // Disabled for MVP
-			MemoryLock:          true,
-		},
-		Output: OutputConfig{
-			DefaultFormat: "auto",
-			Color:         "auto",
-			Verbose:       false,
-		},
-		Logging: LoggingConfig{
-			Level: "error",
-			File:  "~/.sigil/sigil.log",
-		},
+// Load reads configuration from the specified file.
+func Load(path string) (*Config, error) {
+	// #nosec G304 -- config file path is from validated user input
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
+
+	cfg := Defaults()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
-// Config-related errors.
-var (
-	ErrConfigNotFound = Error{Code: "CONFIG_NOT_FOUND", Message: "configuration file not found"}
-	ErrConfigInvalid  = Error{Code: "CONFIG_INVALID", Message: "configuration file is invalid"}
-	ErrConfigPath     = Error{Code: "CONFIG_PATH_INVALID", Message: "configuration path does not exist"}
-)
+// Save writes configuration to the specified file.
+func Save(cfg *Config, path string) error {
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0o600)
+}
+
+// Path returns the default config file path.
+func Path(home string) string {
+	return filepath.Join(home, "config.yaml")
+}
+
+// DefaultHome returns the default sigil home directory.
+func DefaultHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".sigil"
+	}
+	return filepath.Join(home, ".sigil")
+}

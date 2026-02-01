@@ -1,0 +1,7 @@
+# Gitleaks configuration
+
+[allowlist]
+description = "Allowlist for test files"
+paths = [
+  '''internal/crypto/.*_test\.go''',
+]

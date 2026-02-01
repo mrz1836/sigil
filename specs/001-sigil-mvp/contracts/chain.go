@@ -1,7 +1,6 @@
 // Package contracts defines the interface contracts for Sigil MVP.
 // These are design artifacts - not compiled code.
 // Actual implementations go in internal/chain/
-
 package contracts
 
 import (
@@ -21,7 +20,7 @@ type Chain interface {
 
 	// GetTokenBalance retrieves an ERC-20 token balance (ETH only).
 	// For non-ETH chains, this returns ErrNotSupported.
-	GetTokenBalance(ctx context.Context, address string, tokenAddress string) (*big.Int, error)
+	GetTokenBalance(ctx context.Context, address, tokenAddress string) (*big.Int, error)
 
 	// EstimateFee estimates the fee for a transaction.
 	// For ETH: returns gas price * estimated gas.

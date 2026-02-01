@@ -27,13 +27,13 @@ Based on plan.md structure:
 
 **Purpose**: Initialize Go project with dependencies and directory structure
 
-- [ ] T001 Initialize Go module with `go mod init sigil` in repository root
-- [ ] T002 Create directory structure per plan.md: cmd/sigil/, internal/{cli,wallet,chain/eth,chain/bsv,crypto,config,output,cache,backup}/, pkg/errors/, testdata/{mnemonics,wallets,config}/
-- [ ] T003 [P] Add primary dependencies to go.mod (cobra, viper, go-bip39, go-bip32, go-sdk, go-whatsonchain, go-ethereum, age, yaml.v3, levenshtein, x/time, x/sys, x/term)
-- [ ] T004 [P] Create main.go entry point in cmd/sigil/main.go with minimal cobra root command setup
-- [ ] T005 [P] Configure golangci-lint with .golangci.yml for project linting rules
-- [ ] T005b [P] Add testify and test dependencies to go.mod for assertions
-- [ ] T005c [P] Create test directory structure: testdata/{mnemonics,wallets,config}/ with .gitkeep files
+- [X] T001 Initialize Go module with `go mod init sigil` in repository root
+- [X] T002 Create directory structure per plan.md: cmd/sigil/, internal/{cli,wallet,chain/eth,chain/bsv,crypto,config,output,cache,backup}/, pkg/errors/, testdata/{mnemonics,wallets,config}/
+- [X] T003 [P] Add primary dependencies to go.mod (cobra, viper, go-bip39, go-bip32, go-sdk, go-whatsonchain, go-ethereum, age, yaml.v3, levenshtein, x/time, x/sys, x/term)
+- [X] T004 [P] Create main.go entry point in cmd/sigil/main.go with minimal cobra root command setup
+- [X] T005 [P] Configure golangci-lint with .golangci.yml for project linting rules
+- [X] T005b [P] Add testify and test dependencies to go.mod for assertions
+- [X] T005c [P] Create test directory structure: testdata/{mnemonics,wallets,config}/ with .gitkeep files
 
 ---
 
@@ -45,60 +45,60 @@ Based on plan.md structure:
 
 ### Error Handling Infrastructure
 
-- [ ] T006t Write tests for sentinel errors and exit codes in pkg/errors/errors_test.go
-- [ ] T006 Define sentinel errors and exit codes in pkg/errors/errors.go per FR-006 (0=success, 1=general, 2=input, 3=auth, 4=not found, 5=permission/funds)
-- [ ] T007 [P] Implement error details and suggestion helpers in pkg/errors/errors.go (WithDetails, WithSuggestion per FR-036/FR-037)
+- [X] T006t Write tests for sentinel errors and exit codes in pkg/errors/errors_test.go
+- [X] T006 Define sentinel errors and exit codes in pkg/errors/errors.go per FR-006 (0=success, 1=general, 2=input, 3=auth, 4=not found, 5=permission/funds)
+- [X] T007 [P] Implement error details and suggestion helpers in pkg/errors/errors.go (WithDetails, WithSuggestion per FR-036/FR-037)
 
 ### Crypto Infrastructure
 
-- [ ] T008t Write tests for SecureBytes mlock/zeroing behavior in internal/crypto/secure_test.go
-- [ ] T008 Implement SecureBytes with mlock/munlock for secure memory handling in internal/crypto/secure.go per research.md section 8
-- [ ] T009 [P] Create crypto/rand wrapper for entropy generation in internal/crypto/entropy.go (FR-007)
-- [ ] T010t Write tests for age encryption round-trip in internal/crypto/age_test.go
-- [ ] T010 [P] Implement age encryption/decryption with password-based Scrypt in internal/crypto/age.go (FR-010)
+- [X] T008t Write tests for SecureBytes mlock/zeroing behavior in internal/crypto/secure_test.go
+- [X] T008 Implement SecureBytes with mlock/munlock for secure memory handling in internal/crypto/secure.go per research.md section 8
+- [X] T009 [P] Create crypto/rand wrapper for entropy generation in internal/crypto/entropy.go (FR-007)
+- [X] T010t Write tests for age encryption round-trip in internal/crypto/age_test.go
+- [X] T010 [P] Implement age encryption/decryption with password-based Scrypt in internal/crypto/age.go (FR-010)
 
 ### Configuration Infrastructure
 
-- [ ] T011 Define Config struct and all nested config types in internal/config/config.go per data-model.md
-- [ ] T012 Implement ConfigDefaults() with default values in internal/config/defaults.go per contracts/config.go
-- [ ] T013t Write tests for config Load/Save round-trip in internal/config/config_test.go
-- [ ] T013 Implement config Load/Save with YAML file I/O in internal/config/config.go (FR-002)
-- [ ] T014 [P] Implement environment variable overrides in internal/config/env.go (SIGIL_HOME, SIGIL_ETH_RPC, etc.)
+- [X] T011 Define Config struct and all nested config types in internal/config/config.go per data-model.md
+- [X] T012 Implement ConfigDefaults() with default values in internal/config/defaults.go per contracts/config.go
+- [X] T013t Write tests for config Load/Save round-trip in internal/config/config_test.go
+- [X] T013 Implement config Load/Save with YAML file I/O in internal/config/config.go (FR-002)
+- [X] T014 [P] Implement environment variable overrides in internal/config/env.go (SIGIL_HOME, SIGIL_ETH_RPC, etc.)
 
 ### Output Infrastructure
 
-- [ ] T015 Define OutputFormat enum and Formatter interface in internal/output/format.go
-- [ ] T016t Write tests for output formatters (Text/JSON) in internal/output/format_test.go
-- [ ] T016 Implement TextFormatter with table rendering in internal/output/format.go (FR-004)
-- [ ] T017 [P] Implement JSONFormatter for machine-readable output in internal/output/format.go (FR-004)
-- [ ] T018 [P] Implement TTY auto-detection for format selection in internal/output/format.go (FR-005)
-- [ ] T019 [P] Implement error formatting with suggestions in internal/output/error.go (FR-036/FR-038)
-- [ ] T020 [P] Implement table renderer for text output in internal/output/table.go
+- [X] T015 Define OutputFormat enum and Formatter interface in internal/output/format.go
+- [X] T016t Write tests for output formatters (Text/JSON) in internal/output/format_test.go
+- [X] T016 Implement TextFormatter with table rendering in internal/output/format.go (FR-004)
+- [X] T017 [P] Implement JSONFormatter for machine-readable output in internal/output/format.go (FR-004)
+- [X] T018 [P] Implement TTY auto-detection for format selection in internal/output/format.go (FR-005)
+- [X] T019 [P] Implement error formatting with suggestions in internal/output/error.go (FR-036/FR-038)
+- [X] T020 [P] Implement table renderer for text output in internal/output/table.go
 
 ### Logging Infrastructure
 
-- [ ] T020a Define log levels (off, error, debug) and Logger interface in internal/config/logging.go (FR-042)
-- [ ] T020b Implement file-based logger writing to ~/.sigil/sigil.log in internal/config/logging.go (FR-042)
+- [X] T020a Define log levels (off, error, debug) and Logger interface in internal/config/logging.go (FR-042)
+- [X] T020b Implement file-based logger writing to ~/.sigil/sigil.log in internal/config/logging.go (FR-042)
 
 ### CLI Root Infrastructure
 
-- [ ] T021 Implement root cobra command with global flags (--home, --output, --verbose) in internal/cli/root.go (FR-001/FR-003/FR-004)
-- [ ] T022 Wire config loading, logger initialization, and output formatter creation in internal/cli/root.go
+- [X] T021 Implement root cobra command with global flags (--home, --output, --verbose) in internal/cli/root.go (FR-001/FR-003/FR-004)
+- [X] T022 Wire config loading, logger initialization, and output formatter creation in internal/cli/root.go
 
 ### Chain Infrastructure
 
-- [ ] T023 Define Chain and UTXOChain interfaces in internal/chain/chain.go per contracts/chain.go
-- [ ] T024 [P] Define chain constants (ChainETH, ChainBSV) and derivation paths in internal/chain/chain.go per data-model.md
+- [X] T023 Define Chain and UTXOChain interfaces in internal/chain/chain.go per contracts/chain.go
+- [X] T024 [P] Define chain constants (ChainETH, ChainBSV) and derivation paths in internal/chain/chain.go per data-model.md
 
 ### Rate Limiting Infrastructure
 
 **Scope**: Rate limiting applies to all external chain API clients (ETH RPC, WhatsOnChain, TAAL). Backup operations are local file I/O and do not require rate limiting.
 
-- [ ] T025t Write tests for rate limiter token bucket behavior in internal/chain/ratelimit_test.go
-- [ ] T025 Implement RateLimitedClient with token bucket in internal/chain/ratelimit.go per research.md section 7 (FR-044)
-- [ ] T026t Write tests for retry with exponential backoff in internal/chain/retry_test.go
-- [ ] T026 [P] Implement retry with exponential backoff helper in internal/chain/retry.go per research.md section 9 (FR-039)
-- [ ] T027 [P] Implement Retry-After header handling in internal/chain/retry.go (FR-043)
+- [X] T025t Write tests for rate limiter token bucket behavior in internal/chain/ratelimit_test.go
+- [X] T025 Implement RateLimitedClient with token bucket in internal/chain/ratelimit.go per research.md section 7 (FR-044)
+- [X] T026t Write tests for retry with exponential backoff in internal/chain/retry_test.go
+- [X] T026 [P] Implement retry with exponential backoff helper in internal/chain/retry.go per research.md section 9 (FR-039)
+- [X] T027 [P] Implement Retry-After header handling in internal/chain/retry.go (FR-043)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

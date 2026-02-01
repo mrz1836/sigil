@@ -1,7 +1,6 @@
 // Package contracts defines the interface contracts for Sigil MVP.
 // These are design artifacts - not compiled code.
 // Actual implementations go in internal/wallet/
-
 package contracts
 
 import (

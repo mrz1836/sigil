@@ -136,6 +136,7 @@ func runBackupCreate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	// Create backup
 	bak, backupPath, err := svc.Create(backupWallet, password)
@@ -183,8 +184,9 @@ func runBackupVerify(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
-	if password != "" {
+	if len(password) > 0 {
 		_, err = svc.VerifyWithDecryption(backupInput, password)
 		if err != nil {
 			return sigilerr.WithSuggestion(
@@ -234,6 +236,7 @@ func runBackupRestore(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	// Restore the wallet
 	if err := svc.Restore(backupInput, password, restoreName); err != nil {

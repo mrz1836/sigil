@@ -37,7 +37,8 @@ func NewService(backupDir string, walletStorage wallet.Storage) *Service {
 }
 
 // Create creates a backup of a wallet.
-func (s *Service) Create(walletName, password string) (*Backup, string, error) {
+// The password should be zeroed by the caller after this call returns.
+func (s *Service) Create(walletName string, password []byte) (*Backup, string, error) {
 	// Load the wallet
 	wlt, seed, err := s.storage.Load(walletName, password)
 	if err != nil {
@@ -62,7 +63,7 @@ func (s *Service) Create(walletName, password string) (*Backup, string, error) {
 	}
 
 	// Encrypt the data
-	encryptedData, err := sigilcrypto.Encrypt(dataJSON, password)
+	encryptedData, err := sigilcrypto.Encrypt(dataJSON, string(password))
 	if err != nil {
 		return nil, "", fmt.Errorf("encrypting backup: %w", err)
 	}
@@ -109,7 +110,8 @@ func (s *Service) Verify(backupPath string) (*Manifest, error) {
 }
 
 // VerifyWithDecryption verifies a backup and tests decryption.
-func (s *Service) VerifyWithDecryption(backupPath, password string) (*Manifest, error) {
+// The password should be zeroed by the caller after this call returns.
+func (s *Service) VerifyWithDecryption(backupPath string, password []byte) (*Manifest, error) {
 	backup, err := s.readBackup(backupPath)
 	if err != nil {
 		return nil, err
@@ -121,7 +123,7 @@ func (s *Service) VerifyWithDecryption(backupPath, password string) (*Manifest, 
 	}
 
 	// Test decryption
-	_, err = sigilcrypto.Decrypt(backup.EncryptedData, password)
+	_, err = sigilcrypto.Decrypt(backup.EncryptedData, string(password))
 	if err != nil {
 		return nil, ErrDecryptionFailed
 	}
@@ -130,7 +132,8 @@ func (s *Service) VerifyWithDecryption(backupPath, password string) (*Manifest, 
 }
 
 // Restore restores a wallet from a backup.
-func (s *Service) Restore(backupPath, password, newWalletName string) error {
+// The password should be zeroed by the caller after this call returns.
+func (s *Service) Restore(backupPath string, password []byte, newWalletName string) error {
 	// Read backup
 	backup, err := s.readBackup(backupPath)
 	if err != nil {
@@ -143,16 +146,18 @@ func (s *Service) Restore(backupPath, password, newWalletName string) error {
 	}
 
 	// Decrypt data
-	decrypted, err := sigilcrypto.Decrypt(backup.EncryptedData, password)
+	decrypted, err := sigilcrypto.Decrypt(backup.EncryptedData, string(password))
 	if err != nil {
 		return ErrDecryptionFailed
 	}
+	defer wallet.ZeroBytes(decrypted)
 
 	// Parse wallet data
 	var walletData WalletData
 	if err := json.Unmarshal(decrypted, &walletData); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidFormat, err)
 	}
+	defer wallet.ZeroBytes(walletData.Seed)
 
 	// Parse wallet
 	var wlt wallet.Wallet

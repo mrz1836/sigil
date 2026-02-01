@@ -107,6 +107,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	// Load wallet
 	w, seed, err := storage.Load(balanceWalletName, password)
@@ -123,7 +124,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		balanceCache = cache.NewBalanceCache()
 	}
 
-	// Fetch balances
+	// Fetch balances with overall timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -134,6 +135,9 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	var fetchErrors []string
 
+	// Per-address timeout for individual balance fetches
+	const perAddressTimeout = 30 * time.Second
+
 	// Get balances per chain
 	for chainID, addresses := range w.Addresses {
 		// Apply chain filter if specified
@@ -142,7 +146,11 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		}
 
 		for _, addr := range addresses {
-			balances, stale, fetchErr := fetchBalancesForAddress(ctx, chainID, addr.Address, balanceCache)
+			// Create per-address context with its own timeout
+			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
+			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, chainID, addr.Address, balanceCache)
+			addrCancel()
+
 			if fetchErr != nil {
 				fetchErrors = append(fetchErrors, fetchErr.Error())
 			}
@@ -167,7 +175,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	// Save updated cache
 	if err := cacheStorage.Save(balanceCache); err != nil {
-		logger.Debug("failed to save balance cache: %v", err)
+		logger.Error("failed to save balance cache: %v", err)
 	}
 
 	// Add warning if any fetches failed and using stale data

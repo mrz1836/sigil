@@ -182,6 +182,7 @@ func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage) 
 	if err != nil {
 		return nil, err
 	}
+	defer wallet.ZeroBytes(password)
 
 	err = storage.Save(w, seed, password)
 	if err != nil {
@@ -316,6 +317,7 @@ func runWalletShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	// Load wallet
 	w, seed, err := storage.Load(name, password)
@@ -415,28 +417,31 @@ func displayWalletJSON(wlt *wallet.Wallet, cmd *cobra.Command) {
 }
 
 // promptPassword prompts for a password with hidden input.
-func promptPassword(prompt string) (string, error) {
+// The caller is responsible for zeroing the returned bytes after use.
+func promptPassword(prompt string) ([]byte, error) {
 	out(os.Stderr, "%s", prompt)
 
 	password, err := term.ReadPassword(syscall.Stdin)
 	outln(os.Stderr) // Add newline after hidden input
 
 	if err != nil {
-		return "", fmt.Errorf("reading password: %w", err)
+		return nil, fmt.Errorf("reading password: %w", err)
 	}
 
-	return string(password), nil
+	return password, nil
 }
 
 // promptNewPassword prompts for a new password with confirmation.
-func promptNewPassword() (string, error) {
+// The caller is responsible for zeroing the returned bytes after use.
+func promptNewPassword() ([]byte, error) {
 	password, err := promptPassword("Enter encryption password: ")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(password) < 8 {
-		return "", sigilerr.WithSuggestion(
+		wallet.ZeroBytes(password)
+		return nil, sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			"password must be at least 8 characters",
 		)
@@ -444,11 +449,14 @@ func promptNewPassword() (string, error) {
 
 	confirm, err := promptPassword("Confirm password: ")
 	if err != nil {
-		return "", err
+		wallet.ZeroBytes(password)
+		return nil, err
 	}
+	defer wallet.ZeroBytes(confirm)
 
-	if password != confirm {
-		return "", sigilerr.WithSuggestion(
+	if string(password) != string(confirm) {
+		wallet.ZeroBytes(password)
+		return nil, sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			"passwords do not match",
 		)
@@ -458,6 +466,7 @@ func promptNewPassword() (string, error) {
 }
 
 // promptPassphrase prompts for an optional BIP39 passphrase.
+// The caller is responsible for zeroing the returned string's backing data if needed.
 func promptPassphrase() (string, error) {
 	outln(os.Stderr, "\nBIP39 Passphrase (optional extra security layer):")
 	outln(os.Stderr, "WARNING: If you lose this passphrase, you cannot recover your wallet!")
@@ -467,23 +476,29 @@ func promptPassphrase() (string, error) {
 		return "", err
 	}
 
-	if passphrase == "" {
+	if len(passphrase) == 0 {
 		return "", nil
 	}
 
 	confirm, err := promptPassword("Confirm passphrase: ")
 	if err != nil {
+		wallet.ZeroBytes(passphrase)
 		return "", err
 	}
+	defer wallet.ZeroBytes(confirm)
 
-	if passphrase != confirm {
+	if string(passphrase) != string(confirm) {
+		wallet.ZeroBytes(passphrase)
 		return "", sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			"passphrases do not match",
 		)
 	}
 
-	return passphrase, nil
+	// Convert to string for BIP39 API - passphrase is less sensitive than password
+	result := string(passphrase)
+	wallet.ZeroBytes(passphrase)
+	return result, nil
 }
 
 // runWalletRestore handles the wallet restore command.
@@ -572,6 +587,7 @@ func confirmAndSaveWallet(w *wallet.Wallet, seed []byte, storage *wallet.FileSto
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	if err := storage.Save(w, seed, password); err != nil {
 		return err

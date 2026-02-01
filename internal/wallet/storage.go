@@ -28,10 +28,12 @@ var ErrDecryptionFailed = errors.New("decryption failed - wrong password or corr
 // Storage defines the interface for wallet persistence.
 type Storage interface {
 	// Save encrypts and writes a wallet to storage.
-	Save(wallet *Wallet, seed []byte, password string) error
+	// The password should be zeroed by the caller after this call returns.
+	Save(wallet *Wallet, seed, password []byte) error
 
 	// Load reads and decrypts a wallet from storage.
-	Load(name, password string) (*Wallet, []byte, error)
+	// The password should be zeroed by the caller after this call returns.
+	Load(name string, password []byte) (*Wallet, []byte, error)
 
 	// Exists checks if a wallet exists.
 	Exists(name string) (bool, error)
@@ -63,7 +65,8 @@ func NewFileStorage(basePath string) *FileStorage {
 }
 
 // Save encrypts and writes a wallet to storage.
-func (s *FileStorage) Save(wallet *Wallet, seed []byte, password string) error {
+// The password should be zeroed by the caller after this call returns.
+func (s *FileStorage) Save(wallet *Wallet, seed, password []byte) error {
 	// Validate wallet name
 	if err := ValidateWalletName(wallet.Name); err != nil {
 		return err
@@ -85,7 +88,7 @@ func (s *FileStorage) Save(wallet *Wallet, seed []byte, password string) error {
 	}
 
 	// Encrypt the seed
-	encryptedSeed, err := sigilcrypto.Encrypt(seed, password)
+	encryptedSeed, err := sigilcrypto.Encrypt(seed, string(password))
 	if err != nil {
 		return fmt.Errorf("encrypting seed: %w", err)
 	}
@@ -112,7 +115,8 @@ func (s *FileStorage) Save(wallet *Wallet, seed []byte, password string) error {
 }
 
 // Load reads and decrypts a wallet from storage.
-func (s *FileStorage) Load(name, password string) (*Wallet, []byte, error) {
+// The password should be zeroed by the caller after this call returns.
+func (s *FileStorage) Load(name string, password []byte) (*Wallet, []byte, error) {
 	// Validate wallet name
 	if err := ValidateWalletName(name); err != nil {
 		return nil, nil, err
@@ -143,7 +147,7 @@ func (s *FileStorage) Load(name, password string) (*Wallet, []byte, error) {
 	}
 
 	// Decrypt the seed
-	seed, err := sigilcrypto.Decrypt(wf.EncryptedSeed, password)
+	seed, err := sigilcrypto.Decrypt(wf.EncryptedSeed, string(password))
 	if err != nil {
 		return nil, nil, ErrDecryptionFailed
 	}
@@ -180,7 +184,8 @@ func (s *FileStorage) List() ([]string, error) {
 		return nil, fmt.Errorf("reading wallet directory: %w", err)
 	}
 
-	var names []string
+	// Pre-allocate with estimated capacity
+	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue

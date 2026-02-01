@@ -87,6 +87,7 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	defer wallet.ZeroBytes(password)
 
 	wlt, seed, err := storage.Load(utxoWallet, password)
 	if err != nil {

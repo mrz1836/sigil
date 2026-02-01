@@ -424,6 +424,7 @@ func loadWalletWithPassword(name string, storage *wallet.FileStorage, cmd *cobra
 	if err != nil {
 		return nil, nil, err
 	}
+	defer wallet.ZeroBytes(password)
 
 	// Load wallet
 	wlt, seed, err := storage.Load(name, password)

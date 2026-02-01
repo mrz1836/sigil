@@ -16,7 +16,7 @@ func TestStorage_SaveAndLoad(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	storage := NewFileStorage(tmpDir)
-	password := "test-password-123"
+	password := []byte("test-password-123")
 
 	// Create test wallet
 	wallet, err := NewWallet("test", []ChainID{ChainETH, ChainBSV})
@@ -75,11 +75,11 @@ func TestStorage_LoadWrongPassword(t *testing.T) {
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, wallet.DeriveAddresses(seed, 1))
 
-	err = storage.Save(wallet, seed, "correct-password")
+	err = storage.Save(wallet, seed, []byte("correct-password"))
 	require.NoError(t, err)
 
 	// Try to load with wrong password
-	_, _, err = storage.Load("test", "wrong-password")
+	_, _, err = storage.Load("test", []byte("wrong-password"))
 	assert.Error(t, err)
 }
 
@@ -90,7 +90,7 @@ func TestStorage_LoadNotFound(t *testing.T) {
 
 	storage := NewFileStorage(tmpDir)
 
-	_, _, err = storage.Load("nonexistent", "password")
+	_, _, err = storage.Load("nonexistent", []byte("password"))
 	assert.ErrorIs(t, err, ErrWalletNotFound)
 }
 
@@ -111,7 +111,7 @@ func TestStorage_Exists(t *testing.T) {
 	mnemonic, _ := GenerateMnemonic(12)
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, wallet.DeriveAddresses(seed, 1))
-	require.NoError(t, storage.Save(wallet, seed, "password"))
+	require.NoError(t, storage.Save(wallet, seed, []byte("password")))
 
 	// Should exist now
 	exists, err = storage.Exists("test")
@@ -137,7 +137,7 @@ func TestStorage_List(t *testing.T) {
 		mnemonic, _ := GenerateMnemonic(12)
 		seed, _ := MnemonicToSeed(mnemonic, "")
 		require.NoError(t, w.DeriveAddresses(seed, 1))
-		require.NoError(t, storage.Save(w, seed, "password"))
+		require.NoError(t, storage.Save(w, seed, []byte("password")))
 	}
 
 	// Should list all wallets
@@ -161,7 +161,7 @@ func TestStorage_Delete(t *testing.T) {
 	mnemonic, _ := GenerateMnemonic(12)
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, w.DeriveAddresses(seed, 1))
-	require.NoError(t, storage.Save(w, seed, "password"))
+	require.NoError(t, storage.Save(w, seed, []byte("password")))
 
 	// Verify exists
 	exists, _ := storage.Exists("test")
@@ -200,7 +200,7 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 	seed1, _ := MnemonicToSeed(mnemonic1, "")
 	require.NoError(t, wallet1.DeriveAddresses(seed1, 1))
 
-	err = storage.Save(wallet1, seed1, "password")
+	err = storage.Save(wallet1, seed1, []byte("password"))
 	require.NoError(t, err)
 
 	// Try to save another wallet with same name
@@ -209,7 +209,7 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 	seed2, _ := MnemonicToSeed(mnemonic2, "")
 	require.NoError(t, wallet2.DeriveAddresses(seed2, 1))
 
-	err = storage.Save(wallet2, seed2, "password")
+	err = storage.Save(wallet2, seed2, []byte("password"))
 	assert.ErrorIs(t, err, ErrWalletExists)
 }
 

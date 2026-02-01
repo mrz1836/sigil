@@ -68,14 +68,16 @@ func DecryptSecure(ciphertext []byte, password string) (*SecureBytes, error) {
 		return nil, err
 	}
 
+	// Ensure plaintext is zeroed on all paths including errors
+	defer func() {
+		for i := range plaintext {
+			plaintext[i] = 0
+		}
+	}()
+
 	sb, err := SecureBytesFromSlice(plaintext)
 	if err != nil {
 		return nil, err
-	}
-
-	// Zero the temporary plaintext
-	for i := range plaintext {
-		plaintext[i] = 0
 	}
 
 	return sb, nil

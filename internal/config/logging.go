@@ -1,8 +1,10 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,11 +51,15 @@ func (l LogLevel) String() string {
 }
 
 // Logger handles logging to a file.
+// It supports both printf-style logging (Debug, Error) and
+// structured logging via the Structured() method.
 type Logger struct {
-	mu       sync.Mutex
-	level    LogLevel
-	file     *os.File
-	filePath string
+	mu         sync.Mutex
+	level      LogLevel
+	file       *os.File
+	filePath   string
+	slogger    *slog.Logger
+	jsonOutput bool
 }
 
 // NewLogger creates a new logger.
@@ -92,7 +98,89 @@ func NewLogger(level LogLevel, filePath string) (*Logger, error) {
 	logger.file = f
 	logger.filePath = filePath
 
+	// Initialize structured logger
+	logger.initSlogger()
+
 	return logger, nil
+}
+
+// initSlogger initializes the slog.Logger based on current settings.
+//
+//nolint:funcorder // Helper method kept near constructor for clarity
+func (l *Logger) initSlogger() {
+	if l.file == nil {
+		return
+	}
+
+	var handler slog.Handler
+	opts := &slog.HandlerOptions{
+		Level: l.slogLevel(),
+	}
+
+	if l.jsonOutput {
+		handler = slog.NewJSONHandler(l.file, opts)
+	} else {
+		handler = slog.NewTextHandler(l.file, opts)
+	}
+
+	l.slogger = slog.New(handler)
+}
+
+// slogLevel converts LogLevel to slog.Level.
+//
+//nolint:funcorder // Helper method kept near initSlogger for clarity
+func (l *Logger) slogLevel() slog.Level {
+	switch l.level {
+	case LogLevelOff:
+		return slog.LevelError // Won't be used, logging is disabled
+	case LogLevelDebug:
+		return slog.LevelDebug
+	case LogLevelError:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// SetJSONOutput enables or disables JSON output format.
+// Must be called before logging starts for full effect.
+func (l *Logger) SetJSONOutput(enabled bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.jsonOutput = enabled
+	l.initSlogger()
+}
+
+// Structured returns a slog.Logger for structured logging.
+// Returns nil if logging is disabled.
+func (l *Logger) Structured() *slog.Logger {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.slogger
+}
+
+// DebugAttrs logs a debug message with structured attributes.
+func (l *Logger) DebugAttrs(msg string, attrs ...slog.Attr) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.level == LogLevelOff || l.level < LogLevelDebug || l.slogger == nil {
+		return
+	}
+
+	l.slogger.LogAttrs(context.Background(), slog.LevelDebug, msg, attrs...)
+}
+
+// ErrorAttrs logs an error message with structured attributes.
+func (l *Logger) ErrorAttrs(msg string, attrs ...slog.Attr) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.level == LogLevelOff || l.slogger == nil {
+		return
+	}
+
+	l.slogger.LogAttrs(context.Background(), slog.LevelError, msg, attrs...)
 }
 
 // Close closes the log file.
@@ -165,4 +253,16 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 // NullLogger returns a logger that discards all output.
 func NullLogger() *Logger {
 	return &Logger{level: LogLevelOff}
+}
+
+// NewStructuredLogger creates a logger that outputs JSON-formatted structured logs.
+//
+//nolint:funcorder // Secondary constructor kept at end of file
+func NewStructuredLogger(level LogLevel, filePath string) (*Logger, error) {
+	logger, err := NewLogger(level, filePath)
+	if err != nil {
+		return nil, err
+	}
+	logger.SetJSONOutput(true)
+	return logger, nil
 }

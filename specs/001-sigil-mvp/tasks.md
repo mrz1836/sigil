@@ -112,31 +112,31 @@ Based on plan.md structure:
 
 ### Implementation for User Story 1
 
-- [ ] T028t [US1] Write tests for BIP39 mnemonic generation with official test vectors in internal/wallet/mnemonic_test.go
-- [ ] T028 [P] [US1] Implement BIP39 mnemonic generation (12/24 words) in internal/wallet/mnemonic.go (FR-007)
-- [ ] T029t [US1] Write tests for mnemonic validation with valid/invalid inputs in internal/wallet/mnemonic_test.go
-- [ ] T029 [P] [US1] Implement BIP39 mnemonic validation in internal/wallet/mnemonic.go
-- [ ] T030t [US1] Write tests for whitespace normalization edge cases in internal/wallet/mnemonic_test.go
-- [ ] T030 [P] [US1] Implement mnemonic input normalization (trim, collapse spaces) in internal/wallet/mnemonic.go
-- [ ] T031t [US1] Write tests for BIP39 seed derivation with official test vectors in internal/wallet/mnemonic_test.go
-- [ ] T031 [US1] Implement BIP39 seed derivation with optional passphrase in internal/wallet/mnemonic.go (FR-008)
-- [ ] T032t [US1] Write tests for ETH address derivation with test vectors in internal/wallet/derivation_test.go
-- [ ] T032 [P] [US1] Implement BIP44 key derivation for ETH path m/44'/60'/0' in internal/wallet/derivation.go (FR-009/FR-015)
-- [ ] T033t [US1] Write tests for BSV address derivation with test vectors in internal/wallet/derivation_test.go
-- [ ] T033 [P] [US1] Implement BIP44 key derivation for BSV path m/44'/236'/0' in internal/wallet/derivation.go (FR-009/FR-022)
-- [ ] T034 [US1] Implement address derivation from public keys (ETH: keccak256, BSV: Base58Check) in internal/wallet/derivation.go
-- [ ] T035 [US1] Define Wallet and Address structs in internal/wallet/wallet.go per data-model.md
-- [ ] T036t [US1] Write tests for wallet encryption/decryption round-trip in internal/wallet/storage_test.go
-- [ ] T036 [US1] Implement wallet file storage with age encryption in internal/wallet/storage.go (FR-010)
-- [ ] T037 [US1] Implement file permissions enforcement (0600 for wallet files) in internal/wallet/storage.go
-- [ ] T038 [US1] Implement wallet existence check in internal/wallet/storage.go (FR-032)
+- [X] T028t [US1] Write tests for BIP39 mnemonic generation with official test vectors in internal/wallet/mnemonic_test.go
+- [X] T028 [P] [US1] Implement BIP39 mnemonic generation (12/24 words) in internal/wallet/mnemonic.go (FR-007)
+- [X] T029t [US1] Write tests for mnemonic validation with valid/invalid inputs in internal/wallet/mnemonic_test.go
+- [X] T029 [P] [US1] Implement BIP39 mnemonic validation in internal/wallet/mnemonic.go
+- [X] T030t [US1] Write tests for whitespace normalization edge cases in internal/wallet/mnemonic_test.go
+- [X] T030 [P] [US1] Implement mnemonic input normalization (trim, collapse spaces) in internal/wallet/mnemonic.go
+- [X] T031t [US1] Write tests for BIP39 seed derivation with official test vectors in internal/wallet/mnemonic_test.go
+- [X] T031 [US1] Implement BIP39 seed derivation with optional passphrase in internal/wallet/mnemonic.go (FR-008)
+- [X] T032t [US1] Write tests for ETH address derivation with test vectors in internal/wallet/derivation_test.go
+- [X] T032 [P] [US1] Implement BIP44 key derivation for ETH path m/44'/60'/0' in internal/wallet/derivation.go (FR-009/FR-015)
+- [X] T033t [US1] Write tests for BSV address derivation with test vectors in internal/wallet/derivation_test.go
+- [X] T033 [P] [US1] Implement BIP44 key derivation for BSV path m/44'/236'/0' in internal/wallet/derivation.go (FR-009/FR-022)
+- [X] T034 [US1] Implement address derivation from public keys (ETH: keccak256, BSV: Base58Check) in internal/wallet/derivation.go
+- [X] T035 [US1] Define Wallet and Address structs in internal/wallet/wallet.go per data-model.md
+- [X] T036t [US1] Write tests for wallet encryption/decryption round-trip in internal/wallet/storage_test.go
+- [X] T036 [US1] Implement wallet file storage with age encryption in internal/wallet/storage.go (FR-010)
+- [X] T037 [US1] Implement file permissions enforcement (0600 for wallet files) in internal/wallet/storage.go
+- [X] T038 [US1] Implement wallet existence check in internal/wallet/storage.go (FR-032)
 - [ ] T039t [US1] Write integration test for `sigil wallet create` command in internal/cli/wallet_test.go
-- [ ] T039 [US1] Implement wallet create command in internal/cli/wallet.go with `sigil wallet create <name>` (FR-029)
-- [ ] T040 [US1] Add --words flag (12/24 default 12) to wallet create command in internal/cli/wallet.go
-- [ ] T041 [US1] Add --passphrase flag for BIP39 passphrase prompt to wallet create command in internal/cli/wallet.go (FR-008)
-- [ ] T042 [US1] Implement secure password input (hidden) for wallet encryption in internal/cli/wallet.go
-- [ ] T043 [US1] Display mnemonic with formatting for secure viewing in internal/cli/wallet.go
-- [ ] T044 [US1] Display derived addresses for ETH and BSV after wallet creation in internal/cli/wallet.go
+- [X] T039 [US1] Implement wallet create command in internal/cli/wallet.go with `sigil wallet create <name>` (FR-029)
+- [X] T040 [US1] Add --words flag (12/24 default 12) to wallet create command in internal/cli/wallet.go
+- [X] T041 [US1] Add --passphrase flag for BIP39 passphrase prompt to wallet create command in internal/cli/wallet.go (FR-008)
+- [X] T042 [US1] Implement secure password input (hidden) for wallet encryption in internal/cli/wallet.go
+- [X] T043 [US1] Display mnemonic with formatting for secure viewing in internal/cli/wallet.go
+- [X] T044 [US1] Display derived addresses for ETH and BSV after wallet creation in internal/cli/wallet.go
 
 **Checkpoint**: User Story 1 complete - wallet creation with mnemonic display and encrypted storage works independently
 

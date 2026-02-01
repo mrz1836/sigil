@@ -11,7 +11,7 @@ import (
 	"github.com/tyler-smith/go-bip32"
 	"golang.org/x/crypto/sha3"
 
-	"sigil/internal/wallet/bitcoin"
+	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
 )
 
 // Chain represents a supported blockchain.
@@ -241,7 +241,7 @@ func deriveBSVAddress(key *bip32.Key) (address, pubKeyHex string, _ error) {
 }
 
 // checksumChar applies EIP-55 checksum to a single hex character.
-func checksumChar(c byte, hashByte byte, isOddPosition bool) byte {
+func checksumChar(c, hashByte byte, isOddPosition bool) byte {
 	if c >= '0' && c <= '9' {
 		return c
 	}

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"sigil/internal/output"
-	sigilerr "sigil/pkg/errors"
+	"github.com/mrz1836/sigil/internal/output"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 func TestFormatter_JSON(t *testing.T) {

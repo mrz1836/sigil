@@ -1,4 +1,4 @@
-package crypto_test
+package sigilcrypto_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"sigil/internal/crypto"
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
 func TestAge_EncryptDecrypt_RoundTrip(t *testing.T) {
@@ -14,13 +14,13 @@ func TestAge_EncryptDecrypt_RoundTrip(t *testing.T) {
 	password := "strong-passphrase-123" // gitleaks:allow
 
 	// Encrypt
-	ciphertext, err := crypto.Encrypt(plaintext, password)
+	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
 	require.NoError(t, err)
 	assert.NotEqual(t, plaintext, ciphertext)
 	assert.NotEmpty(t, ciphertext)
 
 	// Decrypt
-	decrypted, err := crypto.Decrypt(ciphertext, password)
+	decrypted, err := sigilcrypto.Decrypt(ciphertext, password)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 }
@@ -30,10 +30,10 @@ func TestAge_DecryptWrongPassword(t *testing.T) {
 	password := "correct-password" // gitleaks:allow
 	wrongPassword := "wrong-password"
 
-	ciphertext, err := crypto.Encrypt(plaintext, password)
+	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
 	require.NoError(t, err)
 
-	_, err = crypto.Decrypt(ciphertext, wrongPassword)
+	_, err = sigilcrypto.Decrypt(ciphertext, wrongPassword)
 	assert.Error(t, err)
 }
 
@@ -41,10 +41,10 @@ func TestAge_EmptyPlaintext(t *testing.T) {
 	plaintext := []byte{}
 	password := "password" // gitleaks:allow
 
-	ciphertext, err := crypto.Encrypt(plaintext, password)
+	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
 	require.NoError(t, err)
 
-	decrypted, err := crypto.Decrypt(ciphertext, password)
+	decrypted, err := sigilcrypto.Decrypt(ciphertext, password)
 	require.NoError(t, err)
 	assert.Empty(t, decrypted)
 }
@@ -54,7 +54,7 @@ func TestAge_EmptyPassword(t *testing.T) {
 	password := ""
 
 	// Empty password is rejected by age
-	_, err := crypto.Encrypt(plaintext, password)
+	_, err := sigilcrypto.Encrypt(plaintext, password)
 	assert.Error(t, err)
 }
 
@@ -66,16 +66,16 @@ func TestAge_LargePlaintext(t *testing.T) {
 	}
 	password := "password" // gitleaks:allow
 
-	ciphertext, err := crypto.Encrypt(plaintext, password)
+	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
 	require.NoError(t, err)
 
-	decrypted, err := crypto.Decrypt(ciphertext, password)
+	decrypted, err := sigilcrypto.Decrypt(ciphertext, password)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 }
 
 func TestAge_InvalidCiphertext(t *testing.T) {
-	_, err := crypto.Decrypt([]byte("not valid ciphertext"), "password") // gitleaks:allow
+	_, err := sigilcrypto.Decrypt([]byte("not valid ciphertext"), "password") // gitleaks:allow
 	assert.Error(t, err)
 }
 
@@ -83,14 +83,14 @@ func TestAge_EncryptWithSecureBytes(t *testing.T) {
 	plaintext := []byte("secret wallet data")
 	password := "password123" // gitleaks:allow
 
-	sb, err := crypto.SecureBytesFromSlice(plaintext)
+	sb, err := sigilcrypto.SecureBytesFromSlice(plaintext)
 	require.NoError(t, err)
 	defer sb.Destroy()
 
-	ciphertext, err := crypto.EncryptSecure(sb, password)
+	ciphertext, err := sigilcrypto.EncryptSecure(sb, password)
 	require.NoError(t, err)
 
-	decrypted, err := crypto.Decrypt(ciphertext, password)
+	decrypted, err := sigilcrypto.Decrypt(ciphertext, password)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 }
@@ -99,10 +99,10 @@ func TestAge_DecryptToSecureBytes(t *testing.T) {
 	plaintext := []byte("secret wallet data")
 	password := "password123" // gitleaks:allow
 
-	ciphertext, err := crypto.Encrypt(plaintext, password)
+	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
 	require.NoError(t, err)
 
-	sb, err := crypto.DecryptSecure(ciphertext, password)
+	sb, err := sigilcrypto.DecryptSecure(ciphertext, password)
 	require.NoError(t, err)
 	defer sb.Destroy()
 

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sigil/internal/crypto"
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
 const (
@@ -85,7 +85,7 @@ func (s *FileStorage) Save(wallet *Wallet, seed []byte, password string) error {
 	}
 
 	// Encrypt the seed
-	encryptedSeed, err := crypto.Encrypt(seed, password)
+	encryptedSeed, err := sigilcrypto.Encrypt(seed, password)
 	if err != nil {
 		return fmt.Errorf("encrypting seed: %w", err)
 	}
@@ -143,7 +143,7 @@ func (s *FileStorage) Load(name, password string) (*Wallet, []byte, error) {
 	}
 
 	// Decrypt the seed
-	seed, err := crypto.Decrypt(wf.EncryptedSeed, password)
+	seed, err := sigilcrypto.Decrypt(wf.EncryptedSeed, password)
 	if err != nil {
 		return nil, nil, ErrDecryptionFailed
 	}

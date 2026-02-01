@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/config"
 )
 
 func TestLoadSave_RoundTrip(t *testing.T) {

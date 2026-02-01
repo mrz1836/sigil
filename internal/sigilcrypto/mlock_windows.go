@@ -1,6 +1,6 @@
 //go:build windows
 
-package crypto
+package sigilcrypto
 
 import (
 	"unsafe"

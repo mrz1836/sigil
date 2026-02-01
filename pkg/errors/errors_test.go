@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sigilerr "sigil/pkg/errors"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 func TestExitCodes(t *testing.T) {

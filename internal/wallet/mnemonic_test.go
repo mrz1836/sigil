@@ -240,3 +240,121 @@ func TestMnemonicToSeed_InvalidMnemonic(t *testing.T) {
 	_, err := MnemonicToSeed("invalid mnemonic words here", "")
 	assert.Error(t, err)
 }
+
+// TestSuggestWord tests Levenshtein-based typo detection.
+//
+//nolint:misspell // Intentional typos for testing
+func TestSuggestWord(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string // empty string means no suggestion (too far)
+	}{
+		// Single character typos (intentional misspellings for test)
+		{name: "off by one char", input: "abondon", expected: "abandon"},
+		{name: "missing letter", input: "abadon", expected: "abandon"},
+		{name: "extra letter", input: "abanddon", expected: "abandon"},
+		{name: "swapped letters", input: "abadnon", expected: "abandon"},
+
+		// Other common typos - note: some typos may match multiple BIP39 words
+		{name: "typo in word", input: "abouut", expected: "about"},
+		{name: "zoo typo", input: "zooo", expected: "zoo"},
+		{name: "letter typo", input: "lettter", expected: "letter"},
+
+		// Exact match returns the word
+		{name: "exact match", input: "abandon", expected: "abandon"},
+
+		// Too different - no suggestion
+		{name: "completely different", input: "xyzqwerty", expected: ""},
+		{name: "very wrong", input: "abcdefg", expected: ""},
+
+		// Case insensitive (intentional misspellings for test)
+		{name: "uppercase typo", input: "ABONDON", expected: "abandon"},
+		{name: "mixed case typo", input: "AbOndon", expected: "abandon"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			suggestion := SuggestWord(tc.input)
+			assert.Equal(t, tc.expected, suggestion)
+		})
+	}
+}
+
+// TestSuggestWordForMnemonic tests typo detection for entire mnemonic phrases.
+//
+//nolint:misspell // Intentional typos for testing
+func TestSuggestWordForMnemonic(t *testing.T) {
+	tests := []struct {
+		name        string
+		mnemonic    string
+		typoIndices []int      // indices of words with typos
+		suggestions [][]string // expected suggestions for each word
+	}{
+		{
+			name:        "single typo",
+			mnemonic:    "abondon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+			typoIndices: []int{0},
+			suggestions: [][]string{{"abandon"}},
+		},
+		{
+			name:        "multiple typos",
+			mnemonic:    "abondon abondon abandon abandon abandon abandon abandon abandon abandon abandon abandon abouut",
+			typoIndices: []int{0, 1, 11},
+			suggestions: [][]string{{"abandon"}, {"abandon"}, {"about"}},
+		},
+		{
+			name:        "no typos",
+			mnemonic:    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+			typoIndices: []int{},
+			suggestions: [][]string{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := DetectTypos(tc.mnemonic)
+			require.Len(t, result, len(tc.typoIndices))
+			verifyTypos(t, result, tc.typoIndices, tc.suggestions)
+		})
+	}
+}
+
+// verifyTypos checks that all expected typos were found.
+func verifyTypos(t *testing.T, result []TypoInfo, typoIndices []int, suggestions [][]string) {
+	t.Helper()
+	for i, idx := range typoIndices {
+		found := false
+		for _, typo := range result {
+			if typo.Index == idx {
+				found = true
+				assert.Contains(t, suggestions[i], typo.Suggestion)
+				break
+			}
+		}
+		assert.True(t, found, "expected typo at index %d", idx)
+	}
+}
+
+// TestDetectTypos_EdgeCases tests edge cases for typo detection.
+//
+//nolint:misspell // Intentional typos for testing
+func TestDetectTypos_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int // number of typos detected
+	}{
+		{name: "empty string", input: "", expected: 0},
+		{name: "single valid word", input: "abandon", expected: 0},
+		{name: "single invalid word", input: "abondon", expected: 1},
+		{name: "all invalid", input: "xyzabc qwerty asdfgh", expected: 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := DetectTypos(tc.input)
+			assert.Len(t, result, tc.expected)
+		})
+	}
+}

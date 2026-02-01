@@ -1,9 +1,10 @@
-module sigil
+module github.com/mrz1836/sigil
 
 go 1.25.6
 
 require (
 	filippo.io/age v1.3.1
+	github.com/agnivade/levenshtein v1.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tyler-smith/go-bip32 v1.0.0

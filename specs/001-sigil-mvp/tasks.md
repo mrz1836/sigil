@@ -130,7 +130,7 @@ Based on plan.md structure:
 - [X] T036 [US1] Implement wallet file storage with age encryption in internal/wallet/storage.go (FR-010)
 - [X] T037 [US1] Implement file permissions enforcement (0600 for wallet files) in internal/wallet/storage.go
 - [X] T038 [US1] Implement wallet existence check in internal/wallet/storage.go (FR-032)
-- [ ] T039t [US1] Write integration test for `sigil wallet create` command in internal/cli/wallet_test.go
+- [X] T039t [US1] Write integration test for `sigil wallet create` command in internal/cli/wallet_test.go
 - [X] T039 [US1] Implement wallet create command in internal/cli/wallet.go with `sigil wallet create <name>` (FR-029)
 - [X] T040 [US1] Add --words flag (12/24 default 12) to wallet create command in internal/cli/wallet.go
 - [X] T041 [US1] Add --passphrase flag for BIP39 passphrase prompt to wallet create command in internal/cli/wallet.go (FR-008)
@@ -150,20 +150,20 @@ Based on plan.md structure:
 
 ### Implementation for User Story 2
 
-- [ ] T045t [US2] Write tests for Levenshtein typo detection in internal/wallet/mnemonic_test.go
-- [ ] T045 [P] [US2] Implement Levenshtein-based typo detection for mnemonic words in internal/wallet/mnemonic.go (FR-013)
-- [ ] T046 [P] [US2] Implement word suggestion for typos (Did you mean X?) in internal/wallet/mnemonic.go (FR-013)
-- [ ] T047t [US2] Write tests for format auto-detection (mnemonic/WIF/hex) in internal/wallet/restore_test.go
-- [ ] T047 [US2] Implement format auto-detection for input (mnemonic, WIF, hex) in internal/wallet/restore.go (FR-012)
-- [ ] T048t [US2] Write tests for WIF parsing with test vectors in internal/wallet/restore_test.go
-- [ ] T048 [P] [US2] Implement WIF private key parsing in internal/wallet/restore.go (FR-011)
-- [ ] T049 [P] [US2] Implement hex private key parsing (64-char) in internal/wallet/restore.go (FR-011)
-- [ ] T050t [US2] Write integration test for `sigil wallet restore` command in internal/cli/wallet_test.go
-- [ ] T050 [US2] Implement wallet restore command in internal/cli/wallet.go with `sigil wallet restore <name>` (FR-011)
-- [ ] T051 [US2] Add --input flag for seed material (mnemonic/WIF/hex) to restore command in internal/cli/wallet.go
-- [ ] T052 [US2] Implement interactive guided mode when no --input provided in internal/cli/wallet.go (step-by-step prompts)
-- [ ] T053 [US2] Display derived addresses for verification before saving restored wallet in internal/cli/wallet.go (FR-014)
-- [ ] T054 [US2] Implement address confirmation prompt "Do these match your expected addresses? [y/N]" in internal/cli/wallet.go (FR-014)
+- [X] T045t [US2] Write tests for Levenshtein typo detection in internal/wallet/mnemonic_test.go
+- [X] T045 [P] [US2] Implement Levenshtein-based typo detection for mnemonic words in internal/wallet/mnemonic.go (FR-013)
+- [X] T046 [P] [US2] Implement word suggestion for typos (Did you mean X?) in internal/wallet/mnemonic.go (FR-013)
+- [X] T047t [US2] Write tests for format auto-detection (mnemonic/WIF/hex) in internal/wallet/restore_test.go
+- [X] T047 [US2] Implement format auto-detection for input (mnemonic, WIF, hex) in internal/wallet/restore.go (FR-012)
+- [X] T048t [US2] Write tests for WIF parsing with test vectors in internal/wallet/restore_test.go
+- [X] T048 [P] [US2] Implement WIF private key parsing in internal/wallet/restore.go (FR-011)
+- [X] T049 [P] [US2] Implement hex private key parsing (64-char) in internal/wallet/restore.go (FR-011)
+- [X] T050t [US2] Write integration test for `sigil wallet restore` command in internal/cli/wallet_test.go
+- [X] T050 [US2] Implement wallet restore command in internal/cli/wallet.go with `sigil wallet restore <name>` (FR-011)
+- [X] T051 [US2] Add --input flag for seed material (mnemonic/WIF/hex) to restore command in internal/cli/wallet.go
+- [X] T052 [US2] Implement interactive guided mode when no --input provided in internal/cli/wallet.go (step-by-step prompts)
+- [X] T053 [US2] Display derived addresses for verification before saving restored wallet in internal/cli/wallet.go (FR-014)
+- [X] T054 [US2] Implement address confirmation prompt "Do these match your expected addresses? [y/N]" in internal/cli/wallet.go (FR-014)
 
 **Checkpoint**: User Story 2 complete - wallet restoration with typo detection and address verification works independently
 

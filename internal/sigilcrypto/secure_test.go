@@ -1,4 +1,4 @@
-package crypto_test
+package sigilcrypto_test
 
 import (
 	"testing"
@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"sigil/internal/crypto"
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
 func TestSecureBytes_Creation(t *testing.T) {
-	sb, err := crypto.NewSecureBytes(32)
+	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 	defer sb.Destroy()
 
@@ -19,7 +19,7 @@ func TestSecureBytes_Creation(t *testing.T) {
 }
 
 func TestSecureBytes_Zeroing(t *testing.T) {
-	sb, err := crypto.NewSecureBytes(32)
+	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 
 	// Write some data
@@ -40,7 +40,7 @@ func TestSecureBytes_Zeroing(t *testing.T) {
 }
 
 func TestSecureBytes_DoubleDestroy(t *testing.T) {
-	sb, err := crypto.NewSecureBytes(32)
+	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 
 	sb.Destroy()
@@ -51,7 +51,7 @@ func TestSecureBytes_DoubleDestroy(t *testing.T) {
 }
 
 func TestSecureBytes_ZeroSize(t *testing.T) {
-	sb, err := crypto.NewSecureBytes(0)
+	sb, err := sigilcrypto.NewSecureBytes(0)
 	require.NoError(t, err)
 	defer sb.Destroy()
 
@@ -60,7 +60,7 @@ func TestSecureBytes_ZeroSize(t *testing.T) {
 
 func TestSecureBytes_FromBytes(t *testing.T) {
 	original := []byte("secret key material")
-	sb, err := crypto.SecureBytesFromSlice(original)
+	sb, err := sigilcrypto.SecureBytesFromSlice(original)
 	require.NoError(t, err)
 	defer sb.Destroy()
 
@@ -68,7 +68,7 @@ func TestSecureBytes_FromBytes(t *testing.T) {
 }
 
 func TestSecureBytes_Copy(t *testing.T) {
-	sb1, err := crypto.NewSecureBytes(16)
+	sb1, err := sigilcrypto.NewSecureBytes(16)
 	require.NoError(t, err)
 	defer sb1.Destroy()
 
@@ -76,7 +76,7 @@ func TestSecureBytes_Copy(t *testing.T) {
 	copy(sb1.Bytes(), []byte("1234567890123456"))
 
 	// Copy to new SecureBytes
-	sb2, err := crypto.SecureBytesFromSlice(sb1.Bytes())
+	sb2, err := sigilcrypto.SecureBytesFromSlice(sb1.Bytes())
 	require.NoError(t, err)
 	defer sb2.Destroy()
 
@@ -89,7 +89,7 @@ func TestSecureBytes_Copy(t *testing.T) {
 }
 
 func TestSecureBytes_IsLocked(t *testing.T) {
-	sb, err := crypto.NewSecureBytes(32)
+	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 	defer sb.Destroy()
 

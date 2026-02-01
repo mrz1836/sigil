@@ -4,9 +4,11 @@ package wallet
 
 import (
 	"errors"
+	"math"
 	"regexp"
 	"strings"
 
+	"github.com/agnivade/levenshtein"
 	"github.com/tyler-smith/go-bip39"
 )
 
@@ -107,4 +109,114 @@ func IsValidWord(word string) bool {
 		}
 	}
 	return false
+}
+
+// MaxTypoDistance is the maximum Levenshtein distance to consider a suggestion.
+// Words with distance > 2 are considered too different to suggest.
+const MaxTypoDistance = 2
+
+// TypoInfo contains information about a detected typo and its suggestion.
+type TypoInfo struct {
+	// Index is the word position in the mnemonic (0-based).
+	Index int
+	// Word is the original (possibly misspelled) word.
+	Word string
+	// Suggestion is the closest BIP39 word, or empty if none found.
+	Suggestion string
+	// Distance is the Levenshtein distance to the suggestion.
+	Distance int
+}
+
+// SuggestWord finds the closest BIP39 word to the input using Levenshtein distance.
+// Returns empty string if no word is close enough (distance > MaxTypoDistance).
+func SuggestWord(input string) string {
+	input = strings.ToLower(input)
+	wordList := bip39.GetWordList()
+
+	minDist := math.MaxInt
+	var suggestion string
+
+	for _, word := range wordList {
+		dist := levenshtein.ComputeDistance(input, word)
+		if dist < minDist {
+			minDist = dist
+			suggestion = word
+		}
+		// Early exit for exact match
+		if dist == 0 {
+			return word
+		}
+	}
+
+	if minDist <= MaxTypoDistance {
+		return suggestion
+	}
+	return ""
+}
+
+// DetectTypos scans a mnemonic phrase and returns information about detected typos.
+// It identifies words that are not in the BIP39 word list and suggests corrections.
+func DetectTypos(mnemonic string) []TypoInfo {
+	if mnemonic == "" {
+		return nil
+	}
+
+	normalized := NormalizeMnemonicInput(mnemonic)
+	words := strings.Fields(normalized)
+	var typos []TypoInfo
+
+	for i, word := range words {
+		if !IsValidWord(word) {
+			suggestion := SuggestWord(word)
+			distance := 0
+			if suggestion != "" {
+				distance = levenshtein.ComputeDistance(word, suggestion)
+			}
+			typos = append(typos, TypoInfo{
+				Index:      i,
+				Word:       word,
+				Suggestion: suggestion,
+				Distance:   distance,
+			})
+		}
+	}
+
+	return typos
+}
+
+// FormatTypoSuggestions formats typo information into human-readable suggestions.
+func FormatTypoSuggestions(typos []TypoInfo) string {
+	if len(typos) == 0 {
+		return ""
+	}
+
+	var lines []string
+	for _, typo := range typos {
+		// Word position is 1-indexed for human readability
+		wordNum := typo.Index + 1
+		var line string
+		if typo.Suggestion != "" {
+			line = "Word " + itoa(wordNum) + ": '" + typo.Word + "' - did you mean '" + typo.Suggestion + "'?"
+		} else {
+			line = "Word " + itoa(wordNum) + ": '" + typo.Word + "' is not a valid BIP39 word"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// itoa converts an int to string without importing strconv.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	if n < 0 {
+		return "-" + itoa(-n)
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
 }

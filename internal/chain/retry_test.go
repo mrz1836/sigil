@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 func TestRetry_SuccessFirstAttempt(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	sigilerr "sigil/pkg/errors"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // ErrorOutput represents a structured error for JSON output.

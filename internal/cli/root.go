@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"sigil/internal/config"
-	"sigil/internal/output"
-	sigilerr "sigil/pkg/errors"
+	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/output"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 var (

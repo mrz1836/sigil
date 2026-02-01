@@ -21,7 +21,7 @@
                 "sections": [
                     "standard",
                     "default",
-                    "prefix(sigil)"
+                    "prefix(github.com/mrz1836/sigil)"
                 ]
             },
             "gofmt": {
@@ -29,11 +29,11 @@
             },
             "gofumpt": {
                 "extra-rules": false,
-                "module-path": "sigil"
+                "module-path": "github.com/mrz1836/sigil"
             },
             "goimports": {
                 "local-prefixes": [
-                    "sigil"
+                    "github.com/mrz1836/sigil"
                 ]
             }
         }
@@ -44,14 +44,7 @@
                 "linters": [
                     "gomoddirectives"
                 ],
-                "source": "replace sigil/functions/pkg/config"
-            },
-            {
-                "linters": [
-                    "revive"
-                ],
-                "path": "(internal/crypto|pkg/errors)",
-                "text": "var-naming.*avoid package names that conflict"
+                "source": "replace github.com/mrz1836/sigil/functions/pkg/config"
             }
         ],
         "uniq-by-line": true
@@ -213,9 +206,6 @@
                 "for-loops": false,
                 "range-loops": true,
                 "simple": true
-            },
-            "revive": {
-                "config": ".revive.toml"
             },
             "unparam": {
                 "check-exported": false

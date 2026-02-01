@@ -1,8 +1,5 @@
-// Package crypto provides cryptographic utilities for Sigil.
-// Internal packages may shadow stdlib names for domain-specific implementations.
-//
-//nolint:revive // Internal package name is intentional
-package crypto
+// Package sigilcrypto provides cryptographic utilities for Sigil.
+package sigilcrypto
 
 import (
 	"runtime"

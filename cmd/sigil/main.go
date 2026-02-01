@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"sigil/internal/cli"
+	"github.com/mrz1836/sigil/internal/cli"
 )
 
 func main() {

@@ -45,3 +45,10 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 )
+
+replace (
+	// CVE-2025-47908: rs/cors Resource Exhaustion - upgrade to fixed version
+	github.com/rs/cors => github.com/rs/cors v1.11.0
+	// CVE-2021-43668: goleveldb NULL Pointer Dereference - upgrade to latest commit (July 2022)
+	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
+)

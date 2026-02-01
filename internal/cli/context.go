@@ -9,6 +9,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -56,6 +57,9 @@ type CommandContext struct {
 
 	// Factory creates chain clients.
 	Factory chain.Factory
+
+	// SessionMgr provides session management for cached wallet credentials.
+	SessionMgr session.Manager
 }
 
 // NewCommandContext creates a context with the given dependencies.
@@ -87,5 +91,11 @@ func (c *CommandContext) WithCache(balanceCache cache.Cache) *CommandContext {
 // WithChainFactory sets the chain factory.
 func (c *CommandContext) WithChainFactory(f chain.Factory) *CommandContext {
 	c.Factory = f
+	return c
+}
+
+// WithSessionManager sets the session manager.
+func (c *CommandContext) WithSessionManager(mgr session.Manager) *CommandContext {
+	c.SessionMgr = mgr
 	return c
 }

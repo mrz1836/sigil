@@ -2,19 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/session"
-)
-
-//nolint:gochecknoglobals // Cobra CLI pattern requires package-level variables
-var (
-	// sessionManager is the global session manager.
-	sessionManager session.Manager
 )
 
 // sessionCmd is the parent command for session operations.
@@ -73,30 +66,13 @@ func init() {
 	sessionCmd.AddCommand(sessionLockCmd)
 }
 
-// initSessionManager initializes the session manager.
-// Should be called from initGlobals after cfg is set.
-func initSessionManager() {
-	if cfg == nil {
-		return
-	}
-
-	sessionsPath := filepath.Join(cfg.Home, "sessions")
-	sessionManager = session.NewManager(sessionsPath, nil)
-}
-
-// getSessionManager returns the session manager, initializing if needed.
-func getSessionManager() session.Manager {
-	if sessionManager == nil {
-		initSessionManager()
-	}
-	return sessionManager
-}
-
 func runSessionStatus(cmd *cobra.Command, _ []string) error {
-	mgr := getSessionManager()
+	ctx := GetCmdContext(cmd)
+	mgr := ctx.SessionMgr
+	fmtr := ctx.Fmt
 
-	if !mgr.Available() {
-		if formatter.Format() == output.FormatJSON {
+	if mgr == nil || !mgr.Available() {
+		if fmtr.Format() == output.FormatJSON {
 			outln(cmd.OutOrStdout(), `{"available": false, "message": "Session caching is not available (keyring unavailable)"}`)
 		} else {
 			outln(cmd.OutOrStdout(), "Session caching is not available (keyring unavailable)")
@@ -109,7 +85,7 @@ func runSessionStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
 
-	if formatter.Format() == output.FormatJSON {
+	if fmtr.Format() == output.FormatJSON {
 		outputSessionStatusJSON(cmd, sessions)
 	} else {
 		outputSessionStatusText(cmd, sessions)
@@ -119,10 +95,12 @@ func runSessionStatus(cmd *cobra.Command, _ []string) error {
 }
 
 func runSessionLock(cmd *cobra.Command, _ []string) error {
-	mgr := getSessionManager()
+	ctx := GetCmdContext(cmd)
+	mgr := ctx.SessionMgr
+	fmtr := ctx.Fmt
 
-	if !mgr.Available() {
-		if formatter.Format() == output.FormatJSON {
+	if mgr == nil || !mgr.Available() {
+		if fmtr.Format() == output.FormatJSON {
 			outln(cmd.OutOrStdout(), `{"available": false, "ended": 0, "message": "Session caching is not available"}`)
 		} else {
 			outln(cmd.OutOrStdout(), "Session caching is not available (keyring unavailable)")
@@ -132,7 +110,7 @@ func runSessionLock(cmd *cobra.Command, _ []string) error {
 
 	count := mgr.EndAllSessions()
 
-	if formatter.Format() == output.FormatJSON {
+	if fmtr.Format() == output.FormatJSON {
 		out(cmd.OutOrStdout(), `{"ended": %d}`+"\n", count)
 	} else {
 		out(cmd.OutOrStdout(), "Ended %d session(s)\n", count)

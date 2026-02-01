@@ -21,6 +21,9 @@ type ConfigProvider interface {
 	// GetETHRPC returns the Ethereum RPC URL.
 	GetETHRPC() string
 
+	// GetETHFallbackRPCs returns the fallback Ethereum RPC URLs.
+	GetETHFallbackRPCs() []string
+
 	// GetBSVAPIKey returns the BSV API key.
 	GetBSVAPIKey() string
 
@@ -35,6 +38,9 @@ type ConfigProvider interface {
 
 	// IsVerbose returns true if verbose output is enabled.
 	IsVerbose() bool
+
+	// GetSecurity returns the security configuration.
+	GetSecurity() config.SecurityConfig
 }
 
 // LogWriter provides logging capabilities.

@@ -21,6 +21,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/session"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -156,12 +157,14 @@ func initGlobals(cmd *cobra.Command) error {
 	// Create command context
 	cmdCtx = NewCommandContext(cfg, logger, formatter)
 
+	// Initialize session manager for wallet authentication caching
+	sessionsPath := filepath.Join(cfg.Home, "sessions")
+	sessionMgr := session.NewManager(sessionsPath, nil)
+	cmdCtx.SessionMgr = sessionMgr
+
 	// Also store in cobra context for context-based access
 	// This allows commands to use GetCmdContext(cmd) instead of globals
 	SetCmdContext(cmd, cmdCtx)
-
-	// Initialize session manager for wallet authentication caching
-	initSessionManager()
 
 	return nil
 }

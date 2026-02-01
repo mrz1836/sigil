@@ -82,12 +82,14 @@ sigil wallet create <name> [flags]
 |------|---------|-------------|
 | `--words` | `12` | Mnemonic word count (12 or 24) |
 | `--passphrase` | `false` | Use a BIP39 passphrase |
+| `--scan` | `false` | Scan for existing UTXOs after creation |
 
 **Examples:**
 ```bash
 sigil wallet create main
 sigil wallet create main --words 24
 sigil wallet create main --passphrase
+sigil wallet create main --scan
 ```
 
 #### wallet list
@@ -137,12 +139,14 @@ sigil wallet restore <name> [flags]
 |------|---------|-------------|
 | `--input` | - | Seed material (mnemonic, WIF, or hex) |
 | `--passphrase` | `false` | Use a BIP39 passphrase (for mnemonic only) |
+| `--scan` | `true` | Scan for existing UTXOs after restore |
 
 **Examples:**
 ```bash
 sigil wallet restore backup --input "abandon abandon ... about"
 sigil wallet restore imported --input "5HueCGU8rMjxEXxiPuD5BDku..."
 sigil wallet restore backup  # Interactive mode
+sigil wallet restore backup --input "..." --scan=false  # Skip UTXO scan
 ```
 
 ---
@@ -229,7 +233,7 @@ sigil utxo <subcommand>
 
 #### utxo list
 
-List all unspent transaction outputs (UTXOs) for a BSV wallet address.
+List all unspent transaction outputs (UTXOs) for a BSV wallet address by querying the chain directly.
 
 ```bash
 sigil utxo list [flags]
@@ -245,6 +249,43 @@ sigil utxo list [flags]
 ```bash
 sigil utxo list --wallet main
 sigil utxo list --wallet main -o json
+```
+
+#### utxo refresh
+
+Re-scan all known addresses and update the local UTXO store. New UTXOs are added; spent UTXOs are marked as spent.
+
+```bash
+sigil utxo refresh [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+
+**Examples:**
+```bash
+sigil utxo refresh --wallet main
+```
+
+#### utxo balance
+
+Display balance calculated from locally stored UTXOs. No network connection required after initial scan.
+
+```bash
+sigil utxo balance [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+
+**Examples:**
+```bash
+sigil utxo balance --wallet main
+sigil utxo balance --wallet main -o json
 ```
 
 ---

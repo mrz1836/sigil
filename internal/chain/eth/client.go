@@ -3,15 +3,15 @@ package eth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
-	"strings"
+	"sync"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	ethcrypto "github.com/mrz1836/sigil/internal/chain/eth/crypto"
 	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 const (
@@ -30,16 +30,32 @@ const (
 
 var (
 	// ErrInvalidAddress indicates the address format is invalid.
-	ErrInvalidAddress = errors.New("invalid address format")
+	ErrInvalidAddress = &sigilerr.SigilError{
+		Code:     "ETH_INVALID_ADDRESS",
+		Message:  "invalid Ethereum address format",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// ErrInvalidTokenAddress indicates the token address format is invalid.
-	ErrInvalidTokenAddress = errors.New("invalid token address format")
+	ErrInvalidTokenAddress = &sigilerr.SigilError{
+		Code:     "ETH_INVALID_TOKEN_ADDRESS",
+		Message:  "invalid token address format",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// ErrInvalidAmount indicates the amount format is invalid.
-	ErrInvalidAmount = errors.New("invalid amount format")
+	ErrInvalidAmount = &sigilerr.SigilError{
+		Code:     "ETH_INVALID_AMOUNT",
+		Message:  "invalid amount format",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// ErrRPCURLRequired indicates the RPC URL was not provided.
-	ErrRPCURLRequired = errors.New("RPC URL is required")
+	ErrRPCURLRequired = &sigilerr.SigilError{
+		Code:     "ETH_RPC_URL_REQUIRED",
+		Message:  "RPC URL is required",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// addressRegex validates Ethereum addresses.
 	addressRegex = regexp.MustCompile("^0x[0-9a-fA-F]{40}$")
@@ -62,6 +78,8 @@ type Client struct {
 	rpcURL    string
 	rpcClient *rpc.Client
 	chainID   *big.Int
+	initOnce  sync.Once
+	initErr   error
 }
 
 // NewClient creates a new ETH client.
@@ -221,7 +239,7 @@ func (c *Client) FormatAmount(amount *big.Int) string {
 
 // ParseAmount converts a human-readable ETH string to big.Int (wei).
 func (c *Client) ParseAmount(amount string) (*big.Int, error) {
-	return parseAmount(amount, decimals)
+	return chain.ParseDecimalAmount(amount, decimals, ErrInvalidAmount)
 }
 
 // Close closes the client connection.
@@ -233,85 +251,20 @@ func (c *Client) Close() {
 }
 
 // connect establishes the RPC connection if not already connected.
+// This method is thread-safe and uses sync.Once to prevent race conditions.
 func (c *Client) connect(ctx context.Context) error {
-	if c.rpcClient != nil {
-		return nil
-	}
+	c.initOnce.Do(func() {
+		c.rpcClient = rpc.NewClient(c.rpcURL)
 
-	c.rpcClient = rpc.NewClient(c.rpcURL)
-
-	// Get chain ID if not set
-	if c.chainID == nil {
-		chainID, err := c.rpcClient.ChainID(ctx)
-		if err != nil {
-			return fmt.Errorf("getting chain ID: %w", err)
-		}
-		c.chainID = chainID
-	}
-
-	return nil
-}
-
-// parseAmount is a shared helper for parsing decimal amounts.
-//
-//nolint:gocognit,gocyclo // Decimal parsing requires sequential validation steps
-func parseAmount(amount string, decimalPlaces int) (*big.Int, error) {
-	if amount == "" {
-		return nil, ErrInvalidAmount
-	}
-
-	// Check for negative amounts
-	if strings.HasPrefix(amount, "-") {
-		return nil, ErrInvalidAmount
-	}
-
-	// Split by decimal point
-	parts := strings.Split(amount, ".")
-	if len(parts) > 2 {
-		return nil, ErrInvalidAmount
-	}
-
-	intPart := parts[0]
-	decPart := ""
-	if len(parts) == 2 {
-		decPart = parts[1]
-	}
-
-	// Validate integer part
-	if intPart == "" {
-		intPart = "0"
-	}
-	intVal, ok := new(big.Int).SetString(intPart, 10)
-	if !ok {
-		return nil, ErrInvalidAmount
-	}
-
-	// Scale integer part
-	multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimalPlaces)), nil)
-	result := new(big.Int).Mul(intVal, multiplier)
-
-	// Handle decimal part
-	if decPart != "" {
-		// Validate decimal characters
-		for _, c := range decPart {
-			if c < '0' || c > '9' {
-				return nil, ErrInvalidAmount
+		// Get chain ID if not set
+		if c.chainID == nil {
+			chainID, err := c.rpcClient.ChainID(ctx)
+			if err != nil {
+				c.initErr = fmt.Errorf("getting chain ID: %w", err)
+				return
 			}
+			c.chainID = chainID
 		}
-
-		// Pad or truncate decimal part
-		for len(decPart) < decimalPlaces {
-			decPart += "0"
-		}
-		decPart = decPart[:decimalPlaces]
-
-		decVal, ok := new(big.Int).SetString(decPart, 10)
-		if !ok {
-			return nil, ErrInvalidAmount
-		}
-
-		result = result.Add(result, decVal)
-	}
-
-	return result, nil
+	})
+	return c.initErr
 }

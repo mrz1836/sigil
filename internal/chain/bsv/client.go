@@ -4,14 +4,12 @@ package bsv
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -42,13 +40,25 @@ const (
 
 var (
 	// ErrInvalidAddress indicates the address format is invalid.
-	ErrInvalidAddress = errors.New("invalid address format")
+	ErrInvalidAddress = &sigilerr.SigilError{
+		Code:     "BSV_INVALID_ADDRESS",
+		Message:  "invalid BSV address format",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// ErrInvalidAmount indicates the amount format is invalid.
-	ErrInvalidAmount = errors.New("invalid amount format")
+	ErrInvalidAmount = &sigilerr.SigilError{
+		Code:     "BSV_INVALID_AMOUNT",
+		Message:  "invalid amount format",
+		ExitCode: sigilerr.ExitInput,
+	}
 
 	// ErrInsufficientFunds indicates insufficient funds for transaction.
-	ErrInsufficientFunds = errors.New("insufficient funds")
+	ErrInsufficientFunds = &sigilerr.SigilError{
+		Code:     "BSV_INSUFFICIENT_FUNDS",
+		Message:  "insufficient funds for transaction",
+		ExitCode: sigilerr.ExitPermission,
+	}
 
 	// Base58 character set (excludes 0, O, I, l).
 	base58Regex = regexp.MustCompile("^[13][1-9A-HJ-NP-Za-km-z]{25,34}$")
@@ -291,7 +301,7 @@ func (c *Client) FormatAmount(amount *big.Int) string {
 
 // ParseAmount converts a human-readable BSV string to big.Int (satoshis).
 func (c *Client) ParseAmount(amount string) (*big.Int, error) {
-	return parseAmount(amount, decimals)
+	return chain.ParseDecimalAmount(amount, decimals, ErrInvalidAmount)
 }
 
 // applyOptions applies optional configuration.
@@ -308,68 +318,4 @@ func (c *Client) applyOptions(opts *ClientOptions) {
 			c.baseURL = fmt.Sprintf("https://api.whatsonchain.com/v1/bsv/%s", opts.Network)
 		}
 	}
-}
-
-// parseAmount is a shared helper for parsing decimal amounts.
-//
-//nolint:gocognit,gocyclo // Decimal parsing requires sequential validation steps
-func parseAmount(amount string, decimalPlaces int) (*big.Int, error) {
-	if amount == "" {
-		return nil, ErrInvalidAmount
-	}
-
-	// Check for negative amounts
-	if strings.HasPrefix(amount, "-") {
-		return nil, ErrInvalidAmount
-	}
-
-	// Split by decimal point
-	parts := strings.Split(amount, ".")
-	if len(parts) > 2 {
-		return nil, ErrInvalidAmount
-	}
-
-	intPart := parts[0]
-	decPart := ""
-	if len(parts) == 2 {
-		decPart = parts[1]
-	}
-
-	// Validate integer part
-	if intPart == "" {
-		intPart = "0"
-	}
-	intVal, ok := new(big.Int).SetString(intPart, 10)
-	if !ok {
-		return nil, ErrInvalidAmount
-	}
-
-	// Scale integer part to satoshis
-	multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimalPlaces)), nil)
-	result := new(big.Int).Mul(intVal, multiplier)
-
-	// Handle decimal part
-	if decPart != "" {
-		// Validate decimal characters
-		for _, c := range decPart {
-			if c < '0' || c > '9' {
-				return nil, ErrInvalidAmount
-			}
-		}
-
-		// Pad or truncate decimal part
-		for len(decPart) < decimalPlaces {
-			decPart += "0"
-		}
-		decPart = decPart[:decimalPlaces]
-
-		decVal, ok := new(big.Int).SetString(decPart, 10)
-		if !ok {
-			return nil, ErrInvalidAmount
-		}
-
-		result = result.Add(result, decVal)
-	}
-
-	return result, nil
 }

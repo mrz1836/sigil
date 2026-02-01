@@ -2,17 +2,27 @@ package chain
 
 import (
 	"context"
-	"errors"
 	"fmt"
+
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // Factory errors.
 var (
 	// ErrUseDirectClient indicates that chain-specific NewClient should be used.
-	ErrUseDirectClient = errors.New("use chain-specific NewClient functions directly")
+	// This is a transitional pattern - the CLI currently creates clients directly.
+	ErrUseDirectClient = &sigilerr.SigilError{
+		Code:     "USE_DIRECT_CLIENT",
+		Message:  "use chain-specific NewClient functions directly",
+		ExitCode: sigilerr.ExitGeneral,
+	}
 
 	// ErrUnsupportedChain indicates the chain is not supported.
-	ErrUnsupportedChain = errors.New("unsupported chain")
+	ErrUnsupportedChain = &sigilerr.SigilError{
+		Code:     "UNSUPPORTED_CHAIN",
+		Message:  "unsupported chain",
+		ExitCode: sigilerr.ExitInput,
+	}
 )
 
 // Factory creates chain clients.

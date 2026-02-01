@@ -6,27 +6,44 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"strings"
 	"sync/atomic"
+
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 var (
 	// ErrRPCRequest indicates an RPC request failed.
-	ErrRPCRequest = errors.New("RPC request failed")
+	ErrRPCRequest = &sigilerr.SigilError{
+		Code:     "RPC_REQUEST_FAILED",
+		Message:  "RPC request failed",
+		ExitCode: sigilerr.ExitGeneral,
+	}
 
 	// ErrRPCResponse indicates an invalid RPC response.
-	ErrRPCResponse = errors.New("invalid RPC response")
+	ErrRPCResponse = &sigilerr.SigilError{
+		Code:     "RPC_INVALID_RESPONSE",
+		Message:  "invalid RPC response",
+		ExitCode: sigilerr.ExitGeneral,
+	}
 
 	// ErrNilResponse indicates a nil result from the RPC.
-	ErrNilResponse = errors.New("nil RPC response")
+	ErrNilResponse = &sigilerr.SigilError{
+		Code:     "RPC_NIL_RESPONSE",
+		Message:  "nil RPC response",
+		ExitCode: sigilerr.ExitGeneral,
+	}
 
 	// ErrInvalidHexNumber indicates an invalid hex number.
-	ErrInvalidHexNumber = errors.New("invalid hex number")
+	ErrInvalidHexNumber = &sigilerr.SigilError{
+		Code:     "RPC_INVALID_HEX",
+		Message:  "invalid hex number",
+		ExitCode: sigilerr.ExitInput,
+	}
 )
 
 // Client is a minimal Ethereum JSON-RPC client.

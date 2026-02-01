@@ -6,13 +6,29 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // Sentinel errors for retry logic.
 var (
-	ErrRetryable   = errors.New("retryable error")
-	ErrTimeout     = errors.New("operation timed out")
-	ErrRateLimited = errors.New("rate limited")
+	ErrRetryable = &sigilerr.SigilError{
+		Code:     "RETRYABLE_ERROR",
+		Message:  "retryable error",
+		ExitCode: sigilerr.ExitGeneral,
+	}
+
+	ErrTimeout = &sigilerr.SigilError{
+		Code:     "TIMEOUT",
+		Message:  "operation timed out",
+		ExitCode: sigilerr.ExitGeneral,
+	}
+
+	ErrRateLimited = &sigilerr.SigilError{
+		Code:     "RATE_LIMITED",
+		Message:  "rate limited",
+		ExitCode: sigilerr.ExitGeneral,
+	}
 )
 
 // RetryConfig configures retry behavior.

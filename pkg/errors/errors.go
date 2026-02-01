@@ -157,6 +157,25 @@ var (
 		Message:  "backup file is corrupted - checksum mismatch",
 		ExitCode: ExitInput,
 	}
+
+	// Chain-specific operation errors.
+	ErrNotImplemented = &SigilError{
+		Code:     "NOT_IMPLEMENTED",
+		Message:  "operation not implemented yet",
+		ExitCode: ExitGeneral,
+	}
+
+	ErrCacheNotFound = &SigilError{
+		Code:     "CACHE_NOT_FOUND",
+		Message:  "no cached data available",
+		ExitCode: ExitNotFound,
+	}
+
+	ErrNotSupported = &SigilError{
+		Code:     "NOT_SUPPORTED",
+		Message:  "operation not supported for this chain",
+		ExitCode: ExitInput,
+	}
 )
 
 // New creates a new SigilError with the given code and message.

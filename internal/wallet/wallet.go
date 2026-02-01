@@ -41,10 +41,10 @@ type Wallet struct {
 	CreatedAt time.Time `json:"created_at"`
 
 	// Addresses contains derived addresses per chain.
-	Addresses map[Chain][]Address `json:"addresses"`
+	Addresses map[ChainID][]Address `json:"addresses"`
 
 	// EnabledChains lists which chains are active for this wallet.
-	EnabledChains []Chain `json:"enabled_chains"`
+	EnabledChains []ChainID `json:"enabled_chains"`
 
 	// DerivationConfig holds chain-specific derivation settings.
 	DerivationConfig DerivationConfig `json:"derivation_config"`
@@ -62,7 +62,7 @@ type DerivationConfig struct {
 	AddressGap int `json:"address_gap"`
 
 	// Paths contains custom derivation paths per chain.
-	Paths map[Chain]string `json:"paths,omitempty"`
+	Paths map[ChainID]string `json:"paths,omitempty"`
 }
 
 // Summary is a lightweight wallet representation for listing.
@@ -74,10 +74,10 @@ type Summary struct {
 	CreatedAt time.Time `json:"created_at"`
 
 	// EnabledChains lists which chains are active.
-	EnabledChains []Chain `json:"enabled_chains"`
+	EnabledChains []ChainID `json:"enabled_chains"`
 
 	// Addresses maps chain to primary address.
-	Addresses map[Chain]string `json:"addresses"`
+	Addresses map[ChainID]string `json:"addresses"`
 }
 
 // ValidateWalletName checks if a wallet name is valid.
@@ -89,24 +89,24 @@ func ValidateWalletName(name string) error {
 }
 
 // NewWallet creates a new wallet with the given name and seed.
-func NewWallet(name string, enabledChains []Chain) (*Wallet, error) {
+func NewWallet(name string, enabledChains []ChainID) (*Wallet, error) {
 	if err := ValidateWalletName(name); err != nil {
 		return nil, err
 	}
 
 	if len(enabledChains) == 0 {
-		enabledChains = []Chain{ChainETH, ChainBSV}
+		enabledChains = []ChainID{ChainETH, ChainBSV}
 	}
 
 	return &Wallet{
 		Name:          name,
 		CreatedAt:     time.Now().UTC(),
-		Addresses:     make(map[Chain][]Address),
+		Addresses:     make(map[ChainID][]Address),
 		EnabledChains: enabledChains,
 		DerivationConfig: DerivationConfig{
 			DefaultAccount: 0,
 			AddressGap:     20,
-			Paths:          make(map[Chain]string),
+			Paths:          make(map[ChainID]string),
 		},
 		Version: 1,
 	}, nil
@@ -145,7 +145,7 @@ func (w *Wallet) DeriveAddresses(seed []byte, count int) error {
 }
 
 // GetPrimaryAddress returns the first address for a chain.
-func (w *Wallet) GetPrimaryAddress(chain Chain) (string, bool) {
+func (w *Wallet) GetPrimaryAddress(chain ChainID) (string, bool) {
 	addresses, ok := w.Addresses[chain]
 	if !ok || len(addresses) == 0 {
 		return "", false
@@ -155,7 +155,7 @@ func (w *Wallet) GetPrimaryAddress(chain Chain) (string, bool) {
 
 // ToSummary creates a summary representation of the wallet.
 func (w *Wallet) ToSummary() Summary {
-	addresses := make(map[Chain]string)
+	addresses := make(map[ChainID]string)
 	for chain := range w.Addresses {
 		if addr, ok := w.GetPrimaryAddress(chain); ok {
 			addresses[chain] = addr

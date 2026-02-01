@@ -19,7 +19,7 @@ func TestStorage_SaveAndLoad(t *testing.T) {
 	password := "test-password-123"
 
 	// Create test wallet
-	wallet, err := NewWallet("test", []Chain{ChainETH, ChainBSV})
+	wallet, err := NewWallet("test", []ChainID{ChainETH, ChainBSV})
 	require.NoError(t, err)
 
 	// Generate test seed
@@ -68,7 +68,7 @@ func TestStorage_LoadWrongPassword(t *testing.T) {
 	storage := NewFileStorage(tmpDir)
 
 	// Create and save wallet
-	wallet, err := NewWallet("test", []Chain{ChainETH})
+	wallet, err := NewWallet("test", []ChainID{ChainETH})
 	require.NoError(t, err)
 
 	mnemonic, _ := GenerateMnemonic(12)
@@ -107,7 +107,7 @@ func TestStorage_Exists(t *testing.T) {
 	assert.False(t, exists)
 
 	// Create wallet
-	wallet, _ := NewWallet("test", []Chain{ChainETH})
+	wallet, _ := NewWallet("test", []ChainID{ChainETH})
 	mnemonic, _ := GenerateMnemonic(12)
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, wallet.DeriveAddresses(seed, 1))
@@ -133,7 +133,7 @@ func TestStorage_List(t *testing.T) {
 
 	// Create wallets
 	for _, name := range []string{"wallet1", "wallet2", "wallet3"} {
-		w, _ := NewWallet(name, []Chain{ChainETH})
+		w, _ := NewWallet(name, []ChainID{ChainETH})
 		mnemonic, _ := GenerateMnemonic(12)
 		seed, _ := MnemonicToSeed(mnemonic, "")
 		require.NoError(t, w.DeriveAddresses(seed, 1))
@@ -157,7 +157,7 @@ func TestStorage_Delete(t *testing.T) {
 	storage := NewFileStorage(tmpDir)
 
 	// Create wallet
-	w, _ := NewWallet("test", []Chain{ChainETH})
+	w, _ := NewWallet("test", []ChainID{ChainETH})
 	mnemonic, _ := GenerateMnemonic(12)
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, w.DeriveAddresses(seed, 1))
@@ -195,7 +195,7 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 	storage := NewFileStorage(tmpDir)
 
 	// Create first wallet
-	wallet1, _ := NewWallet("test", []Chain{ChainETH})
+	wallet1, _ := NewWallet("test", []ChainID{ChainETH})
 	mnemonic1, _ := GenerateMnemonic(12)
 	seed1, _ := MnemonicToSeed(mnemonic1, "")
 	require.NoError(t, wallet1.DeriveAddresses(seed1, 1))
@@ -204,7 +204,7 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to save another wallet with same name
-	wallet2, _ := NewWallet("test", []Chain{ChainBSV})
+	wallet2, _ := NewWallet("test", []ChainID{ChainBSV})
 	mnemonic2, _ := GenerateMnemonic(12)
 	seed2, _ := MnemonicToSeed(mnemonic2, "")
 	require.NoError(t, wallet2.DeriveAddresses(seed2, 1))

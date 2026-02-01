@@ -96,7 +96,7 @@ func TestGetBalance(t *testing.T) {
 		ctx := context.Background()
 		_, err = client.GetBalance(ctx, "invalid")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid address")
+		assert.Contains(t, err.Error(), "invalid Ethereum address")
 	})
 }
 

@@ -125,7 +125,7 @@ func TestDeriveAddress_UnsupportedChain(t *testing.T) {
 	t.Parallel()
 	seed := getTestSeed(t)
 
-	_, err := DeriveAddress(seed, Chain("unknown"), 0, 0)
+	_, err := DeriveAddress(seed, ChainID("unknown"), 0, 0)
 	assert.Error(t, err)
 }
 
@@ -156,7 +156,7 @@ func TestDerivePrivateKey_BSV(t *testing.T) {
 func TestGetDerivationPath(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		chain    Chain
+		chain    ChainID
 		account  uint32
 		index    uint32
 		expected string
@@ -182,7 +182,7 @@ func TestGetDerivationPath(t *testing.T) {
 func TestGetCoinType(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		chain    Chain
+		chain    ChainID
 		expected uint32
 	}{
 		{ChainETH, 60},

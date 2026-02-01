@@ -14,18 +14,19 @@ import (
 	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
 )
 
-// Chain represents a supported blockchain.
-type Chain string
+// ChainID represents a supported blockchain identifier.
+// This is distinct from chain.Chain which is an interface for blockchain operations.
+type ChainID string
 
 const (
 	// ChainETH is the Ethereum chain.
-	ChainETH Chain = "eth"
+	ChainETH ChainID = "eth"
 	// ChainBSV is the Bitcoin SV chain.
-	ChainBSV Chain = "bsv"
+	ChainBSV ChainID = "bsv"
 	// ChainBTC is the Bitcoin chain (future).
-	ChainBTC Chain = "btc"
+	ChainBTC ChainID = "btc"
 	// ChainBCH is the Bitcoin Cash chain (future).
-	ChainBCH Chain = "bch"
+	ChainBCH ChainID = "bch"
 )
 
 // secp256k1 curve parameters for public key decompression
@@ -76,7 +77,7 @@ type Address struct {
 }
 
 // CoinType returns the BIP44 coin type for this chain.
-func (c Chain) CoinType() uint32 {
+func (c ChainID) CoinType() uint32 {
 	switch c {
 	case ChainETH:
 		return 60
@@ -92,13 +93,13 @@ func (c Chain) CoinType() uint32 {
 }
 
 // GetDerivationPath returns the full BIP44 derivation path for a chain.
-func GetDerivationPath(chain Chain, account, index uint32) string {
+func GetDerivationPath(chain ChainID, account, index uint32) string {
 	coinType := chain.CoinType()
 	return fmt.Sprintf("m/44'/%d'/%d'/0/%d", coinType, account, index)
 }
 
 // DeriveAddress derives an address for the given chain and index from a BIP39 seed.
-func DeriveAddress(seed []byte, chain Chain, account, index uint32) (*Address, error) {
+func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address, error) {
 	// Create master key from seed
 	masterKey, err := bip32.NewMasterKey(seed)
 	if err != nil {
@@ -135,7 +136,7 @@ func DeriveAddress(seed []byte, chain Chain, account, index uint32) (*Address, e
 
 // DerivePrivateKey derives a private key for signing operations.
 // The returned key must be zeroed by the caller after use.
-func DerivePrivateKey(seed []byte, chain Chain, account, index uint32) ([]byte, error) {
+func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte, error) {
 	masterKey, err := bip32.NewMasterKey(seed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
@@ -154,7 +155,7 @@ func DerivePrivateKey(seed []byte, chain Chain, account, index uint32) ([]byte, 
 
 // deriveBIP44Key derives a key following BIP44 path structure.
 // Path: m / purpose' / coin_type' / account' / change / address_index
-func deriveBIP44Key(masterKey *bip32.Key, chain Chain, account, index uint32) (*bip32.Key, error) {
+func deriveBIP44Key(masterKey *bip32.Key, chain ChainID, account, index uint32) (*bip32.Key, error) {
 	coinType := chain.CoinType()
 
 	// m/44' (purpose)
@@ -410,7 +411,7 @@ func decompressPublicKey(compressed []byte) ([]byte, error) {
 
 // DerivePrivateKeyForChain derives a private key for a specific chain at index.
 // Uses account 0, which is the default. The returned key must be zeroed after use.
-func DerivePrivateKeyForChain(seed []byte, chain Chain, index uint32) ([]byte, error) {
+func DerivePrivateKeyForChain(seed []byte, chain ChainID, index uint32) ([]byte, error) {
 	return DerivePrivateKey(seed, chain, 0, index)
 }
 

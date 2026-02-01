@@ -190,19 +190,26 @@ func FormatTypoSuggestions(typos []TypoInfo) string {
 		return ""
 	}
 
-	var lines []string
-	for _, typo := range typos {
-		// Word position is 1-indexed for human readability
-		wordNum := typo.Index + 1
-		var line string
-		if typo.Suggestion != "" {
-			line = "Word " + itoa(wordNum) + ": '" + typo.Word + "' - did you mean '" + typo.Suggestion + "'?"
-		} else {
-			line = "Word " + itoa(wordNum) + ": '" + typo.Word + "' is not a valid BIP39 word"
+	var b strings.Builder
+	for i, typo := range typos {
+		if i > 0 {
+			b.WriteByte('\n')
 		}
-		lines = append(lines, line)
+		// Word position is 1-indexed for human readability
+		b.WriteString("Word ")
+		b.WriteString(itoa(typo.Index + 1))
+		b.WriteString(": '")
+		b.WriteString(typo.Word)
+		b.WriteByte('\'')
+		if typo.Suggestion != "" {
+			b.WriteString(" - did you mean '")
+			b.WriteString(typo.Suggestion)
+			b.WriteString("'?")
+		} else {
+			b.WriteString(" is not a valid BIP39 word")
+		}
 	}
-	return strings.Join(lines, "\n")
+	return b.String()
 }
 
 // itoa converts an int to string without importing strconv.

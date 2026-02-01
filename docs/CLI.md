@@ -483,7 +483,7 @@ Environment variables override configuration file settings.
 | `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL |
 | `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional) |
 | `SIGIL_OUTPUT_FORMAT` | Default output format (`text`, `json`, `auto`) |
-| `SIGIL_VERBOSE` | Enable verbose output (`true`, `false`, `1`, `0`) |
+| `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
 | `SIGIL_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
 | `NO_COLOR` | Disable colored output (any value) |
 
@@ -513,8 +513,8 @@ output:
 
 # Logging settings
 logging:
-  level: info             # debug, info, warn, error
-  file: ""                # Optional log file path
+  level: error            # debug, info, warn, error
+  file: ~/.sigil/sigil.log
 
 # Network settings
 networks:

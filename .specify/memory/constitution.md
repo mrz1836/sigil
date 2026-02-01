@@ -1,15 +1,12 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: N/A → 1.0.0 (initial constitution)
-Modified Principles: None (initial creation)
-Added Sections:
-  - 7 Core Principles (Security First, Full Sovereignty, Power User UX, Transparency,
-    Fork Awareness, CLI Design, Testing Discipline)
-  - Security Requirements section
-  - Development Workflow section
-  - Governance section
-Removed Sections: None (initial creation)
+Version Change: 1.0.0 → 1.1.0 (minor: clarified fork scanner scope)
+Modified Principles:
+  - V. Fork Awareness: Changed fork scanner from MUST to SHOULD for MVP compatibility.
+    Added clarification that BTC path derivation is required even without BTC operations.
+Added Sections: None
+Removed Sections: None
 Templates Requiring Updates:
   - ✅ .specify/templates/plan-template.md (no updates needed - Constitution Check is generic)
   - ✅ .specify/templates/spec-template.md (no updates needed - compatible structure)
@@ -86,12 +83,14 @@ keys across all supported chains from a single wallet.
 
 **Non-negotiables:**
 - BIP44 derivation paths MUST be chain-specific (BSV: m/44'/236'/0', BTC: m/44'/0'/0', ETH: m/44'/60'/0')
-- Fork scanner MUST check for value across all enabled chains
+- Fork scanner SHOULD check for value across all enabled chains (MVP: manual balance check per chain; automated fork scanning in Phase 2+)
 - Chain-specific address formats MUST be validated and displayed correctly
 - Same private key MUST work across compatible chains without re-import
+- Key derivation MUST include BTC path even when BTC chain operations are not yet implemented (enables seamless Phase 2 upgrade)
 
 **Rationale:** Users have funds scattered across forks. A multi-chain wallet that ignores
-this reality fails its core purpose.
+this reality fails its core purpose. MVP focuses on key management foundation; automated
+fork scanning is additive and can follow in Phase 2.
 
 ### VI. CLI Design Standards
 
@@ -188,4 +187,4 @@ Amendments require:
 Deviations MUST be explicitly justified in the Complexity Tracking section of
 implementation plans.
 
-**Version**: 1.0.0 | **Ratified**: 2026-01-31 | **Last Amended**: 2026-01-31
+**Version**: 1.1.0 | **Ratified**: 2026-01-31 | **Last Amended**: 2026-01-31

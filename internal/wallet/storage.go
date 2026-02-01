@@ -218,6 +218,37 @@ func (s *FileStorage) Delete(name string) error {
 	return nil
 }
 
+// LoadMetadata reads wallet metadata without decrypting the seed.
+// This is useful for displaying wallet info without requiring the password.
+func (s *FileStorage) LoadMetadata(name string) (*Wallet, error) {
+	// Validate wallet name
+	if err := ValidateWalletName(name); err != nil {
+		return nil, err
+	}
+
+	// Check if wallet exists
+	walletPath := s.walletPath(name)
+	if _, err := os.Stat(walletPath); os.IsNotExist(err) {
+		return nil, ErrWalletNotFound
+	}
+
+	// Read wallet file
+	//nolint:gosec // G304: Path validated by ValidateWalletName + walletPath
+	data, err := os.ReadFile(walletPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading wallet file: %w", err)
+	}
+
+	// Unmarshal JSON
+	var wf walletFile
+	err = json.Unmarshal(data, &wf)
+	if err != nil {
+		return nil, fmt.Errorf("parsing wallet file: %w", err)
+	}
+
+	return wf.Wallet, nil
+}
+
 // walletPath returns the full path for a wallet file.
 // The wallet name has already been validated by ValidateWalletName to match
 // [a-zA-Z0-9_]{1,64}, which prevents path traversal attacks.

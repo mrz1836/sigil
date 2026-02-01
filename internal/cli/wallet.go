@@ -16,6 +16,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -400,27 +401,8 @@ func runWalletShow(cmd *cobra.Command, args []string) error {
 
 	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
 
-	// Check if wallet exists
-	exists, err := storage.Exists(name)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
-		)
-	}
-
-	// Prompt for password
-	password, err := promptPassword("Enter wallet password: ")
-	if err != nil {
-		return err
-	}
-	defer wallet.ZeroBytes(password)
-
-	// Load wallet
-	w, seed, err := storage.Load(name, password)
+	// Load wallet (using session if available)
+	w, seed, err := loadWalletWithSession(name, storage, cmd)
 	if err != nil {
 		return err
 	}
@@ -862,4 +844,75 @@ func promptConfirmation() bool {
 
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
+}
+
+// loadWalletWithSession loads a wallet using cached session if available.
+// If no valid session exists, it prompts for password and starts a new session.
+//
+//nolint:gocognit,gocyclo,nestif // Session handling requires multiple branches
+func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
+	// Check if wallet exists
+	exists, existsErr := storage.Exists(name)
+	if existsErr != nil {
+		return nil, nil, existsErr
+	}
+	if !exists {
+		return nil, nil, sigilerr.WithSuggestion(
+			wallet.ErrWalletNotFound,
+			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
+		)
+	}
+
+	mgr := getSessionManager()
+
+	// Check if sessions are enabled in config
+	sessionEnabled := cfg != nil && cfg.Security.SessionEnabled
+
+	// Try to use existing session
+	if sessionEnabled && mgr != nil && mgr.Available() && mgr.HasValidSession(name) {
+		seed, sess, getErr := mgr.GetSession(name)
+		if getErr == nil {
+			// Load wallet metadata (doesn't require password)
+			wlt, loadErr := storage.LoadMetadata(name)
+			if loadErr != nil {
+				wallet.ZeroBytes(seed)
+				return nil, nil, loadErr
+			}
+			out(cmd.ErrOrStderr(), "[Using cached session, expires in %s]\n", formatDuration(sess.TTL()))
+			return wlt, seed, nil
+		}
+		// Session invalid or error - fall through to password prompt
+	}
+
+	// Prompt for password
+	password, promptErr := promptPassword("Enter wallet password: ")
+	if promptErr != nil {
+		return nil, nil, promptErr
+	}
+	defer wallet.ZeroBytes(password)
+
+	// Load wallet with password
+	wlt, seed, loadErr := storage.Load(name, password)
+	if loadErr != nil {
+		return nil, nil, loadErr
+	}
+
+	// Start a new session if sessions are enabled
+	if sessionEnabled && mgr != nil && mgr.Available() {
+		ttl := time.Duration(cfg.Security.SessionTTLMinutes) * time.Minute
+		if ttl < session.MinTTL {
+			ttl = session.DefaultTTL
+		}
+
+		if startErr := mgr.StartSession(name, seed, ttl); startErr != nil {
+			// Log warning but don't fail - user can still proceed without session
+			if logger != nil {
+				logger.Debug("failed to start session: %v", startErr)
+			}
+		} else {
+			out(cmd.ErrOrStderr(), "[Session started, expires in %s]\n", formatDuration(ttl))
+		}
+	}
+
+	return wlt, seed, nil
 }

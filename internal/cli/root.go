@@ -14,6 +14,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -88,7 +90,7 @@ func ExitCode(err error) int {
 
 // initGlobals initializes global configuration, logger, and formatter.
 //
-//nolint:gocognit // Initialization logic requires multiple conditional branches
+//nolint:gocognit,gocyclo // Initialization logic requires multiple conditional branches
 func initGlobals(cmd *cobra.Command) error {
 	// Determine home directory
 	home := homeDir
@@ -131,6 +133,13 @@ func initGlobals(cmd *cobra.Command) error {
 		cfg.Output.DefaultFormat = outputFormat
 	}
 
+	// Expand tilde in Home path if present
+	if strings.HasPrefix(cfg.Home, "~/") {
+		if userHome, homeErr := os.UserHomeDir(); homeErr == nil {
+			cfg.Home = filepath.Join(userHome, cfg.Home[2:])
+		}
+	}
+
 	// Initialize logger
 	logLevel := config.ParseLogLevel(cfg.Logging.Level)
 	logger, err = config.NewLogger(logLevel, cfg.Logging.File)
@@ -150,6 +159,9 @@ func initGlobals(cmd *cobra.Command) error {
 	// Also store in cobra context for context-based access
 	// This allows commands to use GetCmdContext(cmd) instead of globals
 	SetCmdContext(cmd, cmdCtx)
+
+	// Initialize session manager for wallet authentication caching
+	initSessionManager()
 
 	return nil
 }

@@ -108,9 +108,9 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
-	// Load wallet and get private key
+	// Load wallet and get private key (using session if available)
 	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	wlt, seed, err := loadWalletWithPassword(txWallet, storage, cmd)
+	wlt, seed, err := loadWalletWithSession(txWallet, storage, cmd)
 	if err != nil {
 		return err
 	}
@@ -404,36 +404,6 @@ func displayBSVTxResultJSON(w interface {
 // amountToBigInt converts uint64 to *big.Int.
 func amountToBigInt(amount uint64) *big.Int {
 	return new(big.Int).SetUint64(amount)
-}
-
-// loadWalletWithPassword loads a wallet after prompting for password.
-func loadWalletWithPassword(name string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
-	exists, err := storage.Exists(name)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !exists {
-		return nil, nil, sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
-		)
-	}
-
-	// Prompt for password
-	password, err := promptPassword("Enter wallet password: ")
-	if err != nil {
-		return nil, nil, err
-	}
-	defer wallet.ZeroBytes(password)
-
-	// Load wallet
-	wlt, seed, err := storage.Load(name, password)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_ = cmd // Used for potential output
-	return wlt, seed, nil
 }
 
 // resolveToken resolves a token symbol to its contract address and decimals.

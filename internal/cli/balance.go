@@ -87,30 +87,10 @@ func init() {
 
 //nolint:gocognit,gocyclo // CLI entry point has inherent complexity
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
-	// Load wallet to get addresses
+	// Load wallet to get addresses (using session if available)
 	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
 
-	// Check if wallet exists
-	exists, err := storage.Exists(balanceWalletName)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", balanceWalletName),
-		)
-	}
-
-	// Prompt for password
-	password, err := promptPassword("Enter wallet password: ")
-	if err != nil {
-		return err
-	}
-	defer wallet.ZeroBytes(password)
-
-	// Load wallet
-	w, seed, err := storage.Load(balanceWalletName, password)
+	w, seed, err := loadWalletWithSession(balanceWalletName, storage, cmd)
 	if err != nil {
 		return err
 	}
@@ -170,6 +150,18 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 				}
 				response.Balances = append(response.Balances, result)
 			}
+
+			// Add placeholder for failed fetches with no cache data
+			if fetchErr != nil && len(balances) == 0 {
+				result := BalanceResult{
+					Chain:   string(chainID),
+					Address: addr.Address,
+					Balance: "N/A",
+					Symbol:  getChainSymbol(chainID),
+					Stale:   true,
+				}
+				response.Balances = append(response.Balances, result)
+			}
 		}
 	}
 
@@ -221,8 +213,16 @@ func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.B
 	// Get ETH RPC URL from config
 	rpcURL := cfg.Networks.ETH.RPC
 	if rpcURL == "" {
-		// Try to get from cached data
-		return getCachedETHBalances(address, balanceCache)
+		// RPC explicitly disabled - try cache first
+		cached, isStale, cacheErr := getCachedETHBalances(address, balanceCache)
+		if cacheErr == nil {
+			return cached, isStale, nil
+		}
+		// No cache, return clear error
+		return nil, true, sigilerr.WithSuggestion(
+			sigilerr.ErrNetworkError,
+			"ETH RPC not configured. Set SIGIL_ETH_RPC or configure networks.eth.rpc in config.yaml",
+		)
 	}
 
 	client, err := eth.NewClient(rpcURL, nil)
@@ -231,8 +231,15 @@ func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.B
 	}
 	defer client.Close()
 
-	// Fetch ETH balance
-	ethBalance, err := client.GetNativeBalance(ctx, address)
+	// Fetch ETH balance with retry logic for transient failures
+	ethBalance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
+		bal, fetchErr := client.GetNativeBalance(ctx, address)
+		if fetchErr != nil {
+			// Wrap network errors as retryable
+			return nil, chain.WrapRetryable(fetchErr)
+		}
+		return bal, nil
+	})
 	if err != nil {
 		// Fall back to cache
 		cachedEntries, isStale, _ := getCachedETHBalances(address, balanceCache)
@@ -348,6 +355,22 @@ func formatCacheAge(t time.Time) string {
 		return fmt.Sprintf("%dh ago", int(age.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(age.Hours()/24))
+}
+
+// getChainSymbol returns the symbol for a given chain ID.
+func getChainSymbol(chainID wallet.ChainID) string {
+	switch chainID {
+	case wallet.ChainETH:
+		return "ETH"
+	case wallet.ChainBSV:
+		return "BSV"
+	case wallet.ChainBTC:
+		return "BTC"
+	case wallet.ChainBCH:
+		return "BCH"
+	default:
+		return "???"
+	}
 }
 
 // outputBalanceJSON outputs balances in JSON format.

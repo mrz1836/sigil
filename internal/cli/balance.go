@@ -187,7 +187,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 // fetchBalancesForAddress fetches balances for a single address.
 // Returns balances, whether data is stale, and any error.
-func fetchBalancesForAddress(ctx context.Context, chainID wallet.Chain, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
+func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
 	var entries []cache.BalanceCacheEntry
 	var stale bool
 	var fetchErr error

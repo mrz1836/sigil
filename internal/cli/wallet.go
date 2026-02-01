@@ -168,7 +168,7 @@ func generateWalletSeed(wordCount int, usePassphrase bool) (mnemonic string, see
 
 // createAndSaveWallet creates wallet, derives addresses, and saves to storage.
 func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage) (*wallet.Wallet, error) {
-	w, err := wallet.NewWallet(name, []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +547,7 @@ func getSeedForRestore(cmd *cobra.Command) ([]byte, error) {
 
 // createWalletWithAddresses creates a new wallet and derives addresses.
 func createWalletWithAddresses(name string, seed []byte) (*wallet.Wallet, error) {
-	w, err := wallet.NewWallet(name, []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	if err != nil {
 		return nil, err
 	}

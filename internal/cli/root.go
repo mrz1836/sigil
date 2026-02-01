@@ -8,6 +8,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -59,15 +60,21 @@ Example:
 func Execute() error {
 	err := rootCmd.Execute()
 	if err != nil {
-		// Format and print error
-		if formatter != nil {
-			_ = output.FormatError(os.Stderr, err, formatter.Format())
-		} else {
-			_ = output.FormatError(os.Stderr, err, output.FormatText)
-		}
+		formatErr(err)
 		return err
 	}
 	return nil
+}
+
+// formatErr prints the error with proper formatting.
+func formatErr(err error) {
+	format := output.FormatText
+	if formatter != nil {
+		format = formatter.Format()
+	}
+	if fmtErr := output.FormatError(os.Stderr, err, format); fmtErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v (formatting failed: %v)\n", err, fmtErr)
+	}
 }
 
 // ExitCode returns the appropriate exit code for an error.
@@ -133,7 +140,9 @@ func initGlobals() error {
 // cleanup releases resources.
 func cleanup() {
 	if logger != nil {
-		_ = logger.Close()
+		if closeErr := logger.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close logger: %v\n", closeErr)
+		}
 	}
 }
 

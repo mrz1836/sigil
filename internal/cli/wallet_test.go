@@ -117,7 +117,7 @@ func TestWalletCreateDuplicatePrevention(t *testing.T) {
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 
 	// Create initial wallet
-	w, err := wallet.NewWallet("existing", []wallet.Chain{wallet.ChainETH})
+	w, err := wallet.NewWallet("existing", []wallet.ChainID{wallet.ChainETH})
 	require.NoError(t, err)
 
 	mnemonic, err := wallet.GenerateMnemonic(12)
@@ -176,7 +176,7 @@ func TestCreateAndSaveWallet(t *testing.T) {
 	defer wallet.ZeroBytes(seed)
 
 	// Create wallet directly (bypassing password prompt)
-	w, err := wallet.NewWallet("testcreate", []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet("testcreate", []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err)
 
 	err = w.DeriveAddresses(seed, 1)
@@ -203,7 +203,7 @@ func TestCreateAndSaveWallet(t *testing.T) {
 	defer wallet.ZeroBytes(loadedSeed)
 
 	assert.Equal(t, "testcreate", loadedW.Name)
-	assert.Equal(t, []wallet.Chain{wallet.ChainETH, wallet.ChainBSV}, loadedW.EnabledChains)
+	assert.Equal(t, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV}, loadedW.EnabledChains)
 	assert.Len(t, loadedW.Addresses[wallet.ChainETH], 1)
 	assert.Len(t, loadedW.Addresses[wallet.ChainBSV], 1)
 
@@ -239,7 +239,7 @@ func TestWalletListMultiple(t *testing.T) {
 	// Create multiple wallets
 	walletNames := []string{"wallet_a", "wallet_b", "wallet_c"}
 	for _, name := range walletNames {
-		w, err := wallet.NewWallet(name, []wallet.Chain{wallet.ChainETH})
+		w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH})
 		require.NoError(t, err)
 
 		mnemonic, _ := wallet.GenerateMnemonic(12)
@@ -293,7 +293,7 @@ func TestDisplayWalletAddresses(t *testing.T) {
 	// Create test wallet with addresses
 	w := &wallet.Wallet{
 		Name: "test",
-		Addresses: map[wallet.Chain][]wallet.Address{
+		Addresses: map[wallet.ChainID][]wallet.Address{
 			wallet.ChainETH: {
 				{Index: 0, Address: "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0", Path: "m/44'/60'/0'/0/0"},
 			},
@@ -376,7 +376,7 @@ func TestDisplayWalletJSON(t *testing.T) {
 	w := &wallet.Wallet{
 		Name:    "test",
 		Version: 1,
-		Addresses: map[wallet.Chain][]wallet.Address{
+		Addresses: map[wallet.ChainID][]wallet.Address{
 			wallet.ChainETH: {
 				{Index: 0, Address: "0xtest", Path: "m/44'/60'/0'/0/0"},
 			},
@@ -418,7 +418,7 @@ func TestWalletCreateE2E(t *testing.T) {
 	defer wallet.ZeroBytes(seed)
 
 	// Step 3: Create wallet
-	w, err := wallet.NewWallet(walletName, []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet(walletName, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err, "should create wallet")
 
 	// Step 4: Derive addresses
@@ -454,7 +454,7 @@ func TestWalletCreateE2E(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed2)
 
-	w2, err := wallet.NewWallet("verification", []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w2, err := wallet.NewWallet("verification", []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err)
 	require.NoError(t, w2.DeriveAddresses(seed2, 1))
 
@@ -488,7 +488,7 @@ func TestWalletCreate24Words(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)
 
-	w, err := wallet.NewWallet("wallet24", []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet("wallet24", []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err)
 	require.NoError(t, w.DeriveAddresses(seed, 1))
 
@@ -521,7 +521,7 @@ func TestWalletRestoreFromMnemonic(t *testing.T) {
 	defer wallet.ZeroBytes(seed)
 
 	// Create wallet
-	w, err := wallet.NewWallet(walletName, []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet(walletName, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err)
 
 	// Derive addresses
@@ -542,7 +542,7 @@ func TestWalletRestoreFromMnemonic(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed2)
 
-	w2, err := wallet.NewWallet("verification", []wallet.Chain{wallet.ChainETH, wallet.ChainBSV})
+	w2, err := wallet.NewWallet("verification", []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	require.NoError(t, err)
 	require.NoError(t, w2.DeriveAddresses(seed2, 1))
 
@@ -642,7 +642,7 @@ func TestWalletRestoreDuplicatePrevention(t *testing.T) {
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 
 	// Create an existing wallet
-	existingWallet, err := wallet.NewWallet("existing", []wallet.Chain{wallet.ChainETH})
+	existingWallet, err := wallet.NewWallet("existing", []wallet.ChainID{wallet.ChainETH})
 	require.NoError(t, err)
 
 	mnemonic, err := wallet.GenerateMnemonic(12)
@@ -660,7 +660,7 @@ func TestWalletRestoreDuplicatePrevention(t *testing.T) {
 	assert.True(t, exists)
 
 	// Try to save another wallet with the same name
-	newWallet, err := wallet.NewWallet("existing", []wallet.Chain{wallet.ChainBSV})
+	newWallet, err := wallet.NewWallet("existing", []wallet.ChainID{wallet.ChainBSV})
 	require.NoError(t, err)
 	newSeed, err := wallet.MnemonicToSeed(mnemonic, "different")
 	require.NoError(t, err)

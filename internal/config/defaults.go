@@ -1,8 +1,17 @@
 package config
 
 // DefaultETHRPCURL is the default Ethereum RPC endpoint.
-// Uses Cloudflare's public gateway which requires no API key.
-const DefaultETHRPCURL = "https://cloudflare-eth.com"
+// Uses PublicNode (Allnodes), a privacy-first provider that requires no API key.
+const DefaultETHRPCURL = "https://ethereum-rpc.publicnode.com"
+
+// DefaultETHFallbackRPCs are backup Ethereum RPC endpoints tried when the primary fails.
+// All are reputable, free, no-API-key providers with strong privacy policies.
+//
+//nolint:gochecknoglobals // Configuration default constant, same pattern as DefaultETHRPCURL
+var DefaultETHFallbackRPCs = []string{
+	"https://rpc.ankr.com/eth", // Ankr - well-established, claims no IP correlation
+	"https://1rpc.io/eth",      // 1RPC - zero-trace privacy, burn-after-relaying
+}
 
 // Defaults returns the default configuration.
 func Defaults() *Config {
@@ -16,9 +25,10 @@ func Defaults() *Config {
 		},
 		Networks: NetworksConfig{
 			ETH: ETHNetworkConfig{
-				Enabled: true,
-				RPC:     DefaultETHRPCURL,
-				ChainID: 1,
+				Enabled:      true,
+				RPC:          DefaultETHRPCURL,
+				FallbackRPCs: DefaultETHFallbackRPCs,
+				ChainID:      1,
 				Tokens: []TokenConfig{
 					{
 						Symbol:   "USDC",

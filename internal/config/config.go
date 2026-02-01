@@ -38,10 +38,11 @@ type NetworksConfig struct {
 
 // ETHNetworkConfig defines Ethereum network settings.
 type ETHNetworkConfig struct {
-	Enabled bool          `yaml:"enabled"`
-	RPC     string        `yaml:"rpc"`
-	ChainID int           `yaml:"chain_id"`
-	Tokens  []TokenConfig `yaml:"tokens"`
+	Enabled      bool          `yaml:"enabled"`
+	RPC          string        `yaml:"rpc"`
+	FallbackRPCs []string      `yaml:"fallback_rpcs,omitempty"`
+	ChainID      int           `yaml:"chain_id"`
+	Tokens       []TokenConfig `yaml:"tokens"`
 }
 
 // TokenConfig defines an ERC-20 token to track.
@@ -155,6 +156,11 @@ func (c *Config) GetETHRPC() string {
 	return c.Networks.ETH.RPC
 }
 
+// GetETHFallbackRPCs returns the fallback Ethereum RPC URLs.
+func (c *Config) GetETHFallbackRPCs() []string {
+	return c.Networks.ETH.FallbackRPCs
+}
+
 // GetBSVAPIKey returns the BSV API key.
 func (c *Config) GetBSVAPIKey() string {
 	return c.Networks.BSV.APIKey
@@ -178,6 +184,11 @@ func (c *Config) GetOutputFormat() string {
 // IsVerbose returns true if verbose output is enabled.
 func (c *Config) IsVerbose() bool {
 	return c.Output.Verbose
+}
+
+// GetSecurity returns the security configuration.
+func (c *Config) GetSecurity() SecurityConfig {
+	return c.Security
 }
 
 // DefaultHome returns the default sigil home directory.

@@ -76,7 +76,33 @@ func TestDefaults_ETHRPCDefault(t *testing.T) {
 	t.Parallel()
 	cfg := config.Defaults()
 	assert.Equal(t, config.DefaultETHRPCURL, cfg.Networks.ETH.RPC)
-	assert.Equal(t, "https://cloudflare-eth.com", cfg.Networks.ETH.RPC)
+	assert.Equal(t, "https://ethereum-rpc.publicnode.com", cfg.Networks.ETH.RPC)
+}
+
+func TestDefaults_ETHFallbackRPCs(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Equal(t, config.DefaultETHFallbackRPCs, cfg.Networks.ETH.FallbackRPCs)
+	require.Len(t, cfg.Networks.ETH.FallbackRPCs, 2)
+	assert.Equal(t, "https://rpc.ankr.com/eth", cfg.Networks.ETH.FallbackRPCs[0])
+	assert.Equal(t, "https://1rpc.io/eth", cfg.Networks.ETH.FallbackRPCs[1])
+}
+
+func TestConfig_GetETHFallbackRPCs(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	fallbacks := cfg.GetETHFallbackRPCs()
+	require.Len(t, fallbacks, 2)
+	assert.Equal(t, "https://rpc.ankr.com/eth", fallbacks[0])
+	assert.Equal(t, "https://1rpc.io/eth", fallbacks[1])
+}
+
+func TestConfig_GetETHFallbackRPCs_Empty(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Networks.ETH.FallbackRPCs = nil
+	fallbacks := cfg.GetETHFallbackRPCs()
+	assert.Empty(t, fallbacks)
 }
 
 func TestLoad_FileNotFound(t *testing.T) {

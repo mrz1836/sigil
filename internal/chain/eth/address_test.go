@@ -58,8 +58,10 @@ var eip55TestVectors = []struct {
 }
 
 func TestToChecksumAddress(t *testing.T) {
+	t.Parallel()
 	for _, tc := range eip55TestVectors {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := ToChecksumAddress(tc.address)
 			assert.Equal(t, tc.expected, result)
 		})
@@ -67,6 +69,7 @@ func TestToChecksumAddress(t *testing.T) {
 }
 
 func TestToChecksumAddress_LowerInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		lower    string
 		expected string
@@ -91,6 +94,7 @@ func TestToChecksumAddress_LowerInput(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.lower, func(t *testing.T) {
+			t.Parallel()
 			result := ToChecksumAddress(tc.lower)
 			assert.Equal(t, tc.expected, result)
 		})
@@ -98,6 +102,7 @@ func TestToChecksumAddress_LowerInput(t *testing.T) {
 }
 
 func TestValidateChecksumAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -172,6 +177,7 @@ func TestValidateChecksumAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			err := ValidateChecksumAddress(tc.address)
 			if tc.valid {
 				assert.NoError(t, err)
@@ -183,12 +189,14 @@ func TestValidateChecksumAddress(t *testing.T) {
 }
 
 func TestValidateChecksumAddress_Error(t *testing.T) {
+	t.Parallel()
 	err := ValidateChecksumAddress("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "checksum")
 }
 
 func TestIsValidAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -206,6 +214,7 @@ func TestIsValidAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			valid := IsValidAddress(tc.address)
 			assert.Equal(t, tc.valid, valid)
 		})
@@ -213,6 +222,7 @@ func TestIsValidAddress(t *testing.T) {
 }
 
 func TestNormalizeAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -253,6 +263,7 @@ func TestNormalizeAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := NormalizeAddress(tc.input)
 			if tc.hasError {
 				assert.Error(t, err)
@@ -265,6 +276,7 @@ func TestNormalizeAddress(t *testing.T) {
 }
 
 func TestZeroAddress(t *testing.T) {
+	t.Parallel()
 	// The zero address should have valid checksum
 	zeroAddr := "0x0000000000000000000000000000000000000000"
 	checksummed := ToChecksumAddress(zeroAddr)

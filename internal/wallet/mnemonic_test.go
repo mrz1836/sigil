@@ -50,6 +50,7 @@ var bip39TestVectors = []struct {
 }
 
 func TestGenerateMnemonic_12Words(t *testing.T) {
+	t.Parallel()
 	mnemonic, err := GenerateMnemonic(12)
 	require.NoError(t, err)
 
@@ -62,6 +63,7 @@ func TestGenerateMnemonic_12Words(t *testing.T) {
 }
 
 func TestGenerateMnemonic_24Words(t *testing.T) {
+	t.Parallel()
 	mnemonic, err := GenerateMnemonic(24)
 	require.NoError(t, err)
 
@@ -74,6 +76,7 @@ func TestGenerateMnemonic_24Words(t *testing.T) {
 }
 
 func TestGenerateMnemonic_InvalidWordCount(t *testing.T) {
+	t.Parallel()
 	_, err := GenerateMnemonic(15)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "word count must be 12 or 24")
@@ -86,6 +89,7 @@ func TestGenerateMnemonic_InvalidWordCount(t *testing.T) {
 }
 
 func TestGenerateMnemonic_Randomness(t *testing.T) {
+	t.Parallel()
 	// Generate two mnemonics and verify they're different
 	mnemonic1, err := GenerateMnemonic(12)
 	require.NoError(t, err)
@@ -97,8 +101,10 @@ func TestGenerateMnemonic_Randomness(t *testing.T) {
 }
 
 func TestValidateMnemonic_ValidMnemonics(t *testing.T) {
+	t.Parallel()
 	for _, tc := range bip39TestVectors {
 		t.Run(tc.mnemonic[:20], func(t *testing.T) {
+			t.Parallel()
 			err := ValidateMnemonic(tc.mnemonic)
 			assert.NoError(t, err)
 		})
@@ -106,6 +112,7 @@ func TestValidateMnemonic_ValidMnemonics(t *testing.T) {
 }
 
 func TestValidateMnemonic_InvalidMnemonics(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		mnemonic string
@@ -134,6 +141,7 @@ func TestValidateMnemonic_InvalidMnemonics(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			err := ValidateMnemonic(tc.mnemonic)
 			assert.Error(t, err)
 		})
@@ -141,6 +149,7 @@ func TestValidateMnemonic_InvalidMnemonics(t *testing.T) {
 }
 
 func TestNormalizeMnemonicInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -190,6 +199,7 @@ func TestNormalizeMnemonicInput(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := NormalizeMnemonicInput(tc.input)
 			assert.Equal(t, tc.expected, result)
 		})
@@ -197,11 +207,13 @@ func TestNormalizeMnemonicInput(t *testing.T) {
 }
 
 func TestMnemonicToSeed_WithTestVectors(t *testing.T) {
+	t.Parallel()
 	// Using "TREZOR" as the passphrase as per the test vectors
 	passphrase := "TREZOR"
 
 	for _, tc := range bip39TestVectors {
 		t.Run(tc.mnemonic[:20], func(t *testing.T) {
+			t.Parallel()
 			seed, err := MnemonicToSeed(tc.mnemonic, passphrase)
 			require.NoError(t, err)
 			assert.NotNil(t, seed)
@@ -211,6 +223,7 @@ func TestMnemonicToSeed_WithTestVectors(t *testing.T) {
 }
 
 func TestMnemonicToSeed_NoPassphrase(t *testing.T) {
+	t.Parallel()
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
 	seed1, err := MnemonicToSeed(mnemonic, "")
@@ -224,6 +237,7 @@ func TestMnemonicToSeed_NoPassphrase(t *testing.T) {
 }
 
 func TestMnemonicToSeed_DifferentPassphrases(t *testing.T) {
+	t.Parallel()
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
 	seed1, err := MnemonicToSeed(mnemonic, "")
@@ -237,6 +251,7 @@ func TestMnemonicToSeed_DifferentPassphrases(t *testing.T) {
 }
 
 func TestMnemonicToSeed_InvalidMnemonic(t *testing.T) {
+	t.Parallel()
 	_, err := MnemonicToSeed("invalid mnemonic words here", "")
 	assert.Error(t, err)
 }
@@ -245,6 +260,7 @@ func TestMnemonicToSeed_InvalidMnemonic(t *testing.T) {
 //
 //nolint:misspell // Intentional typos for testing
 func TestSuggestWord(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -275,6 +291,7 @@ func TestSuggestWord(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			suggestion := SuggestWord(tc.input)
 			assert.Equal(t, tc.expected, suggestion)
 		})
@@ -285,6 +302,7 @@ func TestSuggestWord(t *testing.T) {
 //
 //nolint:misspell // Intentional typos for testing
 func TestSuggestWordForMnemonic(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		mnemonic    string
@@ -313,6 +331,7 @@ func TestSuggestWordForMnemonic(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := DetectTypos(tc.mnemonic)
 			require.Len(t, result, len(tc.typoIndices))
 			verifyTypos(t, result, tc.typoIndices, tc.suggestions)
@@ -340,6 +359,7 @@ func verifyTypos(t *testing.T, result []TypoInfo, typoIndices []int, suggestions
 //
 //nolint:misspell // Intentional typos for testing
 func TestDetectTypos_EdgeCases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -353,6 +373,7 @@ func TestDetectTypos_EdgeCases(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := DetectTypos(tc.input)
 			assert.Len(t, result, tc.expected)
 		})

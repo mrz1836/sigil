@@ -21,6 +21,7 @@ func getTestSeed(t *testing.T) []byte {
 }
 
 func TestDeriveETHAddress(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	// ETH path: m/44'/60'/0'/0/0
@@ -38,6 +39,7 @@ func TestDeriveETHAddress(t *testing.T) {
 }
 
 func TestDeriveETHAddress_MultipleIndices(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	var addresses []string
@@ -56,6 +58,7 @@ func TestDeriveETHAddress_MultipleIndices(t *testing.T) {
 }
 
 func TestDeriveBSVAddress(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	// BSV path: m/44'/236'/0'/0/0
@@ -72,6 +75,7 @@ func TestDeriveBSVAddress(t *testing.T) {
 }
 
 func TestDeriveBSVAddress_MultipleIndices(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	var addresses []string
@@ -90,6 +94,7 @@ func TestDeriveBSVAddress_MultipleIndices(t *testing.T) {
 }
 
 func TestDeriveAddress_DifferentChains(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	ethAddr, err := DeriveAddress(seed, ChainETH, 0, 0)
@@ -103,6 +108,7 @@ func TestDeriveAddress_DifferentChains(t *testing.T) {
 }
 
 func TestDeriveAddress_DifferentAccounts(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	addr0, err := DeriveAddress(seed, ChainETH, 0, 0)
@@ -116,6 +122,7 @@ func TestDeriveAddress_DifferentAccounts(t *testing.T) {
 }
 
 func TestDeriveAddress_UnsupportedChain(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	_, err := DeriveAddress(seed, Chain("unknown"), 0, 0)
@@ -123,6 +130,7 @@ func TestDeriveAddress_UnsupportedChain(t *testing.T) {
 }
 
 func TestDerivePrivateKey_ETH(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	privKey, err := DerivePrivateKey(seed, ChainETH, 0, 0)
@@ -134,6 +142,7 @@ func TestDerivePrivateKey_ETH(t *testing.T) {
 }
 
 func TestDerivePrivateKey_BSV(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	privKey, err := DerivePrivateKey(seed, ChainBSV, 0, 0)
@@ -145,6 +154,7 @@ func TestDerivePrivateKey_BSV(t *testing.T) {
 }
 
 func TestGetDerivationPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		chain    Chain
 		account  uint32
@@ -162,6 +172,7 @@ func TestGetDerivationPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.expected, func(t *testing.T) {
+			t.Parallel()
 			path := GetDerivationPath(tc.chain, tc.account, tc.index)
 			assert.Equal(t, tc.expected, path)
 		})
@@ -169,6 +180,7 @@ func TestGetDerivationPath(t *testing.T) {
 }
 
 func TestGetCoinType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		chain    Chain
 		expected uint32
@@ -180,6 +192,7 @@ func TestGetCoinType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(string(tc.chain), func(t *testing.T) {
+			t.Parallel()
 			coinType := tc.chain.CoinType()
 			assert.Equal(t, tc.expected, coinType)
 		})
@@ -187,6 +200,7 @@ func TestGetCoinType(t *testing.T) {
 }
 
 func TestZeroBytes(t *testing.T) {
+	t.Parallel()
 	data := []byte{0x01, 0x02, 0x03, 0x04}
 	ZeroBytes(data)
 
@@ -197,6 +211,7 @@ func TestZeroBytes(t *testing.T) {
 
 // Test with known test vectors from BIP32/BIP44
 func TestDeriveAddress_ETH_KnownVector(t *testing.T) {
+	t.Parallel()
 	// Using the standard test mnemonic
 	seed := getTestSeed(t)
 
@@ -213,6 +228,7 @@ func TestDeriveAddress_ETH_KnownVector(t *testing.T) {
 }
 
 func TestIsValidETHAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		address  string
@@ -230,6 +246,7 @@ func TestIsValidETHAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := IsValidETHAddress(tc.address)
 			assert.Equal(t, tc.expected, result)
 		})
@@ -237,6 +254,7 @@ func TestIsValidETHAddress(t *testing.T) {
 }
 
 func TestPublicKeyFormat(t *testing.T) {
+	t.Parallel()
 	seed := getTestSeed(t)
 
 	// ETH uses uncompressed public keys (65 bytes, but we store as hex without 04 prefix = 128 chars)

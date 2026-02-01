@@ -14,6 +14,7 @@ import (
 )
 
 func TestFormatter_JSON(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	f := output.NewFormatter(output.FormatJSON, &buf)
 
@@ -28,6 +29,7 @@ func TestFormatter_JSON(t *testing.T) {
 }
 
 func TestFormatter_Text(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	f := output.NewFormatter(output.FormatText, &buf)
 
@@ -37,6 +39,7 @@ func TestFormatter_Text(t *testing.T) {
 }
 
 func TestFormatter_Printf(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	f := output.NewFormatter(output.FormatText, &buf)
 
@@ -46,6 +49,7 @@ func TestFormatter_Printf(t *testing.T) {
 }
 
 func TestFormatter_IsJSON(t *testing.T) {
+	t.Parallel()
 	jsonFmt := output.NewFormatter(output.FormatJSON, nil)
 	textFmt := output.NewFormatter(output.FormatText, nil)
 
@@ -54,6 +58,7 @@ func TestFormatter_IsJSON(t *testing.T) {
 }
 
 func TestParseFormat(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected output.Format
@@ -69,6 +74,7 @@ func TestParseFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			result := output.ParseFormat(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -76,12 +82,14 @@ func TestParseFormat(t *testing.T) {
 }
 
 func TestDetectFormat_Explicit(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	assert.Equal(t, output.FormatJSON, output.DetectFormat(&buf, output.FormatJSON))
 	assert.Equal(t, output.FormatText, output.DetectFormat(&buf, output.FormatText))
 }
 
 func TestDetectFormat_NonTTY(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	// Non-TTY should default to JSON
 	result := output.DetectFormat(&buf, output.FormatAuto)
@@ -99,6 +107,7 @@ func TestDetectFormat_TTY(t *testing.T) {
 }
 
 func TestTable_Basic(t *testing.T) {
+	t.Parallel()
 	table := output.NewTable("Name", "Value")
 	table.AddRow("foo", "bar")
 	table.AddRow("baz", "qux")
@@ -117,6 +126,7 @@ func TestTable_Basic(t *testing.T) {
 }
 
 func TestTable_NoHeader(t *testing.T) {
+	t.Parallel()
 	table := output.NewTable("Name", "Value")
 	table.SetNoHeader(true)
 	table.AddRow("foo", "bar")
@@ -132,6 +142,7 @@ func TestTable_NoHeader(t *testing.T) {
 }
 
 func TestTable_ColumnAlignment(t *testing.T) {
+	t.Parallel()
 	table := output.NewTable("Short", "LongerHeader")
 	table.AddRow("a", "b")
 	table.AddRow("longer", "x")
@@ -143,6 +154,7 @@ func TestTable_ColumnAlignment(t *testing.T) {
 }
 
 func TestTable_Empty(t *testing.T) {
+	t.Parallel()
 	table := output.NewTable()
 
 	var buf bytes.Buffer
@@ -152,6 +164,7 @@ func TestTable_Empty(t *testing.T) {
 }
 
 func TestFormatError_Text(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	err := sigilerr.WithDetails(sigilerr.ErrInsufficientFunds, map[string]string{
@@ -171,6 +184,7 @@ func TestFormatError_Text(t *testing.T) {
 }
 
 func TestFormatError_JSON(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	err := sigilerr.WithDetails(sigilerr.ErrInsufficientFunds, map[string]string{
@@ -189,6 +203,7 @@ func TestFormatError_JSON(t *testing.T) {
 }
 
 func TestFormatError_GenericError(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	err := assert.AnError
@@ -204,6 +219,7 @@ func TestFormatError_GenericError(t *testing.T) {
 }
 
 func TestFormatSuccess(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 
 	err := output.FormatSuccess(&buf, "Operation completed", output.FormatJSON)

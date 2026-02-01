@@ -15,12 +15,15 @@ import (
 
 // TestNewClient tests client creation.
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	t.Run("creates client with defaults", func(t *testing.T) {
+		t.Parallel()
 		client := NewClient(nil)
 		assert.NotNil(t, client)
 	})
 
 	t.Run("creates client with custom options", func(t *testing.T) {
+		t.Parallel()
 		client := NewClient(&ClientOptions{
 			APIKey:  "test-key",
 			Network: NetworkMainnet,
@@ -31,7 +34,9 @@ func TestNewClient(t *testing.T) {
 
 // TestGetBalance tests BSV balance queries.
 func TestGetBalance(t *testing.T) {
+	t.Parallel()
 	t.Run("returns balance for valid address", func(t *testing.T) {
+		t.Parallel()
 		// Mock WhatsOnChain API
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/address/")
@@ -62,6 +67,7 @@ func TestGetBalance(t *testing.T) {
 	})
 
 	t.Run("returns error for invalid address", func(t *testing.T) {
+		t.Parallel()
 		client := NewClient(nil)
 
 		ctx := context.Background()
@@ -73,6 +79,7 @@ func TestGetBalance(t *testing.T) {
 
 // TestGetTokenBalance tests token balance (not supported for BSV).
 func TestGetTokenBalance(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil)
 
 	ctx := context.Background()
@@ -83,7 +90,9 @@ func TestGetTokenBalance(t *testing.T) {
 
 // TestListUTXOs tests UTXO listing.
 func TestListUTXOs(t *testing.T) {
+	t.Parallel()
 	t.Run("returns UTXOs for address", func(t *testing.T) {
+		t.Parallel()
 		// Mock WhatsOnChain API
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/address/")
@@ -127,6 +136,7 @@ func TestListUTXOs(t *testing.T) {
 
 // TestValidateAddress tests address validation.
 func TestValidateAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -177,6 +187,7 @@ func TestValidateAddress(t *testing.T) {
 	client := NewClient(nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := client.ValidateAddress(tt.address)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -189,6 +200,7 @@ func TestValidateAddress(t *testing.T) {
 
 // TestFormatAmount tests amount formatting.
 func TestFormatAmount(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil)
 
 	tests := []struct {
@@ -220,6 +232,7 @@ func TestFormatAmount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := client.FormatAmount(tt.amount)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -228,6 +241,7 @@ func TestFormatAmount(t *testing.T) {
 
 // TestParseAmount tests amount parsing.
 func TestParseAmount(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil)
 
 	tests := []struct {
@@ -268,6 +282,7 @@ func TestParseAmount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := client.ParseAmount(tt.input)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -281,6 +296,7 @@ func TestParseAmount(t *testing.T) {
 
 // TestSelectUTXOs tests UTXO selection.
 func TestSelectUTXOs(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil)
 
 	utxos := []UTXO{
@@ -290,6 +306,7 @@ func TestSelectUTXOs(t *testing.T) {
 	}
 
 	t.Run("selects sufficient UTXOs", func(t *testing.T) {
+		t.Parallel()
 		selected, change, err := client.SelectUTXOs(utxos, 40000000, 1) // 0.4 BSV
 		require.NoError(t, err)
 		assert.NotEmpty(t, selected)
@@ -304,12 +321,14 @@ func TestSelectUTXOs(t *testing.T) {
 	})
 
 	t.Run("returns error for insufficient funds", func(t *testing.T) {
+		t.Parallel()
 		_, _, err := client.SelectUTXOs(utxos, 200000000, 1) // 2 BSV - more than available
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "insufficient")
 	})
 
 	t.Run("handles empty UTXO list", func(t *testing.T) {
+		t.Parallel()
 		_, _, err := client.SelectUTXOs([]UTXO{}, 10000, 1)
 		require.Error(t, err)
 	})

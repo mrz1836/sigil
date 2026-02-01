@@ -12,6 +12,7 @@ import (
 )
 
 func TestLoadSave_RoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "config.yaml")
 
@@ -41,6 +42,7 @@ func TestLoadSave_RoundTrip(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults()
 
 	assert.Equal(t, 1, cfg.Version)
@@ -59,6 +61,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestDefaults_USDCToken(t *testing.T) {
+	t.Parallel()
 	cfg := config.Defaults()
 
 	require.Len(t, cfg.Networks.ETH.Tokens, 1)
@@ -68,11 +71,13 @@ func TestDefaults_USDCToken(t *testing.T) {
 }
 
 func TestLoad_FileNotFound(t *testing.T) {
+	t.Parallel()
 	_, err := config.Load("/nonexistent/config.yaml")
 	assert.Error(t, err)
 }
 
 func TestLoad_InvalidYAML(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "config.yaml")
 
@@ -84,6 +89,7 @@ func TestLoad_InvalidYAML(t *testing.T) {
 }
 
 func TestSave_CreatesDirectory(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "subdir", "config.yaml")
 
@@ -119,6 +125,7 @@ func TestApplyEnvironment(t *testing.T) {
 }
 
 func TestApplyEnvironment_NoColor(t *testing.T) {
+	// Can't use t.Parallel() with t.Setenv()
 	cfg := config.Defaults()
 
 	t.Setenv("NO_COLOR", "1")
@@ -128,6 +135,7 @@ func TestApplyEnvironment_NoColor(t *testing.T) {
 }
 
 func TestApplyEnvironment_VerboseValues(t *testing.T) {
+	// Can't use t.Parallel() with t.Setenv()
 	tests := []struct {
 		value    string
 		expected bool
@@ -154,11 +162,13 @@ func TestApplyEnvironment_VerboseValues(t *testing.T) {
 }
 
 func TestConfigPath(t *testing.T) {
+	t.Parallel()
 	path := config.Path("/home/user/.sigil")
 	assert.Equal(t, "/home/user/.sigil/config.yaml", path)
 }
 
 func TestDefaultHome(t *testing.T) {
+	t.Parallel()
 	home := config.DefaultHome()
 	assert.Contains(t, home, ".sigil")
 }

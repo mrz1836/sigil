@@ -53,6 +53,12 @@ type ClientOptions struct {
 	ChainID *big.Int
 }
 
+// Compile-time interface checks
+var (
+	_ chain.Chain      = (*Client)(nil)
+	_ chain.TokenChain = (*Client)(nil)
+)
+
 // Client provides Ethereum blockchain operations.
 type Client struct {
 	rpcURL    string

@@ -15,13 +15,16 @@ import (
 
 // TestNewClient tests client creation.
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	t.Run("creates client with valid URL", func(t *testing.T) {
+		t.Parallel()
 		client, err := NewClient("http://localhost:8545", nil)
 		require.NoError(t, err)
 		assert.NotNil(t, client)
 	})
 
 	t.Run("returns error for empty URL", func(t *testing.T) {
+		t.Parallel()
 		_, err := NewClient("", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "RPC URL is required")
@@ -30,7 +33,9 @@ func TestNewClient(t *testing.T) {
 
 // TestGetBalance tests ETH balance queries.
 func TestGetBalance(t *testing.T) {
+	t.Parallel()
 	t.Run("returns balance for valid address", func(t *testing.T) {
+		t.Parallel()
 		// Mock RPC server
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req map[string]any
@@ -79,6 +84,7 @@ func TestGetBalance(t *testing.T) {
 	})
 
 	t.Run("returns error for invalid address format", func(t *testing.T) {
+		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			t.Fatal("should not reach server")
 		}))
@@ -96,7 +102,9 @@ func TestGetBalance(t *testing.T) {
 
 // TestGetTokenBalance tests ERC-20 balance queries.
 func TestGetTokenBalance(t *testing.T) {
+	t.Parallel()
 	t.Run("returns USDC balance", func(t *testing.T) {
+		t.Parallel()
 		// Mock RPC server
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req map[string]any
@@ -148,6 +156,7 @@ func TestGetTokenBalance(t *testing.T) {
 	})
 
 	t.Run("returns error for invalid token address", func(t *testing.T) {
+		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			t.Fatal("should not reach server")
 		}))
@@ -165,6 +174,7 @@ func TestGetTokenBalance(t *testing.T) {
 
 // TestValidateAddress tests address validation.
 func TestValidateAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -205,6 +215,7 @@ func TestValidateAddress(t *testing.T) {
 	client := &Client{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := client.ValidateAddress(tt.address)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -217,6 +228,7 @@ func TestValidateAddress(t *testing.T) {
 
 // TestFormatAmount tests amount formatting.
 func TestFormatAmount(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -248,6 +260,7 @@ func TestFormatAmount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := client.FormatAmount(tt.amount)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -256,6 +269,7 @@ func TestFormatAmount(t *testing.T) {
 
 // TestParseAmount tests amount parsing.
 func TestParseAmount(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -296,6 +310,7 @@ func TestParseAmount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := client.ParseAmount(tt.input)
 			if tt.wantErr {
 				assert.Error(t, err)

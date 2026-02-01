@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidateBase58CheckAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -75,6 +76,7 @@ func TestValidateBase58CheckAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			err := ValidateBase58CheckAddress(tc.address)
 			if tc.valid {
 				assert.NoError(t, err)
@@ -86,6 +88,7 @@ func TestValidateBase58CheckAddress(t *testing.T) {
 }
 
 func TestIsValidAddress(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		address string
@@ -99,6 +102,7 @@ func TestIsValidAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			valid := IsValidAddress(tc.address)
 			assert.Equal(t, tc.valid, valid)
 		})
@@ -106,6 +110,7 @@ func TestIsValidAddress(t *testing.T) {
 }
 
 func TestDecodeBase58Check(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		address     string
@@ -138,6 +143,7 @@ func TestDecodeBase58Check(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			version, payload, err := DecodeBase58Check(tc.address)
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -151,6 +157,7 @@ func TestDecodeBase58Check(t *testing.T) {
 }
 
 func TestValidateChecksum(t *testing.T) {
+	t.Parallel()
 	// Valid address should pass checksum validation
 	err := ValidateBase58CheckAddress("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2")
 	require.NoError(t, err)
@@ -162,6 +169,7 @@ func TestValidateChecksum(t *testing.T) {
 }
 
 func TestAddressVersions(t *testing.T) {
+	t.Parallel()
 	// Test that we correctly identify address versions
 	tests := []struct {
 		address      string
@@ -174,6 +182,7 @@ func TestAddressVersions(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.expectedType, func(t *testing.T) {
+			t.Parallel()
 			version, _, err := DecodeBase58Check(tc.address)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantVersion, version)

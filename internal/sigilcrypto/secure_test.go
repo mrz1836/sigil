@@ -10,6 +10,7 @@ import (
 )
 
 func TestSecureBytes_Creation(t *testing.T) {
+	t.Parallel()
 	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 	defer sb.Destroy()
@@ -19,6 +20,7 @@ func TestSecureBytes_Creation(t *testing.T) {
 }
 
 func TestSecureBytes_Zeroing(t *testing.T) {
+	t.Parallel()
 	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 
@@ -40,6 +42,7 @@ func TestSecureBytes_Zeroing(t *testing.T) {
 }
 
 func TestSecureBytes_DoubleDestroy(t *testing.T) {
+	t.Parallel()
 	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 
@@ -51,6 +54,7 @@ func TestSecureBytes_DoubleDestroy(t *testing.T) {
 }
 
 func TestSecureBytes_ZeroSize(t *testing.T) {
+	t.Parallel()
 	sb, err := sigilcrypto.NewSecureBytes(0)
 	require.NoError(t, err)
 	defer sb.Destroy()
@@ -59,6 +63,7 @@ func TestSecureBytes_ZeroSize(t *testing.T) {
 }
 
 func TestSecureBytes_FromBytes(t *testing.T) {
+	t.Parallel()
 	original := []byte("secret key material")
 	sb, err := sigilcrypto.SecureBytesFromSlice(original)
 	require.NoError(t, err)
@@ -68,6 +73,7 @@ func TestSecureBytes_FromBytes(t *testing.T) {
 }
 
 func TestSecureBytes_Copy(t *testing.T) {
+	t.Parallel()
 	sb1, err := sigilcrypto.NewSecureBytes(16)
 	require.NoError(t, err)
 	defer sb1.Destroy()
@@ -89,6 +95,7 @@ func TestSecureBytes_Copy(t *testing.T) {
 }
 
 func TestSecureBytes_IsLocked(t *testing.T) {
+	t.Parallel()
 	sb, err := sigilcrypto.NewSecureBytes(32)
 	require.NoError(t, err)
 	defer sb.Destroy()

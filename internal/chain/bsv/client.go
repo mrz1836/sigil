@@ -66,6 +66,9 @@ type ClientOptions struct {
 	Network Network
 }
 
+// Compile-time interface check
+var _ chain.Chain = (*Client)(nil)
+
 // Client provides Bitcoin SV blockchain operations.
 type Client struct {
 	baseURL    string

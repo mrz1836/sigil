@@ -13,6 +13,7 @@ import (
 )
 
 func TestFileStorage(t *testing.T) {
+	t.Parallel()
 	// Create a temporary directory for tests
 	tmpDir, err := os.MkdirTemp("", "cache-test-*")
 	require.NoError(t, err)
@@ -95,7 +96,9 @@ func TestFileStorage(t *testing.T) {
 }
 
 func TestBalanceCache(t *testing.T) {
+	t.Parallel()
 	t.Run("Get returns entry and age", func(t *testing.T) {
+		t.Parallel()
 		cache := NewBalanceCache()
 		cache.Set(BalanceCacheEntry{
 			Chain:    chain.ETH,
@@ -113,6 +116,7 @@ func TestBalanceCache(t *testing.T) {
 	})
 
 	t.Run("Get returns not found for missing entry", func(t *testing.T) {
+		t.Parallel()
 		cache := NewBalanceCache()
 
 		entry, exists, _ := cache.Get(chain.ETH, "nonexistent", "")
@@ -121,6 +125,7 @@ func TestBalanceCache(t *testing.T) {
 	})
 
 	t.Run("Handles token entries separately", func(t *testing.T) {
+		t.Parallel()
 		cache := NewBalanceCache()
 
 		// Set native balance
@@ -181,6 +186,7 @@ func TestBalanceCache(t *testing.T) {
 	})
 
 	t.Run("Delete removes entry", func(t *testing.T) {
+		t.Parallel()
 		cache := NewBalanceCache()
 		cache.Set(BalanceCacheEntry{
 			Chain:   chain.ETH,
@@ -195,6 +201,7 @@ func TestBalanceCache(t *testing.T) {
 	})
 
 	t.Run("Clear removes all entries", func(t *testing.T) {
+		t.Parallel()
 		cache := NewBalanceCache()
 		cache.Set(BalanceCacheEntry{Chain: chain.ETH, Address: "0x123", Balance: "1"})
 		cache.Set(BalanceCacheEntry{Chain: chain.BSV, Address: "1abc", Balance: "2"})

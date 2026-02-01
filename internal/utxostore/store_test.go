@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test-wallet")
 
 	assert.NotNil(t, store)
@@ -23,6 +25,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestStoredUTXOKey(t *testing.T) {
+	t.Parallel()
 	utxo := &StoredUTXO{
 		ChainID: chain.BSV,
 		TxID:    "abc123",
@@ -33,6 +36,7 @@ func TestStoredUTXOKey(t *testing.T) {
 }
 
 func TestAddressMetadataKey(t *testing.T) {
+	t.Parallel()
 	addr := &AddressMetadata{
 		ChainID: chain.BSV,
 		Address: "1ABC123",
@@ -42,6 +46,7 @@ func TestAddressMetadataKey(t *testing.T) {
 }
 
 func TestLoadMissingFile(t *testing.T) {
+	t.Parallel()
 	// Create temp directory
 	tmpDir := t.TempDir()
 
@@ -54,6 +59,7 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestLoadSave(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create store and add data
@@ -112,6 +118,7 @@ func TestLoadSave(t *testing.T) {
 }
 
 func TestLoadVersionTooNew(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Write file with future version
@@ -128,6 +135,7 @@ func TestLoadVersionTooNew(t *testing.T) {
 }
 
 func TestGetUTXOs(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	// Add multiple UTXOs
@@ -178,6 +186,7 @@ func TestGetUTXOs(t *testing.T) {
 }
 
 func TestGetBalance(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	// Add UTXOs
@@ -212,6 +221,7 @@ func TestGetBalance(t *testing.T) {
 }
 
 func TestMarkSpent(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	// Add UTXO
@@ -242,6 +252,7 @@ func TestMarkSpent(t *testing.T) {
 }
 
 func TestAddUTXO(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	utxo := &StoredUTXO{
@@ -269,6 +280,7 @@ func TestAddUTXO(t *testing.T) {
 }
 
 func TestAddAddress(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	addr := &AddressMetadata{
@@ -294,6 +306,7 @@ func TestAddAddress(t *testing.T) {
 }
 
 func TestIsEmpty(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	assert.True(t, store.IsEmpty())
@@ -309,6 +322,7 @@ func TestIsEmpty(t *testing.T) {
 }
 
 func TestGetAddresses(t *testing.T) {
+	t.Parallel()
 	store := New("/tmp/test")
 
 	// Add addresses for different chains

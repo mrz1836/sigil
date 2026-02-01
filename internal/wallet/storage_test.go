@@ -10,6 +10,7 @@ import (
 )
 
 func TestStorage_SaveAndLoad(t *testing.T) {
+	t.Parallel()
 	// Create temp directory for test
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
@@ -61,6 +62,7 @@ func TestStorage_SaveAndLoad(t *testing.T) {
 }
 
 func TestStorage_LoadWrongPassword(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -84,6 +86,7 @@ func TestStorage_LoadWrongPassword(t *testing.T) {
 }
 
 func TestStorage_LoadNotFound(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -95,6 +98,7 @@ func TestStorage_LoadNotFound(t *testing.T) {
 }
 
 func TestStorage_Exists(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -120,6 +124,7 @@ func TestStorage_Exists(t *testing.T) {
 }
 
 func TestStorage_List(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -150,6 +155,7 @@ func TestStorage_List(t *testing.T) {
 }
 
 func TestStorage_Delete(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -177,6 +183,7 @@ func TestStorage_Delete(t *testing.T) {
 }
 
 func TestStorage_DeleteNotFound(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -188,6 +195,7 @@ func TestStorage_DeleteNotFound(t *testing.T) {
 }
 
 func TestStorage_SaveOverwritePrevented(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -214,6 +222,7 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 }
 
 func TestValidateWalletName(t *testing.T) {
+	t.Parallel()
 	// Create valid 64-char name
 	longValid := "a234567890123456789012345678901234567890123456789012345678901234"
 	// Create invalid 65-char name

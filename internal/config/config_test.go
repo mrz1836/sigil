@@ -56,6 +56,8 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, "taal", cfg.Networks.BSV.Broadcast)
 	assert.Equal(t, 20, cfg.Derivation.AddressGap)
 	assert.True(t, cfg.Security.MemoryLock)
+	assert.True(t, cfg.Security.SessionEnabled)
+	assert.Equal(t, 15, cfg.Security.SessionTTLMinutes)
 	assert.Equal(t, "auto", cfg.Output.DefaultFormat)
 	assert.Equal(t, "error", cfg.Logging.Level)
 }
@@ -68,6 +70,13 @@ func TestDefaults_USDCToken(t *testing.T) {
 	assert.Equal(t, "USDC", cfg.Networks.ETH.Tokens[0].Symbol)
 	assert.Equal(t, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", cfg.Networks.ETH.Tokens[0].Address)
 	assert.Equal(t, 6, cfg.Networks.ETH.Tokens[0].Decimals)
+}
+
+func TestDefaults_ETHRPCDefault(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Equal(t, config.DefaultETHRPCURL, cfg.Networks.ETH.RPC)
+	assert.Equal(t, "https://cloudflare-eth.com", cfg.Networks.ETH.RPC)
 }
 
 func TestLoad_FileNotFound(t *testing.T) {
@@ -171,4 +180,34 @@ func TestDefaultHome(t *testing.T) {
 	t.Parallel()
 	home := config.DefaultHome()
 	assert.Contains(t, home, ".sigil")
+}
+
+func TestApplyEnvironment_SessionTTL(t *testing.T) {
+	cfg := config.Defaults()
+
+	t.Setenv("SIGIL_SESSION_TTL", "30")
+	config.ApplyEnvironment(cfg)
+
+	assert.Equal(t, 30, cfg.Security.SessionTTLMinutes)
+}
+
+func TestApplyEnvironment_SessionTTL_InvalidValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected int
+	}{
+		{"invalid string", "abc", 15},
+		{"zero", "0", 15},
+		{"negative", "-5", 15},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Defaults()
+			t.Setenv("SIGIL_SESSION_TTL", tt.value)
+			config.ApplyEnvironment(cfg)
+			assert.Equal(t, tt.expected, cfg.Security.SessionTTLMinutes)
+		})
+	}
 }

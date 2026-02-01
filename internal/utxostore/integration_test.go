@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockClient implements utxostore.ChainClient for integration testing.
@@ -37,6 +38,7 @@ func (m *mockClient) setUTXOs(address string, utxos []chain.UTXO) {
 // 4. Refresh (simulate spent/new UTXOs)
 // 5. Verify merge logic
 func TestIntegration_FullWorkflow(t *testing.T) {
+	t.Parallel()
 	// Setup
 	tmpDir := t.TempDir()
 	client := newMockClient()
@@ -117,6 +119,7 @@ func TestIntegration_FullWorkflow(t *testing.T) {
 
 // TestIntegration_OfflineAccess verifies offline balance access after scan.
 func TestIntegration_OfflineAccess(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	client := newMockClient()
 	ctx := context.Background()
@@ -155,6 +158,7 @@ func TestIntegration_OfflineAccess(t *testing.T) {
 
 // TestIntegration_AddressLabels verifies address label persistence.
 func TestIntegration_AddressLabels(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	store := utxostore.New(tmpDir)
@@ -197,6 +201,7 @@ func TestIntegration_AddressLabels(t *testing.T) {
 
 // TestIntegration_MultiChain verifies chain isolation.
 func TestIntegration_MultiChain(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	store := utxostore.New(tmpDir)
@@ -239,6 +244,7 @@ func TestIntegration_MultiChain(t *testing.T) {
 
 // TestIntegration_AtomicWrite verifies atomic write behavior.
 func TestIntegration_AtomicWrite(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	store := utxostore.New(tmpDir)

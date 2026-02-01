@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mrz1836/sigil/internal/chain"
-	"github.com/mrz1836/sigil/internal/wallet"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // errNetwork is a static error for testing network failures.
@@ -48,6 +49,7 @@ func (m *mockChainClient) setError(address string, err error) {
 }
 
 func TestScanWallet(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -88,6 +90,7 @@ func TestScanWallet(t *testing.T) {
 }
 
 func TestScanWalletGapLimit(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -121,6 +124,7 @@ func TestScanWalletGapLimit(t *testing.T) {
 }
 
 func TestScanWalletGapLimitReset(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -155,6 +159,7 @@ func TestScanWalletGapLimitReset(t *testing.T) {
 }
 
 func TestScanWalletEmpty(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -172,6 +177,7 @@ func TestScanWalletEmpty(t *testing.T) {
 }
 
 func TestScanWalletWithErrors(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -201,6 +207,7 @@ func TestScanWalletWithErrors(t *testing.T) {
 }
 
 func TestScanWalletCancellation(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -224,6 +231,7 @@ func TestScanWalletCancellation(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -259,6 +267,7 @@ func TestRefresh(t *testing.T) {
 }
 
 func TestRefreshNoAddresses(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()
@@ -271,6 +280,7 @@ func TestRefreshNoAddresses(t *testing.T) {
 }
 
 func TestRefreshPreservesSpentHistory(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
 	client := newMockClient()

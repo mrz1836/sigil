@@ -402,6 +402,12 @@ func decompressPublicKey(compressed []byte) ([]byte, error) {
 	return uncompressed, nil
 }
 
+// DerivePrivateKeyForChain derives a private key for a specific chain at index.
+// Uses account 0, which is the default. The returned key must be zeroed after use.
+func DerivePrivateKeyForChain(seed []byte, chain Chain, index uint32) ([]byte, error) {
+	return DerivePrivateKey(seed, chain, 0, index)
+}
+
 // ZeroBytes zeros out a byte slice.
 func ZeroBytes(data []byte) {
 	for i := range data {

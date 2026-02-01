@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"sync"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -45,6 +46,7 @@ var _ Cache = (*BalanceCache)(nil)
 
 // BalanceCache stores cached balance information.
 type BalanceCache struct {
+	mu      sync.RWMutex                 `json:"-"`
 	Entries map[string]BalanceCacheEntry `json:"entries"`
 }
 
@@ -77,6 +79,9 @@ func Key(chainID chain.ID, address, token string) string {
 // Get retrieves a cached balance entry.
 // Returns the entry, whether it exists, and its age.
 func (c *BalanceCache) Get(chainID chain.ID, address, token string) (*BalanceCacheEntry, bool, time.Duration) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	key := Key(chainID, address, token)
 	entry, exists := c.Entries[key]
 	if !exists {
@@ -89,6 +94,9 @@ func (c *BalanceCache) Get(chainID chain.ID, address, token string) (*BalanceCac
 
 // Set stores a balance entry in the cache.
 func (c *BalanceCache) Set(entry BalanceCacheEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	key := Key(entry.Chain, entry.Address, entry.Token)
 	entry.UpdatedAt = time.Now()
 	c.Entries[key] = entry
@@ -110,22 +118,34 @@ func (c *BalanceCache) IsStaleWithDuration(chainID chain.ID, address, token stri
 
 // Delete removes a cache entry.
 func (c *BalanceCache) Delete(chainID chain.ID, address, token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	key := Key(chainID, address, token)
 	delete(c.Entries, key)
 }
 
 // Clear removes all cache entries.
 func (c *BalanceCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.Entries = make(map[string]BalanceCacheEntry)
 }
 
 // Size returns the number of cache entries.
 func (c *BalanceCache) Size() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return len(c.Entries)
 }
 
 // GetAllForAddress returns all cached balances for an address across all chains.
 func (c *BalanceCache) GetAllForAddress(address string) []BalanceCacheEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	var entries []BalanceCacheEntry
 	for _, entry := range c.Entries {
 		if entry.Address == address {
@@ -137,6 +157,9 @@ func (c *BalanceCache) GetAllForAddress(address string) []BalanceCacheEntry {
 
 // Prune removes entries older than the specified duration.
 func (c *BalanceCache) Prune(maxAge time.Duration) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	removed := 0
 	cutoff := time.Now().Add(-maxAge)
 

@@ -177,22 +177,22 @@ Based on plan.md structure:
 
 ### Implementation for User Story 3
 
-- [ ] T055t [US3] Write tests for ETH client with mocked RPC in internal/chain/eth/client_test.go
-- [ ] T055 [P] [US3] Implement ETH RPC client wrapper in internal/chain/eth/client.go (FR-016)
-- [ ] T056t [US3] Write tests for WhatsOnChain client with mocked API in internal/chain/bsv/client_test.go
-- [ ] T056 [P] [US3] Implement WhatsOnChain API client wrapper in internal/chain/bsv/client.go (FR-023)
-- [ ] T057 [US3] Implement ETH native balance query via eth_getBalance in internal/chain/eth/balance.go (FR-016)
-- [ ] T058 [US3] Implement ERC-20 balanceOf query for USDC in internal/chain/eth/balance.go (FR-017)
-- [ ] T059 [US3] Implement BSV balance query via WhatsOnChain API in internal/chain/bsv/balance.go (FR-023)
-- [ ] T060 [US3] Define BalanceCache struct in internal/cache/cache.go per data-model.md
-- [ ] T061t [US3] Write tests for balance cache storage/retrieval in internal/cache/file_test.go
-- [ ] T061 [US3] Implement file-based balance cache storage in internal/cache/file.go (FR-040)
-- [ ] T062 [US3] Implement cache staleness detection with age tracking in internal/cache/cache.go (FR-041)
-- [ ] T063t [US3] Write integration test for `sigil balance show` command in internal/cli/balance_test.go
-- [ ] T063 [US3] Implement balance show command in internal/cli/balance.go with `sigil balance show --wallet <name>`
-- [ ] T064 [US3] Add --chain flag to filter by chain (eth, bsv) in internal/cli/balance.go
-- [ ] T065 [US3] Format balance output as table with chain/address/balance/symbol columns in internal/cli/balance.go
-- [ ] T066 [US3] Display staleness warning for cached data when API fails in internal/cli/balance.go (FR-041)
+- [X] T055t [US3] Write tests for ETH client with mocked RPC in internal/chain/eth/client_test.go
+- [X] T055 [P] [US3] Implement ETH RPC client wrapper in internal/chain/eth/client.go (FR-016)
+- [X] T056t [US3] Write tests for WhatsOnChain client with mocked API in internal/chain/bsv/client_test.go
+- [X] T056 [P] [US3] Implement WhatsOnChain API client wrapper in internal/chain/bsv/client.go (FR-023)
+- [X] T057 [US3] Implement ETH native balance query via eth_getBalance in internal/chain/eth/balance.go (FR-016)
+- [X] T058 [US3] Implement ERC-20 balanceOf query for USDC in internal/chain/eth/balance.go (FR-017)
+- [X] T059 [US3] Implement BSV balance query via WhatsOnChain API in internal/chain/bsv/balance.go (FR-023)
+- [X] T060 [US3] Define BalanceCache struct in internal/cache/cache.go per data-model.md
+- [X] T061t [US3] Write tests for balance cache storage/retrieval in internal/cache/file_test.go
+- [X] T061 [US3] Implement file-based balance cache storage in internal/cache/file.go (FR-040)
+- [X] T062 [US3] Implement cache staleness detection with age tracking in internal/cache/cache.go (FR-041)
+- [X] T063t [US3] Write integration test for `sigil balance show` command in internal/cli/balance_test.go
+- [X] T063 [US3] Implement balance show command in internal/cli/balance.go with `sigil balance show --wallet <name>`
+- [X] T064 [US3] Add --chain flag to filter by chain (eth, bsv) in internal/cli/balance.go
+- [X] T065 [US3] Format balance output as table with chain/address/balance/symbol columns in internal/cli/balance.go
+- [X] T066 [US3] Display staleness warning for cached data when API fails in internal/cli/balance.go (FR-041)
 
 **Checkpoint**: User Story 3 complete - balance checking across chains works independently
 

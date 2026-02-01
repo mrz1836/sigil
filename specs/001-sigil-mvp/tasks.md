@@ -356,9 +356,9 @@ Based on plan.md structure:
 - [X] T121 Implement version command in internal/cli/root.go with `sigil version`
 - [X] T122 [P] Add shell completion generation (bash, zsh, fish) via cobra completions in internal/cli/root.go
 - [X] T123 Verify all exit codes match documented values per FR-006 in pkg/errors/errors.go
-- [ ] T124 Run quickstart.md validation - verify all documented commands work as specified
-- [ ] T124a Add fuzz tests for mnemonic parsing, address validation, transaction parsing in internal/**/fuzz_test.go
-- [ ] T124b Create integration test suite running full quickstart.md workflow in tests/integration/
+- [X] T124 Run quickstart.md validation - verify all documented commands work as specified
+- [X] T124a Add fuzz tests for mnemonic parsing, address validation, transaction parsing in internal/**/fuzz_test.go
+- [X] T124b Create integration test suite running full quickstart.md workflow in tests/integration/
 
 ---
 

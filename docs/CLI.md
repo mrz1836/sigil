@@ -370,6 +370,53 @@ sigil config set logging.level debug
 
 ---
 
+### session
+
+Manage authentication sessions. When enabled, sigil caches your wallet credentials for a configurable time (default: 15 minutes) so you don't need to enter your password for every command.
+
+Sessions use your operating system's secure keychain:
+- macOS: Keychain
+- Linux: Secret Service (GNOME Keyring, KWallet)
+- Windows: Credential Manager
+
+If the system keychain is unavailable, sessions are disabled and you'll be prompted for your password each time.
+
+```bash
+sigil session <subcommand>
+```
+
+#### session status
+
+Show active sessions and remaining time.
+
+```bash
+sigil session status
+```
+
+**Example:**
+```bash
+$ sigil session status
+Active Sessions:
+  main: expires in 12m30s
+  backup: expires in 8m15s
+```
+
+#### session lock
+
+End all active sessions immediately. Use this when stepping away from your computer.
+
+```bash
+sigil session lock
+```
+
+**Example:**
+```bash
+$ sigil session lock
+Ended 2 session(s)
+```
+
+---
+
 ### backup
 
 Create, verify, and restore encrypted wallet backups.
@@ -521,11 +568,12 @@ Environment variables override configuration file settings.
 | Variable | Description |
 |----------|-------------|
 | `SIGIL_HOME` | Sigil data directory (default: `~/.sigil`) |
-| `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL |
+| `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL (default: Cloudflare gateway) |
 | `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional) |
 | `SIGIL_OUTPUT_FORMAT` | Default output format (`text`, `json`, `auto`) |
 | `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
 | `SIGIL_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
+| `SIGIL_SESSION_TTL` | Session timeout in minutes (default: 15) |
 | `NO_COLOR` | Disable colored output (any value) |
 
 **Examples:**
@@ -534,6 +582,7 @@ export SIGIL_HOME=/custom/path
 export SIGIL_ETH_RPC=https://mainnet.infura.io/v3/YOUR_KEY
 export SIGIL_OUTPUT_FORMAT=json
 export SIGIL_LOG_LEVEL=debug
+export SIGIL_SESSION_TTL=30  # 30 minute sessions
 ```
 
 ---
@@ -557,10 +606,15 @@ logging:
   level: error            # debug, info, warn, error
   file: ~/.sigil/sigil.log
 
+# Security settings
+security:
+  session_enabled: true   # Enable session caching
+  session_ttl_minutes: 15 # Session duration in minutes
+
 # Network settings
 networks:
   eth:
-    rpc: ""               # Ethereum RPC endpoint (required for ETH operations)
+    rpc: https://cloudflare-eth.com  # Default Cloudflare gateway (no API key needed)
   bsv:
     api_key: ""           # WhatsOnChain API key (optional)
 ```
@@ -577,5 +631,7 @@ Use dot notation with `config get` and `config set`:
 | `output.color` | Color output | `auto`, `always`, `never` |
 | `logging.level` | Log level | `debug`, `info`, `warn`, `error` |
 | `logging.file` | Log file path | Any path |
+| `security.session_enabled` | Enable session caching | `true`, `false` |
+| `security.session_ttl_minutes` | Session duration | `1`-`60` |
 | `networks.eth.rpc` | Ethereum RPC URL | Any URL |
 | `networks.bsv.api_key` | WhatsOnChain API key | Any string |

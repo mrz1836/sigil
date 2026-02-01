@@ -143,6 +143,41 @@ func Path(home string) string {
 	return filepath.Join(home, "config.yaml")
 }
 
+// GetHome returns the sigil home directory path.
+func (c *Config) GetHome() string {
+	return c.Home
+}
+
+// GetETHRPC returns the Ethereum RPC URL.
+func (c *Config) GetETHRPC() string {
+	return c.Networks.ETH.RPC
+}
+
+// GetBSVAPIKey returns the BSV API key.
+func (c *Config) GetBSVAPIKey() string {
+	return c.Networks.BSV.APIKey
+}
+
+// GetLoggingLevel returns the configured logging level.
+func (c *Config) GetLoggingLevel() string {
+	return c.Logging.Level
+}
+
+// GetLoggingFile returns the configured log file path.
+func (c *Config) GetLoggingFile() string {
+	return c.Logging.File
+}
+
+// GetOutputFormat returns the default output format.
+func (c *Config) GetOutputFormat() string {
+	return c.Output.DefaultFormat
+}
+
+// IsVerbose returns true if verbose output is enabled.
+func (c *Config) IsVerbose() bool {
+	return c.Output.Verbose
+}
+
 // DefaultHome returns the default sigil home directory.
 func DefaultHome() string {
 	home, err := os.UserHomeDir()

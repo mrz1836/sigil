@@ -11,22 +11,24 @@ import (
 	"github.com/tyler-smith/go-bip32"
 	"golang.org/x/crypto/sha3"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
 )
 
-// ChainID represents a supported blockchain identifier.
-// This is distinct from chain.Chain which is an interface for blockchain operations.
-type ChainID string
+// ChainID is an alias for chain.ID for use in wallet operations.
+// This unifies the chain identifier type across the codebase.
+type ChainID = chain.ID
 
+// Chain ID constants - aliases to chain package constants for convenience.
 const (
 	// ChainETH is the Ethereum chain.
-	ChainETH ChainID = "eth"
+	ChainETH = chain.ETH
 	// ChainBSV is the Bitcoin SV chain.
-	ChainBSV ChainID = "bsv"
+	ChainBSV = chain.BSV
 	// ChainBTC is the Bitcoin chain (future).
-	ChainBTC ChainID = "btc"
+	ChainBTC = chain.BTC
 	// ChainBCH is the Bitcoin Cash chain (future).
-	ChainBCH ChainID = "bch"
+	ChainBCH = chain.BCH
 )
 
 // secp256k1 curve parameters for public key decompression
@@ -74,22 +76,6 @@ type Address struct {
 
 	// PublicKey is the public key in hex format.
 	PublicKey string `json:"public_key"`
-}
-
-// CoinType returns the BIP44 coin type for this chain.
-func (c ChainID) CoinType() uint32 {
-	switch c {
-	case ChainETH:
-		return 60
-	case ChainBSV:
-		return 236
-	case ChainBTC:
-		return 0
-	case ChainBCH:
-		return 145
-	default:
-		return 0
-	}
 }
 
 // GetDerivationPath returns the full BIP44 derivation path for a chain.

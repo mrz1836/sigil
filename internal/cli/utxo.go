@@ -8,8 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -45,15 +47,53 @@ Example:
 	RunE: runUTXOList,
 }
 
+// utxoRefreshCmd refreshes UTXOs from chain.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
+var utxoRefreshCmd = &cobra.Command{
+	Use:   "refresh",
+	Short: "Refresh UTXOs from chain",
+	Long: `Re-scan all known addresses and update stored UTXOs.
+New UTXOs are added; spent UTXOs are marked as spent.
+
+Example:
+  sigil utxo refresh --wallet main`,
+	RunE: runUTXORefresh,
+}
+
+// utxoBalanceCmd shows offline balance from stored UTXOs.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
+var utxoBalanceCmd = &cobra.Command{
+	Use:   "balance",
+	Short: "Show offline balance from stored UTXOs",
+	Long: `Display balance calculated from locally stored UTXOs.
+No network connection required after initial scan.
+
+Example:
+  sigil utxo balance --wallet main`,
+	RunE: runUTXOBalance,
+}
+
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
 	rootCmd.AddCommand(utxoCmd)
 	utxoCmd.AddCommand(utxoListCmd)
+	utxoCmd.AddCommand(utxoRefreshCmd)
+	utxoCmd.AddCommand(utxoBalanceCmd)
 
+	// utxo list flags
 	utxoListCmd.Flags().StringVar(&utxoWallet, "wallet", "", "wallet name (required)")
 	utxoListCmd.Flags().StringVar(&utxoChain, "chain", "bsv", "blockchain (only bsv supported)")
-
 	_ = utxoListCmd.MarkFlagRequired("wallet")
+
+	// utxo refresh flags
+	utxoRefreshCmd.Flags().StringVar(&utxoWallet, "wallet", "", "wallet name (required)")
+	_ = utxoRefreshCmd.MarkFlagRequired("wallet")
+
+	// utxo balance flags
+	utxoBalanceCmd.Flags().StringVar(&utxoWallet, "wallet", "", "wallet name (required)")
+	_ = utxoBalanceCmd.MarkFlagRequired("wallet")
 }
 
 //nolint:gocognit,gocyclo // Display logic for UTXO list is complex
@@ -175,4 +215,162 @@ func displayUTXOsJSON(w interface {
 			utxo.TxID, utxo.Vout, utxo.Amount, utxo.Confirmations, comma)
 	}
 	outln(w, "]")
+}
+
+// runUTXORefresh re-scans addresses and updates stored UTXOs.
+func runUTXORefresh(cmd *cobra.Command, _ []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Load wallet
+	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
+	walletPath := filepath.Join(cfg.Home, "wallets", utxoWallet)
+
+	exists, err := storage.Exists(utxoWallet)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return sigilerr.WithSuggestion(
+			wallet.ErrWalletNotFound,
+			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", utxoWallet),
+		)
+	}
+
+	// Create UTXO store
+	store := utxostore.New(walletPath)
+	if loadErr := store.Load(); loadErr != nil {
+		return fmt.Errorf("loading UTXO store: %w", loadErr)
+	}
+
+	// Check if store has addresses to refresh
+	addresses := store.GetAddresses(chain.BSV)
+	if len(addresses) == 0 {
+		w := cmd.OutOrStdout()
+		out(w, "No addresses found in UTXO store for wallet '%s'.\n", utxoWallet)
+		out(w, "Run 'sigil wallet restore --scan' to scan addresses first.\n")
+		return nil
+	}
+
+	// Create BSV client
+	client := bsv.NewClient(&bsv.ClientOptions{
+		APIKey: cfg.Networks.BSV.APIKey,
+	})
+
+	// Create adapter for refresh
+	adapter := &bsvRefreshAdapter{client: client}
+
+	// Run refresh
+	w := cmd.OutOrStdout()
+	out(w, "Refreshing UTXOs for wallet '%s'...\n", utxoWallet)
+
+	result, err := store.Refresh(ctx, chain.BSV, adapter)
+	if err != nil {
+		return fmt.Errorf("refreshing UTXOs: %w", err)
+	}
+
+	// Display results
+	displayRefreshResults(w, result)
+	return nil
+}
+
+// bsvRefreshAdapter adapts bsv.Client to utxostore.ChainClient interface.
+type bsvRefreshAdapter struct {
+	client *bsv.Client
+}
+
+// ListUTXOs implements utxostore.ChainClient.
+func (a *bsvRefreshAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
+	utxos, err := a.client.ListUTXOs(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]chain.UTXO, len(utxos))
+	for i, u := range utxos {
+		result[i] = chain.UTXO{
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			ScriptPubKey:  u.ScriptPubKey,
+			Address:       address,
+			Confirmations: u.Confirmations,
+		}
+	}
+	return result, nil
+}
+
+// displayRefreshResults shows the results of a UTXO refresh.
+func displayRefreshResults(w interface {
+	Write(p []byte) (n int, err error)
+}, result *utxostore.ScanResult,
+) {
+	outln(w)
+	out(w, "Addresses scanned: %d\n", result.AddressesScanned)
+	out(w, "UTXOs found:       %d\n", result.UTXOsFound)
+	out(w, "Total balance:     %d satoshis (%.8f BSV)\n",
+		result.TotalBalance, float64(result.TotalBalance)/100000000)
+
+	if len(result.Errors) > 0 {
+		outln(w)
+		out(w, "Errors (%d):\n", len(result.Errors))
+		for _, e := range result.Errors {
+			out(w, "  - %s\n", e.Error())
+		}
+	}
+}
+
+// runUTXOBalance shows offline balance from stored UTXOs.
+func runUTXOBalance(cmd *cobra.Command, _ []string) error {
+	// Load wallet path
+	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
+	walletPath := filepath.Join(cfg.Home, "wallets", utxoWallet)
+
+	exists, err := storage.Exists(utxoWallet)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return sigilerr.WithSuggestion(
+			wallet.ErrWalletNotFound,
+			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", utxoWallet),
+		)
+	}
+
+	// Load UTXO store
+	store := utxostore.New(walletPath)
+	if err := store.Load(); err != nil {
+		return fmt.Errorf("loading UTXO store: %w", err)
+	}
+
+	w := cmd.OutOrStdout()
+	format := formatter.Format()
+
+	if store.IsEmpty() {
+		if format == output.FormatJSON {
+			outln(w, `{"balance": 0, "utxos": 0, "note": "no UTXOs stored"}`)
+		} else {
+			out(w, "No UTXOs stored for wallet '%s'.\n", utxoWallet)
+			out(w, "Run 'sigil utxo refresh --wallet %s' to fetch UTXOs from chain.\n", utxoWallet)
+		}
+		return nil
+	}
+
+	// Get balance from stored UTXOs
+	balance := store.GetBalance(chain.BSV)
+	utxos := store.GetUTXOs(chain.BSV, "")
+
+	if format == output.FormatJSON {
+		out(w, `{"balance": %d, "utxos": %d, "bsv": %.8f}`+"\n",
+			balance, len(utxos), float64(balance)/100000000)
+	} else {
+		out(w, "Offline Balance for wallet '%s'\n", utxoWallet)
+		outln(w)
+		out(w, "UTXOs:   %d\n", len(utxos))
+		out(w, "Balance: %d satoshis (%.8f BSV)\n", balance, float64(balance)/100000000)
+		outln(w)
+		out(w, "Note: This is the locally stored balance. Run 'sigil utxo refresh' to update.\n")
+	}
+
+	return nil
 }

@@ -1,17 +1,22 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -36,10 +41,14 @@ var (
 	createWords int
 	// createPassphrase indicates whether to prompt for BIP39 passphrase.
 	createPassphrase bool
+	// createScan indicates whether to scan for existing UTXOs after creation.
+	createScan bool
 	// restoreInput is the seed material for wallet restoration.
 	restoreInput string
 	// restorePassphrase indicates whether to prompt for BIP39 passphrase during restore.
 	restorePassphrase bool
+	// restoreScan indicates whether to scan for existing UTXOs after restore.
+	restoreScan bool
 )
 
 // walletCmd is the parent command for wallet operations.
@@ -202,9 +211,92 @@ func init() {
 
 	walletCreateCmd.Flags().IntVar(&createWords, "words", 12, "mnemonic word count (12 or 24)")
 	walletCreateCmd.Flags().BoolVar(&createPassphrase, "passphrase", false, "use a BIP39 passphrase")
+	walletCreateCmd.Flags().BoolVar(&createScan, "scan", false, "scan for existing UTXOs after creation")
 
 	walletRestoreCmd.Flags().StringVar(&restoreInput, "input", "", "seed material (mnemonic, WIF, or hex)")
 	walletRestoreCmd.Flags().BoolVar(&restorePassphrase, "passphrase", false, "use a BIP39 passphrase (for mnemonic only)")
+	walletRestoreCmd.Flags().BoolVar(&restoreScan, "scan", true, "scan for existing UTXOs after restore")
+}
+
+// bsvClientAdapter adapts bsv.Client to utxostore.ChainClient interface.
+type bsvClientAdapter struct {
+	client *bsv.Client
+}
+
+// ListUTXOs implements utxostore.ChainClient by converting bsv.UTXO to chain.UTXO.
+func (a *bsvClientAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
+	bsvUTXOs, err := a.client.ListUTXOs(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert bsv.UTXO to chain.UTXO
+	chainUTXOs := make([]chain.UTXO, len(bsvUTXOs))
+	for i, u := range bsvUTXOs {
+		chainUTXOs[i] = chain.UTXO{
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			ScriptPubKey:  u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+		}
+	}
+	return chainUTXOs, nil
+}
+
+// scanWalletUTXOs scans a wallet for UTXOs and reports results.
+func scanWalletUTXOs(w *wallet.Wallet, cmd *cobra.Command) error {
+	walletPath := filepath.Join(cfg.Home, "wallets", w.Name)
+	store := utxostore.New(walletPath)
+
+	// Load existing UTXO data if any
+	if err := store.Load(); err != nil {
+		return fmt.Errorf("loading UTXO store: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	outln(cmd.OutOrStdout())
+	outln(cmd.OutOrStdout(), "Scanning for UTXOs...")
+
+	// Scan BSV addresses (currently the only UTXO chain supported)
+	client := bsv.NewClient(&bsv.ClientOptions{
+		APIKey: cfg.Networks.BSV.APIKey,
+	})
+
+	// Wrap client in adapter
+	adapter := &bsvClientAdapter{client: client}
+
+	result, err := store.ScanWallet(ctx, w, wallet.ChainBSV, adapter)
+	if err != nil {
+		return fmt.Errorf("scanning wallet: %w", err)
+	}
+
+	// Display scan results
+	displayScanResults(result, cmd)
+
+	return nil
+}
+
+// displayScanResults shows the results of a UTXO scan.
+func displayScanResults(result *utxostore.ScanResult, cmd *cobra.Command) {
+	w := cmd.OutOrStdout()
+
+	if len(result.Errors) > 0 {
+		outln(w, "\nScan completed with errors:")
+		for _, err := range result.Errors {
+			out(w, "  • %v\n", err)
+		}
+	}
+
+	outln(w)
+	out(w, "Scan Results:\n")
+	out(w, "  Addresses scanned: %d\n", result.AddressesScanned)
+	out(w, "  UTXOs found: %d\n", result.UTXOsFound)
+	out(w, "  Total balance: %d satoshis (%.8f BSV)\n",
+		result.TotalBalance, float64(result.TotalBalance)/100000000)
 }
 
 func runWalletCreate(cmd *cobra.Command, args []string) error {
@@ -232,6 +324,14 @@ func runWalletCreate(cmd *cobra.Command, args []string) error {
 	// Display results
 	displayMnemonic(mnemonic, cmd)
 	displayWalletAddresses(w, cmd)
+
+	// Scan for UTXOs if requested
+	if createScan {
+		if err := scanWalletUTXOs(w, cmd); err != nil {
+			// Don't fail wallet creation if scan fails - just warn
+			out(cmd.OutOrStderr(), "\nWarning: UTXO scan failed: %v\n", err)
+		}
+	}
 
 	outln(cmd.OutOrStdout())
 	out(cmd.OutOrStdout(), "Wallet '%s' created successfully.\n", name)
@@ -525,7 +625,19 @@ func runWalletRestore(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get user confirmation and save
-	return confirmAndSaveWallet(w, seed, storage, cmd)
+	if err := confirmAndSaveWallet(w, seed, storage, cmd); err != nil {
+		return err
+	}
+
+	// Scan for UTXOs if requested (default: true for restore)
+	if restoreScan {
+		if err := scanWalletUTXOs(w, cmd); err != nil {
+			// Don't fail wallet restore if scan fails - just warn
+			out(cmd.OutOrStderr(), "\nWarning: UTXO scan failed: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 // validateRestoreTarget validates wallet name and checks it doesn't exist.

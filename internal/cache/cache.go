@@ -10,6 +10,39 @@ import (
 // DefaultStaleness is the default duration after which cache entries are considered stale.
 const DefaultStaleness = 5 * time.Minute
 
+// Cache defines the interface for balance caching operations.
+type Cache interface {
+	// Get retrieves a cached balance entry.
+	Get(chainID chain.ID, address, token string) (*BalanceCacheEntry, bool, time.Duration)
+
+	// Set stores a balance entry in the cache.
+	Set(entry BalanceCacheEntry)
+
+	// IsStale checks if a cache entry is stale.
+	IsStale(chainID chain.ID, address, token string) bool
+
+	// IsStaleWithDuration checks staleness with custom duration.
+	IsStaleWithDuration(chainID chain.ID, address, token string, staleness time.Duration) bool
+
+	// Delete removes a cache entry.
+	Delete(chainID chain.ID, address, token string)
+
+	// Clear removes all cache entries.
+	Clear()
+
+	// Size returns the number of cache entries.
+	Size() int
+
+	// GetAllForAddress returns all cached balances for an address.
+	GetAllForAddress(address string) []BalanceCacheEntry
+
+	// Prune removes entries older than maxAge.
+	Prune(maxAge time.Duration) int
+}
+
+// Compile-time interface check
+var _ Cache = (*BalanceCache)(nil)
+
 // BalanceCache stores cached balance information.
 type BalanceCache struct {
 	Entries map[string]BalanceCacheEntry `json:"entries"`

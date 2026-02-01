@@ -27,6 +27,9 @@ var (
 	cfg       *config.Config
 	logger    *config.Logger
 	formatter *output.Formatter
+
+	// Command context for dependency injection
+	cmdCtx *CommandContext
 )
 
 // rootCmd is the base command when called without any subcommands.
@@ -121,6 +124,9 @@ func initGlobals() error {
 	detectedFormat := output.DetectFormat(os.Stdout, explicitFormat)
 	formatter = output.NewFormatter(detectedFormat, os.Stdout)
 
+	// Create command context
+	cmdCtx = NewCommandContext(cfg, logger, formatter)
+
 	return nil
 }
 
@@ -144,6 +150,11 @@ func Logger() *config.Logger {
 // Formatter returns the global output formatter.
 func Formatter() *output.Formatter {
 	return formatter
+}
+
+// Context returns the global command context.
+func Context() *CommandContext {
+	return cmdCtx
 }
 
 // Version information, set at build time.

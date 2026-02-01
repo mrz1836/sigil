@@ -99,10 +99,6 @@ type Chain interface {
 	// Returns balance as a big.Int in the smallest unit (wei, satoshis).
 	GetBalance(ctx context.Context, address string) (*big.Int, error)
 
-	// GetTokenBalance retrieves an ERC-20 token balance (ETH only).
-	// For non-ETH chains, this returns ErrNotSupported.
-	GetTokenBalance(ctx context.Context, address, tokenAddress string) (*big.Int, error)
-
 	// EstimateFee estimates the fee for a transaction.
 	// For ETH: returns gas price * estimated gas.
 	// For BSV: returns fee rate * estimated tx size.
@@ -119,6 +115,15 @@ type Chain interface {
 
 	// ParseAmount converts a human-readable string to big.Int.
 	ParseAmount(amount string) (*big.Int, error)
+}
+
+// TokenChain extends Chain with ERC-20 token operations.
+// Only Ethereum-like chains implement this interface.
+type TokenChain interface {
+	Chain
+
+	// GetTokenBalance retrieves an ERC-20 token balance.
+	GetTokenBalance(ctx context.Context, address, tokenAddress string) (*big.Int, error)
 }
 
 // UTXOChain extends Chain with UTXO-specific operations.

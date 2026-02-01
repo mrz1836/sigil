@@ -1,10 +1,11 @@
 package wallet
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"time"
+
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 const (
@@ -14,16 +15,18 @@ const (
 
 var (
 	// ErrWalletNotFound indicates the wallet does not exist.
-	ErrWalletNotFound = errors.New("wallet not found")
+	// Uses SigilError for proper exit code (ExitNotFound = 4).
+	ErrWalletNotFound = sigilerr.ErrWalletNotFound
 
 	// ErrWalletExists indicates a wallet with that name already exists.
-	ErrWalletExists = errors.New("wallet already exists")
+	// Uses SigilError for proper exit code (ExitInput = 2).
+	ErrWalletExists = sigilerr.ErrWalletExists
 
 	// ErrInvalidWalletName indicates the wallet name is invalid.
-	ErrInvalidWalletName = errors.New("wallet name must be 1-64 alphanumeric characters or underscores")
+	ErrInvalidWalletName = sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, "wallet name must be 1-64 alphanumeric characters or underscores")
 
 	// ErrInvalidAddressCount indicates the address count is invalid.
-	ErrInvalidAddressCount = errors.New("invalid address count")
+	ErrInvalidAddressCount = sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, "invalid address count")
 
 	// walletNameRegex validates wallet names: alphanumeric + underscore, 1-64 chars.
 	walletNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)

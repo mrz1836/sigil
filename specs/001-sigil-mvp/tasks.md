@@ -206,21 +206,21 @@ Based on plan.md structure:
 
 ### Implementation for User Story 4
 
-- [ ] T067t [US4] Write tests for EIP-55 checksum validation in internal/chain/eth/address_test.go
-- [ ] T067 [P] [US4] Implement EIP-55 checksum address validation for ETH in internal/chain/eth/address.go (FR-021)
-- [ ] T068 [P] [US4] Implement gas price fetching (slow/medium/fast) in internal/chain/eth/gas.go (FR-020)
-- [ ] T069 [US4] Implement gas estimation for ETH transfers in internal/chain/eth/gas.go (FR-018)
-- [ ] T070 [US4] Implement gas estimation for ERC-20 transfers in internal/chain/eth/gas.go (FR-019)
-- [ ] T071t [US4] Write tests for ETH transaction building in internal/chain/eth/tx_test.go
-- [ ] T071 [US4] Implement ETH native transfer transaction building in internal/chain/eth/tx.go (FR-018)
-- [ ] T072 [US4] Implement ERC-20 transfer transaction building for USDC in internal/chain/eth/tx.go (FR-019)
-- [ ] T073 [US4] Implement transaction signing with private key (zeroed after use) in internal/chain/eth/tx.go
-- [ ] T074 [US4] Implement transaction broadcast via RPC in internal/chain/eth/tx.go
-- [ ] T075 [US4] Define TransactionResult struct in internal/chain/transaction.go per data-model.md
-- [ ] T076 [US4] Implement tx send command in internal/cli/tx.go with `sigil tx send --wallet <name> --to <address> --amount <value> --chain eth --token USDC`
-- [ ] T077 [US4] Implement wallet unlock with password prompt in internal/cli/tx.go
-- [ ] T078 [US4] Implement insufficient funds error with required/available amounts in internal/cli/tx.go (FR-037)
-- [ ] T079 [US4] Display transaction hash after successful broadcast in internal/cli/tx.go
+- [X] T067t [US4] Write tests for EIP-55 checksum validation in internal/chain/eth/address_test.go
+- [X] T067 [P] [US4] Implement EIP-55 checksum address validation for ETH in internal/chain/eth/address.go (FR-021)
+- [X] T068 [P] [US4] Implement gas price fetching (slow/medium/fast) in internal/chain/eth/gas.go (FR-020)
+- [X] T069 [US4] Implement gas estimation for ETH transfers in internal/chain/eth/gas.go (FR-018)
+- [X] T070 [US4] Implement gas estimation for ERC-20 transfers in internal/chain/eth/gas.go (FR-019)
+- [X] T071t [US4] Write tests for ETH transaction building in internal/chain/eth/tx_test.go
+- [X] T071 [US4] Implement ETH native transfer transaction building in internal/chain/eth/tx.go (FR-018)
+- [X] T072 [US4] Implement ERC-20 transfer transaction building for USDC in internal/chain/eth/tx.go (FR-019)
+- [X] T073 [US4] Implement transaction signing with private key (zeroed after use) in internal/chain/eth/tx.go
+- [X] T074 [US4] Implement transaction broadcast via RPC in internal/chain/eth/tx.go
+- [X] T075 [US4] Define TransactionResult struct in internal/chain/transaction.go per data-model.md
+- [X] T076 [US4] Implement tx send command in internal/cli/tx.go with `sigil tx send --wallet <name> --to <address> --amount <value> --chain eth --token USDC`
+- [X] T077 [US4] Implement wallet unlock with password prompt in internal/cli/tx.go
+- [X] T078 [US4] Implement insufficient funds error with required/available amounts in internal/cli/tx.go (FR-037)
+- [X] T079 [US4] Display transaction hash after successful broadcast in internal/cli/tx.go
 
 **Checkpoint**: User Story 4 complete - USDC transactions work independently
 
@@ -234,9 +234,9 @@ Based on plan.md structure:
 
 ### Implementation for User Story 5
 
-- [ ] T080 [US5] Extend tx send command to handle native ETH transfers (no --token flag) in internal/cli/tx.go
-- [ ] T081 [US5] Validate ETH address format in tx send command in internal/cli/tx.go (FR-021)
-- [ ] T082 [US5] Display gas estimate before confirming ETH transaction in internal/cli/tx.go
+- [X] T080 [US5] Extend tx send command to handle native ETH transfers (no --token flag) in internal/cli/tx.go
+- [X] T081 [US5] Validate ETH address format in tx send command in internal/cli/tx.go (FR-021)
+- [X] T082 [US5] Display gas estimate before confirming ETH transaction in internal/cli/tx.go
 
 **Checkpoint**: User Story 5 complete - ETH transactions work independently
 
@@ -250,19 +250,19 @@ Based on plan.md structure:
 
 ### Implementation for User Story 6
 
-- [ ] T083t [US6] Write tests for Base58Check address validation in internal/chain/bsv/address_test.go
-- [ ] T083 [P] [US6] Implement Base58Check address validation for BSV in internal/chain/bsv/address.go (FR-028)
-- [ ] T084 [US6] Define UTXO struct in internal/chain/bsv/utxo.go per data-model.md
-- [ ] T085 [US6] Implement UTXO listing via WhatsOnChain API in internal/chain/bsv/utxo.go (FR-024)
-- [ ] T086 [US6] Implement UTXO selection (simple first-fit) in internal/chain/bsv/utxo.go
-- [ ] T087 [US6] Implement BSV fee estimation via TAAL API in internal/chain/bsv/fee.go (FR-027)
-- [ ] T088t [US6] Write tests for P2PKH transaction building using go-sdk in internal/chain/bsv/tx_test.go
-- [ ] T088 [US6] Implement P2PKH transaction building using go-sdk in internal/chain/bsv/tx.go (FR-025)
-- [ ] T089 [US6] Implement BSV transaction signing in internal/chain/bsv/tx.go
-- [ ] T090 [US6] Implement BSV transaction broadcast via TAAL in internal/chain/bsv/tx.go (FR-026)
-- [ ] T091 [US6] Extend tx send command for BSV chain (--chain bsv) in internal/cli/tx.go
-- [ ] T092 [US6] Implement utxo list command in internal/cli/utxo.go with `sigil utxo list --wallet <name> --chain bsv`
-- [ ] T093 [US6] Format UTXO output as table with txid/vout/amount/confirmations columns in internal/cli/utxo.go
+- [X] T083t [US6] Write tests for Base58Check address validation in internal/chain/bsv/address_test.go
+- [X] T083 [P] [US6] Implement Base58Check address validation for BSV in internal/chain/bsv/address.go (FR-028)
+- [X] T084 [US6] Define UTXO struct in internal/chain/bsv/utxo.go per data-model.md
+- [X] T085 [US6] Implement UTXO listing via WhatsOnChain API in internal/chain/bsv/utxo.go (FR-024)
+- [X] T086 [US6] Implement UTXO selection (simple first-fit) in internal/chain/bsv/utxo.go
+- [X] T087 [US6] Implement BSV fee estimation via TAAL API in internal/chain/bsv/fee.go (FR-027)
+- [X] T088t [US6] Write tests for P2PKH transaction building using go-sdk in internal/chain/bsv/tx_test.go
+- [X] T088 [US6] Implement P2PKH transaction building using go-sdk in internal/chain/bsv/tx.go (FR-025)
+- [X] T089 [US6] Implement BSV transaction signing in internal/chain/bsv/tx.go
+- [X] T090 [US6] Implement BSV transaction broadcast via TAAL in internal/chain/bsv/tx.go (FR-026)
+- [X] T091 [US6] Extend tx send command for BSV chain (--chain bsv) in internal/cli/tx.go
+- [X] T092 [US6] Implement utxo list command in internal/cli/utxo.go with `sigil utxo list --wallet <name> --chain bsv`
+- [X] T093 [US6] Format UTXO output as table with txid/vout/amount/confirmations columns in internal/cli/utxo.go
 
 **Checkpoint**: User Story 6 complete - BSV transactions and UTXO listing work independently
 
@@ -276,12 +276,12 @@ Based on plan.md structure:
 
 ### Implementation for User Story 7
 
-- [ ] T094 [P] [US7] Implement wallet listing from storage directory in internal/wallet/storage.go (FR-030)
-- [ ] T095 [US7] Define WalletSummary struct for listing in internal/wallet/wallet.go per contracts/wallet.go
-- [ ] T096 [US7] Implement wallet list command in internal/cli/wallet.go with `sigil wallet list` (FR-030)
-- [ ] T097 [US7] Format wallet list as table with name/created_at/chains/addresses columns in internal/cli/wallet.go
-- [ ] T098 [US7] Implement wallet show command in internal/cli/wallet.go with `sigil wallet show <name>` (FR-031)
-- [ ] T099 [US7] Display all derived addresses for each chain in wallet show command in internal/cli/wallet.go
+- [X] T094 [P] [US7] Implement wallet listing from storage directory in internal/wallet/storage.go (FR-030)
+- [X] T095 [US7] Define WalletSummary struct for listing in internal/wallet/wallet.go per contracts/wallet.go
+- [X] T096 [US7] Implement wallet list command in internal/cli/wallet.go with `sigil wallet list` (FR-030)
+- [X] T097 [US7] Format wallet list as table with name/created_at/chains/addresses columns in internal/cli/wallet.go
+- [X] T098 [US7] Implement wallet show command in internal/cli/wallet.go with `sigil wallet show <name>` (FR-031)
+- [X] T099 [US7] Display all derived addresses for each chain in wallet show command in internal/cli/wallet.go
 
 **Checkpoint**: User Story 7 complete - wallet listing and details work independently
 
@@ -297,10 +297,10 @@ Based on plan.md structure:
 
 ### Implementation for User Story 8
 
-- [ ] T100 [US8] Implement wallet import command in internal/cli/wallet.go with `sigil wallet import <name>` (reuses WIF/hex parsing from internal/wallet/restore.go)
-- [ ] T101 [US8] Add --wif flag for WIF import mode with secure input in internal/cli/wallet.go
-- [ ] T102 [US8] Validate WIF format and checksum in import command using shared validation from internal/wallet/restore.go (FR-011)
-- [ ] T103 [US8] Derive address from imported key and display for verification in internal/cli/wallet.go
+- [X] T100 [US8] Implement wallet import command in internal/cli/wallet.go with `sigil wallet import <name>` (reuses WIF/hex parsing from internal/wallet/restore.go)
+- [X] T101 [US8] Add --wif flag for WIF import mode with secure input in internal/cli/wallet.go
+- [X] T102 [US8] Validate WIF format and checksum in import command using shared validation from internal/wallet/restore.go (FR-011)
+- [X] T103 [US8] Derive address from imported key and display for verification in internal/cli/wallet.go
 
 **Checkpoint**: User Story 8 complete - WIF/hex key import works independently
 
@@ -314,12 +314,12 @@ Based on plan.md structure:
 
 ### Implementation for User Story 9
 
-- [ ] T104 [US9] Implement config init command in internal/cli/config.go with `sigil config init`
-- [ ] T105 [US9] Create default config.yaml at ~/.sigil/config.yaml in config init command
-- [ ] T106 [US9] Implement config show command in internal/cli/config.go with `sigil config show`
-- [ ] T107 [US9] Implement config get command in internal/cli/config.go with `sigil config get <path>` (e.g., networks.eth.rpc)
-- [ ] T108 [US9] Implement config set command in internal/cli/config.go with `sigil config set <path> <value>`
-- [ ] T109 [US9] Validate config values before saving in config set command
+- [X] T104 [US9] Implement config init command in internal/cli/config.go with `sigil config init`
+- [X] T105 [US9] Create default config.yaml at ~/.sigil/config.yaml in config init command
+- [X] T106 [US9] Implement config show command in internal/cli/config.go with `sigil config show`
+- [X] T107 [US9] Implement config get command in internal/cli/config.go with `sigil config get <path>` (e.g., networks.eth.rpc)
+- [X] T108 [US9] Implement config set command in internal/cli/config.go with `sigil config set <path> <value>`
+- [X] T109 [US9] Validate config values before saving in config set command
 
 **Checkpoint**: User Story 9 complete - config management works independently
 
@@ -333,15 +333,15 @@ Based on plan.md structure:
 
 ### Implementation for User Story 10
 
-- [ ] T110 [P] [US10] Define Backup and BackupManifest structs in internal/backup/manifest.go per data-model.md
-- [ ] T111 [US10] Implement backup creation with age encryption in internal/backup/backup.go (FR-033)
-- [ ] T112 [US10] Implement SHA256 checksum generation for backup integrity in internal/backup/backup.go (FR-034)
-- [ ] T113 [US10] Implement backup verification (checksum + decrypt test) in internal/backup/backup.go (FR-034)
-- [ ] T114 [US10] Implement backup restoration to wallet file in internal/backup/backup.go (FR-035)
-- [ ] T115 [US10] Implement backup create command in internal/cli/backup.go with `sigil backup create --wallet <name>`
-- [ ] T116 [US10] Create backup file at ~/.sigil/backups/<name>-<date>.sigil in backup create command
-- [ ] T117 [US10] Implement backup verify command in internal/cli/backup.go with `sigil backup verify --input <path>`
-- [ ] T118 [US10] Implement backup restore command in internal/cli/backup.go with `sigil backup restore --input <path>`
+- [X] T110 [P] [US10] Define Backup and BackupManifest structs in internal/backup/manifest.go per data-model.md
+- [X] T111 [US10] Implement backup creation with age encryption in internal/backup/backup.go (FR-033)
+- [X] T112 [US10] Implement SHA256 checksum generation for backup integrity in internal/backup/backup.go (FR-034)
+- [X] T113 [US10] Implement backup verification (checksum + decrypt test) in internal/backup/backup.go (FR-034)
+- [X] T114 [US10] Implement backup restoration to wallet file in internal/backup/backup.go (FR-035)
+- [X] T115 [US10] Implement backup create command in internal/cli/backup.go with `sigil backup create --wallet <name>`
+- [X] T116 [US10] Create backup file at ~/.sigil/backups/<name>-<date>.sigil in backup create command
+- [X] T117 [US10] Implement backup verify command in internal/cli/backup.go with `sigil backup verify --input <path>`
+- [X] T118 [US10] Implement backup restore command in internal/cli/backup.go with `sigil backup restore --input <path>`
 
 **Checkpoint**: User Story 10 complete - backup operations work independently
 
@@ -351,11 +351,11 @@ Based on plan.md structure:
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T119 [P] Add verbose API request/response logging to debug level in internal/config/logging.go (extends T020a/T020b)
-- [ ] T120 [P] Add --help text with usage examples to all commands per FR-006/SC-006
-- [ ] T121 Implement version command in internal/cli/root.go with `sigil version`
-- [ ] T122 [P] Add shell completion generation (bash, zsh, fish) via cobra completions in internal/cli/root.go
-- [ ] T123 Verify all exit codes match documented values per FR-006 in pkg/errors/errors.go
+- [X] T119 [P] Add verbose API request/response logging to debug level in internal/config/logging.go (extends T020a/T020b)
+- [X] T120 [P] Add --help text with usage examples to all commands per FR-006/SC-006
+- [X] T121 Implement version command in internal/cli/root.go with `sigil version`
+- [X] T122 [P] Add shell completion generation (bash, zsh, fish) via cobra completions in internal/cli/root.go
+- [X] T123 Verify all exit codes match documented values per FR-006 in pkg/errors/errors.go
 - [ ] T124 Run quickstart.md validation - verify all documented commands work as specified
 - [ ] T124a Add fuzz tests for mnemonic parsing, address validation, transaction parsing in internal/**/fuzz_test.go
 - [ ] T124b Create integration test suite running full quickstart.md workflow in tests/integration/

@@ -14,6 +14,7 @@ Sigil is a secure, terminal-based wallet for power users. Full control over your
 |---------------------------------|------------------------------------------------------|
 | **[VISION.md](docs/VISION.md)** | Why Sigil exists — philosophy, principles, goals     |
 | **[PRD.md](docs/PRD.md)**       | What we're building — features, phases, architecture |
+| **[CLI.md](docs/CLI.md)**       | How to use Sigil — commands, options, examples       |
 
 <br>
 

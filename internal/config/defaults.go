@@ -1,5 +1,9 @@
 package config
 
+// DefaultETHRPCURL is the default Ethereum RPC endpoint.
+// Uses Cloudflare's public gateway which requires no API key.
+const DefaultETHRPCURL = "https://cloudflare-eth.com"
+
 // Defaults returns the default configuration.
 func Defaults() *Config {
 	return &Config{
@@ -13,7 +17,7 @@ func Defaults() *Config {
 		Networks: NetworksConfig{
 			ETH: ETHNetworkConfig{
 				Enabled: true,
-				RPC:     "", // User must configure
+				RPC:     DefaultETHRPCURL,
 				ChainID: 1,
 				Tokens: []TokenConfig{
 					{
@@ -53,6 +57,8 @@ func Defaults() *Config {
 			AutoLockSeconds:     0, // Disabled for MVP
 			RequireConfirmAbove: 0, // Disabled for MVP
 			MemoryLock:          true,
+			SessionEnabled:      true,
+			SessionTTLMinutes:   15,
 		},
 		Output: OutputConfig{
 			DefaultFormat: "auto",

@@ -91,6 +91,8 @@ type SecurityConfig struct {
 	AutoLockSeconds     int     `yaml:"auto_lock_seconds"`
 	RequireConfirmAbove float64 `yaml:"require_confirm_above"`
 	MemoryLock          bool    `yaml:"memory_lock"`
+	SessionEnabled      bool    `yaml:"session_enabled"`
+	SessionTTLMinutes   int     `yaml:"session_ttl_minutes"`
 }
 
 // OutputConfig defines output formatting settings.

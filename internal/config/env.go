@@ -15,9 +15,12 @@ const (
 	EnvVerbose      = "SIGIL_VERBOSE"
 	EnvLogLevel     = "SIGIL_LOG_LEVEL"
 	EnvNoColor      = "NO_COLOR"
+	EnvSessionTTL   = "SIGIL_SESSION_TTL"
 )
 
 // ApplyEnvironment applies environment variable overrides to the configuration.
+//
+//nolint:gocognit,gocyclo // Environment variable overrides require sequential checks
 func ApplyEnvironment(cfg *Config) {
 	if v := os.Getenv(EnvHome); v != "" {
 		cfg.Home = v
@@ -46,6 +49,13 @@ func ApplyEnvironment(cfg *Config) {
 	// NO_COLOR disables colored output
 	if _, ok := os.LookupEnv(EnvNoColor); ok {
 		cfg.Output.Color = "never"
+	}
+
+	// SIGIL_SESSION_TTL sets session timeout in minutes
+	if v := os.Getenv(EnvSessionTTL); v != "" {
+		if ttl, err := strconv.Atoi(v); err == nil && ttl > 0 {
+			cfg.Security.SessionTTLMinutes = ttl
+		}
 	}
 }
 

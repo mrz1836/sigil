@@ -9,11 +9,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/mrz1836/sigil/internal/chain"
+	ethcrypto "github.com/mrz1836/sigil/internal/chain/eth/crypto"
+	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
 )
 
 const (
@@ -62,7 +60,7 @@ var (
 // Client provides Ethereum blockchain operations.
 type Client struct {
 	rpcURL    string
-	ethClient *ethclient.Client
+	rpcClient *rpc.Client
 	chainID   *big.Int
 }
 
@@ -98,8 +96,7 @@ func (c *Client) GetBalance(ctx context.Context, address string) (*big.Int, erro
 		return nil, err
 	}
 
-	addr := common.HexToAddress(address)
-	balance, err := c.ethClient.BalanceAt(ctx, addr, nil)
+	balance, err := c.rpcClient.GetBalance(ctx, address, "latest")
 	if err != nil {
 		return nil, fmt.Errorf("getting balance: %w", err)
 	}
@@ -126,21 +123,20 @@ func (c *Client) GetTokenBalance(ctx context.Context, address, tokenAddress stri
 	selector := []byte{0x70, 0xa0, 0x82, 0x31}
 
 	// Pad address to 32 bytes
-	addr := common.HexToAddress(address)
-	paddedAddr := common.LeftPadBytes(addr.Bytes(), 32)
+	addr, _ := ethcrypto.HexToAddress(address)
+	paddedAddr := ethcrypto.LeftPadBytes(addr.Bytes(), 32)
 
 	// Build call data
 	data := append(selector, paddedAddr...)
 
 	// Create call message
-	tokenAddr := common.HexToAddress(tokenAddress)
-	msg := ethereum.CallMsg{
-		To:   &tokenAddr,
+	msg := rpc.CallMsg{
+		To:   tokenAddress,
 		Data: data,
 	}
 
 	// Execute call
-	result, err := c.ethClient.CallContract(ctx, msg, nil)
+	result, err := c.rpcClient.EthCall(ctx, msg, "latest")
 	if err != nil {
 		return nil, fmt.Errorf("calling balanceOf: %w", err)
 	}
@@ -168,22 +164,19 @@ func (c *Client) EstimateFee(ctx context.Context, from, to string, amount *big.I
 	}
 
 	// Get gas price
-	gasPrice, err := c.ethClient.SuggestGasPrice(ctx)
+	gasPrice, err := c.rpcClient.GasPrice(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting gas price: %w", err)
 	}
 
 	// Estimate gas for a simple ETH transfer (21000 gas)
-	fromAddr := common.HexToAddress(from)
-	toAddr := common.HexToAddress(to)
-
-	msg := ethereum.CallMsg{
-		From:  fromAddr,
-		To:    &toAddr,
+	msg := rpc.CallMsg{
+		From:  from,
+		To:    to,
 		Value: amount,
 	}
 
-	gasLimit, err := c.ethClient.EstimateGas(ctx, msg)
+	gasLimit, err := c.rpcClient.EstimateGas(ctx, msg)
 	if err != nil {
 		// Default to 21000 for simple transfers
 		gasLimit = defaultGasLimit
@@ -233,28 +226,23 @@ func (c *Client) ParseAmount(amount string) (*big.Int, error) {
 
 // Close closes the client connection.
 func (c *Client) Close() {
-	if c.ethClient != nil {
-		c.ethClient.Close()
-		c.ethClient = nil
+	if c.rpcClient != nil {
+		c.rpcClient.Close()
+		c.rpcClient = nil
 	}
 }
 
 // connect establishes the RPC connection if not already connected.
 func (c *Client) connect(ctx context.Context) error {
-	if c.ethClient != nil {
+	if c.rpcClient != nil {
 		return nil
 	}
 
-	client, err := ethclient.DialContext(ctx, c.rpcURL)
-	if err != nil {
-		return fmt.Errorf("connecting to ETH RPC: %w", err)
-	}
-
-	c.ethClient = client
+	c.rpcClient = rpc.NewClient(c.rpcURL)
 
 	// Get chain ID if not set
 	if c.chainID == nil {
-		chainID, err := client.ChainID(ctx)
+		chainID, err := c.rpcClient.ChainID(ctx)
 		if err != nil {
 			return fmt.Errorf("getting chain ID: %w", err)
 		}

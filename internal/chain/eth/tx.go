@@ -2,16 +2,14 @@ package eth
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	ethcrypto "github.com/mrz1836/sigil/internal/chain/eth/crypto"
+	ethtypes "github.com/mrz1836/sigil/internal/chain/eth/types"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -96,7 +94,7 @@ func BuildERC20TransferData(to string, amount *big.Int) []byte {
 	copy(data[:4], erc20TransferSelector)
 
 	// Pad address to 32 bytes (left-pad with zeros)
-	toAddr := common.HexToAddress(to)
+	toAddr, _ := ethcrypto.HexToAddress(to)
 	copy(data[16:36], toAddr.Bytes())
 
 	// Pad amount to 32 bytes (left-pad with zeros)
@@ -107,7 +105,7 @@ func BuildERC20TransferData(to string, amount *big.Int) []byte {
 }
 
 // BuildTransaction creates an unsigned transaction from parameters.
-func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*types.Transaction, error) {
+func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*ethtypes.LegacyTx, error) {
 	if err := params.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
@@ -130,56 +128,52 @@ func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*types
 		params.ChainID = chainID
 	}
 
-	toAddr := common.HexToAddress(params.To)
+	toAddr, _ := ethcrypto.HexToAddress(params.To)
 
 	// Create transaction
-	tx := types.NewTx(&types.LegacyTx{
-		Nonce:    params.Nonce,
-		To:       &toAddr,
-		Value:    params.Value,
-		Gas:      params.GasLimit,
-		GasPrice: params.GasPrice,
-		Data:     params.Data,
-	})
+	tx := ethtypes.NewLegacyTx(
+		params.Nonce,
+		toAddr.Bytes(),
+		params.Value,
+		params.GasLimit,
+		params.GasPrice,
+		params.Data,
+	)
 
 	return tx, nil
 }
 
 // SignTransaction signs a transaction with the provided private key.
 // The private key bytes are zeroed after signing for security.
-func SignTransaction(tx *types.Transaction, privateKey []byte, chainID *big.Int) (*types.Transaction, error) {
+func SignTransaction(tx *ethtypes.LegacyTx, privateKey []byte, chainID *big.Int) (*ethtypes.LegacyTx, error) {
+	// Make a copy of the private key so we can zero it
+	keyCopy := make([]byte, len(privateKey))
+	copy(keyCopy, privateKey)
+
 	// Ensure we zero the key when done
-	defer ZeroPrivateKey(privateKey)
+	defer ZeroPrivateKey(keyCopy)
 
-	// Parse private key
-	key, err := crypto.ToECDSA(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("parsing private key: %w", err)
-	}
-
-	// Create EIP-155 signer
-	signer := types.NewEIP155Signer(chainID)
-
-	// Sign the transaction
-	signedTx, err := types.SignTx(tx, signer, key)
-	if err != nil {
+	// Sign the transaction with EIP-155
+	if err := tx.Sign(keyCopy, chainID); err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 
-	return signedTx, nil
+	return tx, nil
 }
 
 // BroadcastTransaction sends a signed transaction to the network.
-func (c *Client) BroadcastTransaction(ctx context.Context, tx *types.Transaction) error {
+func (c *Client) BroadcastTransaction(ctx context.Context, tx *ethtypes.LegacyTx) (string, error) {
 	if err := c.connect(ctx); err != nil {
-		return err
+		return "", err
 	}
 
-	if err := c.ethClient.SendTransaction(ctx, tx); err != nil {
-		return fmt.Errorf("broadcasting transaction: %w", err)
+	rawTx := tx.RawBytes()
+	txHash, err := c.rpcClient.SendRawTransaction(ctx, rawTx)
+	if err != nil {
+		return "", fmt.Errorf("broadcasting transaction: %w", err)
 	}
 
-	return nil
+	return txHash, nil
 }
 
 // Send implements the chain.Chain interface - builds, signs, and broadcasts a transaction.
@@ -254,13 +248,14 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	}
 
 	// Broadcast transaction
-	if err := c.BroadcastTransaction(ctx, signedTx); err != nil {
+	txHash, err := c.BroadcastTransaction(ctx, signedTx)
+	if err != nil {
 		return nil, err
 	}
 
 	// Build result
 	result := &chain.TransactionResult{
-		Hash:     signedTx.Hash().Hex(),
+		Hash:     txHash,
 		From:     req.From,
 		To:       req.To,
 		Amount:   c.FormatAmount(req.Amount),
@@ -283,19 +278,13 @@ func ZeroPrivateKey(key []byte) {
 
 // DeriveAddress derives an Ethereum address from a private key.
 func DeriveAddress(privateKey []byte) (string, error) {
-	key, err := crypto.ToECDSA(privateKey)
+	addrBytes, err := ethcrypto.DeriveAddress(privateKey)
 	if err != nil {
-		return "", fmt.Errorf("parsing private key: %w", err)
+		return "", fmt.Errorf("deriving address: %w", err)
 	}
 
-	publicKey := key.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return "", sigilerrors.ErrInvalidPublicKey
-	}
-
-	address := crypto.PubkeyToAddress(*publicKeyECDSA)
-	return ToChecksumAddress(address.Hex()), nil
+	addr := ethcrypto.BytesToAddress(addrBytes)
+	return ToChecksumAddress(addr.Hex()), nil
 }
 
 // HashMessage hashes a message according to EIP-191 personal_sign.

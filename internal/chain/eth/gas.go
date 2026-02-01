@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -73,7 +70,7 @@ func (c *Client) GetGasPrices(ctx context.Context) (*GasPrices, error) {
 	}
 
 	// Get suggested gas price from the network
-	suggestedPrice, err := c.ethClient.SuggestGasPrice(ctx)
+	suggestedPrice, err := c.rpcClient.GasPrice(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting suggested gas price: %w", err)
 	}
@@ -226,7 +223,7 @@ func (c *Client) GetNonce(ctx context.Context, address string) (uint64, error) {
 	}
 
 	// Get pending nonce
-	nonce, err := c.ethClient.PendingNonceAt(ctx, parseAddress(address))
+	nonce, err := c.rpcClient.GetTransactionCount(ctx, address, "pending")
 	if err != nil {
 		return 0, fmt.Errorf("getting nonce: %w", err)
 	}
@@ -240,14 +237,4 @@ func (c *Client) GetChainID(ctx context.Context) (*big.Int, error) {
 		return nil, err
 	}
 	return c.chainID, nil
-}
-
-// GetClient returns the underlying ethclient for advanced operations.
-func (c *Client) GetClient() *ethclient.Client {
-	return c.ethClient
-}
-
-// parseAddress converts a string address to common.Address.
-func parseAddress(address string) common.Address {
-	return common.HexToAddress(address)
 }

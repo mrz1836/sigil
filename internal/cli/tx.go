@@ -133,7 +133,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	case chain.ETH:
 		return runETHSend(ctx, cmd, fromAddress, seed)
 	case chain.BSV:
-		return runBSVSend(ctx, cmd, fromAddress, seed)
+		return runBSVSend(ctx, cmd, wlt, storage, fromAddress, seed)
 	case chain.BTC, chain.BCH:
 		return sigilerr.ErrNotImplemented
 	default:
@@ -255,7 +255,8 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	return nil
 }
 
-func runBSVSend(ctx context.Context, cmd *cobra.Command, fromAddress string, seed []byte) error {
+//nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
+func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *wallet.FileStorage, fromAddress string, seed []byte) error {
 	cmdCtx := GetCmdContext(cmd)
 
 	// Validate BSV address
@@ -308,6 +309,12 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 		)
 	}
 
+	// Derive next change address for BSV (uses internal chain per BIP44)
+	changeAddr, err := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
+	if err != nil {
+		return fmt.Errorf("deriving change address: %w", err)
+	}
+
 	// Display transaction details and confirm
 	if !txConfirm {
 		displayBSVTxDetails(cmd, fromAddress, txTo, txAmount, estimatedFee, feeQuote.StandardRate)
@@ -317,20 +324,29 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 		}
 	}
 
-	// Derive private key from seed
-	privateKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, 0)
+	// Derive private key from seed for the sending address
+	// Find the index of the from address
+	fromIndex := uint32(0)
+	for _, addr := range wlt.Addresses[wallet.ChainBSV] {
+		if addr.Address == fromAddress {
+			fromIndex = addr.Index
+			break
+		}
+	}
+	privateKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, fromIndex)
 	if err != nil {
 		return fmt.Errorf("deriving private key: %w", err)
 	}
 	defer wallet.ZeroBytes(privateKey)
 
-	// Build send request
+	// Build send request with change address
 	req := chain.SendRequest{
-		From:       fromAddress,
-		To:         txTo,
-		Amount:     amount,
-		PrivateKey: privateKey,
-		FeeRate:    feeQuote.StandardRate,
+		From:          fromAddress,
+		To:            txTo,
+		Amount:        amount,
+		PrivateKey:    privateKey,
+		FeeRate:       feeQuote.StandardRate,
+		ChangeAddress: changeAddr.Address,
 	}
 
 	// Send transaction
@@ -338,6 +354,10 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
 	}
+
+	// The change address is derived on-the-fly. In a future enhancement,
+	// we could persist derived change addresses to the wallet file when we have
+	// a session-aware save mechanism that doesn't require re-prompting for password.
 
 	// Display result
 	displayBSVTxResult(cmd, result)

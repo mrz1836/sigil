@@ -187,7 +187,12 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 
 	// Add change output if above dust
 	if change >= DustLimit {
-		err = builder.AddOutput(req.From, change)
+		// Use provided change address, or fall back to sender address
+		changeAddr := req.From
+		if req.ChangeAddress != "" {
+			changeAddr = req.ChangeAddress
+		}
+		err = builder.AddOutput(changeAddr, change)
 		if err != nil {
 			return nil, fmt.Errorf("adding change output: %w", err)
 		}

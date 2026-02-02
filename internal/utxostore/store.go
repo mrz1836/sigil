@@ -13,8 +13,13 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 )
 
-// ErrVersionTooNew is returned when the utxos.json version is newer than supported.
-var ErrVersionTooNew = errors.New("utxos.json version is newer than supported")
+var (
+	// ErrVersionTooNew is returned when the utxos.json version is newer than supported.
+	ErrVersionTooNew = errors.New("utxos.json version is newer than supported")
+
+	// ErrAddressNotFound is returned when an address is not found in the store.
+	ErrAddressNotFound = errors.New("address not found")
+)
 
 const (
 	// utxoFileName is the name of the UTXO storage file.
@@ -56,7 +61,8 @@ type AddressMetadata struct {
 	ChainID        chain.ID `json:"chain_id"`
 	DerivationPath string   `json:"derivation_path"`
 	Index          uint32   `json:"index"`
-	Label          string   `json:"label,omitempty"` // User-defined label
+	Label          string   `json:"label,omitempty"`     // User-defined label
+	IsChange       bool     `json:"is_change,omitempty"` // True for change addresses (internal chain)
 
 	// Scan state
 	LastScanned time.Time `json:"last_scanned,omitempty"`
@@ -243,6 +249,84 @@ func (s *Store) AddAddress(addr *AddressMetadata) {
 	defer s.mu.Unlock()
 
 	s.data.Addresses[addr.Key()] = addr
+}
+
+// SetAddressLabel sets or updates the label for an address.
+// Returns error if the address is not found.
+func (s *Store) SetAddressLabel(chainID chain.ID, address, label string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := fmt.Sprintf("%s:%s", chainID, address)
+	addr, exists := s.data.Addresses[key]
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrAddressNotFound, address)
+	}
+
+	addr.Label = label
+	return nil
+}
+
+// GetAddressBalance returns the total unspent balance for a specific address.
+func (s *Store) GetAddressBalance(chainID chain.ID, address string) uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var total uint64
+	for _, utxo := range s.data.UTXOs {
+		if utxo.ChainID == chainID && utxo.Address == address && !utxo.Spent {
+			total += utxo.Amount
+		}
+	}
+	return total
+}
+
+// MarkAddressUsed marks an address as having activity (received funds).
+func (s *Store) MarkAddressUsed(chainID chain.ID, address string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := fmt.Sprintf("%s:%s", chainID, address)
+	if addr, exists := s.data.Addresses[key]; exists {
+		addr.HasActivity = true
+	}
+}
+
+// GetUnusedAddresses returns addresses that have never received funds.
+func (s *Store) GetUnusedAddresses(chainID chain.ID) []*AddressMetadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*AddressMetadata
+	for _, addr := range s.data.Addresses {
+		if addr.ChainID == chainID && !addr.HasActivity {
+			result = append(result, addr)
+		}
+	}
+	return result
+}
+
+// GetAddress returns address metadata by address string.
+func (s *Store) GetAddress(chainID chain.ID, address string) *AddressMetadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := fmt.Sprintf("%s:%s", chainID, address)
+	return s.data.Addresses[key]
+}
+
+// GetAddressesByLabel returns addresses matching the given label.
+func (s *Store) GetAddressesByLabel(chainID chain.ID, label string) []*AddressMetadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*AddressMetadata
+	for _, addr := range s.data.Addresses {
+		if addr.ChainID == chainID && addr.Label == label {
+			result = append(result, addr)
+		}
+	}
+	return result
 }
 
 // filePath returns the full path to utxos.json

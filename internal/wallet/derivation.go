@@ -31,6 +31,14 @@ const (
 	ChainBCH = chain.BCH
 )
 
+// BIP44 change chain constants.
+const (
+	// ExternalChain is for receiving addresses (BIP44 change=0).
+	ExternalChain uint32 = 0
+	// InternalChain is for change addresses (BIP44 change=1).
+	InternalChain uint32 = 1
+)
+
 // secp256k1 curve parameters for public key decompression
 //
 //nolint:gochecknoglobals // Cryptographic constants for secp256k1 elliptic curve
@@ -83,12 +91,23 @@ type Address struct {
 
 	// PublicKey is the public key in hex format.
 	PublicKey string `json:"public_key"`
+
+	// IsChange indicates if this is a change address (internal chain).
+	// False for receiving addresses (external chain).
+	IsChange bool `json:"is_change,omitempty"`
 }
 
 // GetDerivationPath returns the full BIP44 derivation path for a chain.
+// Uses external chain (change=0) for backward compatibility.
 func GetDerivationPath(chain ChainID, account, index uint32) string {
+	return GetDerivationPathFull(chain, account, ExternalChain, index)
+}
+
+// GetDerivationPathFull returns the full BIP44 derivation path including change chain.
+// Path format: m/44'/coin_type'/account'/change/index
+func GetDerivationPathFull(chain ChainID, account, change, index uint32) string {
 	coinType := chain.CoinType()
-	return fmt.Sprintf("m/44'/%d'/%d'/0/%d", coinType, account, index)
+	return fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, index)
 }
 
 // DeriveAddress derives an address for the given chain and index from a BIP39 seed.
@@ -127,15 +146,61 @@ func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address,
 	}, nil
 }
 
-// DerivePrivateKey derives a private key for signing operations.
-// The returned key must be zeroed by the caller after use.
-func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte, error) {
+// DeriveAddressWithChange derives an address for the given chain, change type, and index.
+// Use ExternalChain (0) for receiving addresses, InternalChain (1) for change addresses.
+func DeriveAddressWithChange(seed []byte, chain ChainID, account, change, index uint32) (*Address, error) {
+	// Create master key from seed
 	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
 
-	key, err := deriveBIP44Key(masterKey, chain, account, index)
+	// Derive the key using BIP44 path with change
+	key, err := deriveBIP44KeyWithChange(masterKey, chain, account, change, index)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get public key and derive address based on chain
+	var address, pubKeyHex string
+	switch chain {
+	case ChainETH:
+		address, pubKeyHex, err = deriveETHAddress(key)
+	case ChainBSV, ChainBTC, ChainBCH:
+		address, pubKeyHex, err = deriveBSVAddress(key)
+	default:
+		return nil, ErrUnsupportedChain
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &Address{
+		Path:      GetDerivationPathFull(chain, account, change, index),
+		Index:     index,
+		Address:   address,
+		PublicKey: pubKeyHex,
+		IsChange:  change == InternalChain,
+	}, nil
+}
+
+// DerivePrivateKey derives a private key for signing operations.
+// Uses external chain (change=0) for backward compatibility.
+// The returned key must be zeroed by the caller after use.
+func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte, error) {
+	return DerivePrivateKeyWithChange(seed, chain, account, ExternalChain, index)
+}
+
+// DerivePrivateKeyWithChange derives a private key with explicit change chain.
+// Use ExternalChain (0) for receiving addresses, InternalChain (1) for change addresses.
+// The returned key must be zeroed by the caller after use.
+func DerivePrivateKeyWithChange(seed []byte, chain ChainID, account, change, index uint32) ([]byte, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create master key: %w", err)
+	}
+
+	key, err := deriveBIP44KeyWithChange(masterKey, chain, account, change, index)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +215,16 @@ func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte
 	return privKey, nil
 }
 
-// deriveBIP44Key derives a key following BIP44 path structure.
-// Path: m / purpose' / coin_type' / account' / change / address_index
+// deriveBIP44Key derives a key following BIP44 path structure using external chain.
+// Path: m / purpose' / coin_type' / account' / 0 / address_index
+// For backward compatibility, uses ExternalChain (change=0).
 func deriveBIP44Key(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, index uint32) (*hdkeychain.ExtendedKey, error) {
+	return deriveBIP44KeyWithChange(masterKey, chain, account, ExternalChain, index)
+}
+
+// deriveBIP44KeyWithChange derives a key following BIP44 path structure with explicit change chain.
+// Path: m / purpose' / coin_type' / account' / change / address_index
+func deriveBIP44KeyWithChange(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, change, index uint32) (*hdkeychain.ExtendedKey, error) {
 	coinType := chain.CoinType()
 
 	// m/44' (purpose)
@@ -173,13 +245,13 @@ func deriveBIP44Key(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, i
 		return nil, fmt.Errorf("failed to derive account key: %w", err)
 	}
 
-	// m/44'/coin_type'/account'/0 (external chain)
-	changeKey, err := accountKey.ChildBIP32Std(0)
+	// m/44'/coin_type'/account'/change (0=external/receiving, 1=internal/change)
+	changeKey, err := accountKey.ChildBIP32Std(change)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive change key: %w", err)
 	}
 
-	// m/44'/coin_type'/account'/0/index
+	// m/44'/coin_type'/account'/change/index
 	indexKey, err := changeKey.ChildBIP32Std(index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive index key: %w", err)

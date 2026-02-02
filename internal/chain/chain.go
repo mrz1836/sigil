@@ -174,13 +174,14 @@ type UTXOChain interface {
 
 // SendRequest contains parameters for sending a transaction.
 type SendRequest struct {
-	From       string   // Sender address
-	To         string   // Recipient address
-	Amount     *big.Int // Value in smallest units
-	PrivateKey []byte   // Signing key (will be zeroed after use)
-	Token      string   // ERC-20 token address (ETH only, empty for native)
-	GasLimit   uint64   // Optional gas limit override (ETH only)
-	FeeRate    uint64   // Optional fee rate override (satoshis per byte)
+	From          string   // Sender address
+	To            string   // Recipient address
+	Amount        *big.Int // Value in smallest units
+	PrivateKey    []byte   // Signing key (will be zeroed after use)
+	Token         string   // ERC-20 token address (ETH only, empty for native)
+	GasLimit      uint64   // Optional gas limit override (ETH only)
+	FeeRate       uint64   // Optional fee rate override (satoshis per byte)
+	ChangeAddress string   // Optional change address (BSV only, defaults to From)
 }
 
 // TransactionResult contains the outcome of a broadcast transaction.

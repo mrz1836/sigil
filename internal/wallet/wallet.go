@@ -42,8 +42,11 @@ type Wallet struct {
 	// CreatedAt is the wallet creation timestamp.
 	CreatedAt time.Time `json:"created_at"`
 
-	// Addresses contains derived addresses per chain.
+	// Addresses contains derived receiving addresses per chain (external chain).
 	Addresses map[ChainID][]Address `json:"addresses"`
+
+	// ChangeAddresses contains derived change addresses per chain (internal chain).
+	ChangeAddresses map[ChainID][]Address `json:"change_addresses,omitempty"`
 
 	// EnabledChains lists which chains are active for this wallet.
 	EnabledChains []ChainID `json:"enabled_chains"`
@@ -116,10 +119,11 @@ func NewWallet(name string, enabledChains []ChainID) (*Wallet, error) {
 	}
 
 	return &Wallet{
-		Name:          name,
-		CreatedAt:     time.Now().UTC(),
-		Addresses:     make(map[ChainID][]Address),
-		EnabledChains: enabledChains,
+		Name:            name,
+		CreatedAt:       time.Now().UTC(),
+		Addresses:       make(map[ChainID][]Address),
+		ChangeAddresses: make(map[ChainID][]Address),
+		EnabledChains:   enabledChains,
 		DerivationConfig: DerivationConfig{
 			DefaultAccount: 0,
 			AddressGap:     20,
@@ -185,4 +189,115 @@ func (w *Wallet) ToSummary() Summary {
 		EnabledChains: w.EnabledChains,
 		Addresses:     addresses,
 	}
+}
+
+// DeriveNextReceiveAddress derives the next receiving address for a chain.
+// The address is appended to Addresses and returned.
+func (w *Wallet) DeriveNextReceiveAddress(seed []byte, chain ChainID) (*Address, error) {
+	nextIndex := w.GetReceiveAddressCount(chain)
+	if nextIndex >= MaxAddressDerivation {
+		return nil, fmt.Errorf("%w: would exceed maximum %d",
+			ErrInvalidAddressCount, MaxAddressDerivation)
+	}
+
+	//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
+	addr, err := DeriveAddressWithChange(seed, chain,
+		w.DerivationConfig.DefaultAccount, ExternalChain, uint32(nextIndex))
+	if err != nil {
+		return nil, fmt.Errorf("deriving receive address %d for chain %s: %w",
+			nextIndex, chain, err)
+	}
+
+	w.Addresses[chain] = append(w.Addresses[chain], *addr)
+	return addr, nil
+}
+
+// DeriveNextChangeAddress derives the next change address for a chain.
+// The address is appended to ChangeAddresses and returned.
+func (w *Wallet) DeriveNextChangeAddress(seed []byte, chain ChainID) (*Address, error) {
+	// Initialize ChangeAddresses map if nil (for backward compatibility with old wallets)
+	if w.ChangeAddresses == nil {
+		w.ChangeAddresses = make(map[ChainID][]Address)
+	}
+
+	nextIndex := w.GetChangeAddressCount(chain)
+	if nextIndex >= MaxAddressDerivation {
+		return nil, fmt.Errorf("%w: would exceed maximum %d",
+			ErrInvalidAddressCount, MaxAddressDerivation)
+	}
+
+	//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
+	addr, err := DeriveAddressWithChange(seed, chain,
+		w.DerivationConfig.DefaultAccount, InternalChain, uint32(nextIndex))
+	if err != nil {
+		return nil, fmt.Errorf("deriving change address %d for chain %s: %w",
+			nextIndex, chain, err)
+	}
+
+	w.ChangeAddresses[chain] = append(w.ChangeAddresses[chain], *addr)
+	return addr, nil
+}
+
+// GetReceiveAddressCount returns the number of derived receiving addresses for a chain.
+func (w *Wallet) GetReceiveAddressCount(chain ChainID) int {
+	return len(w.Addresses[chain])
+}
+
+// GetChangeAddressCount returns the number of derived change addresses for a chain.
+func (w *Wallet) GetChangeAddressCount(chain ChainID) int {
+	if w.ChangeAddresses == nil {
+		return 0
+	}
+	return len(w.ChangeAddresses[chain])
+}
+
+// GetReceiveAddress returns a receiving address by index, or nil if not found.
+func (w *Wallet) GetReceiveAddress(chain ChainID, index int) *Address {
+	addrs := w.Addresses[chain]
+	if index < 0 || index >= len(addrs) {
+		return nil
+	}
+	return &addrs[index]
+}
+
+// GetChangeAddress returns a change address by index, or nil if not found.
+func (w *Wallet) GetChangeAddress(chain ChainID, index int) *Address {
+	if w.ChangeAddresses == nil {
+		return nil
+	}
+	addrs := w.ChangeAddresses[chain]
+	if index < 0 || index >= len(addrs) {
+		return nil
+	}
+	return &addrs[index]
+}
+
+// GetAllAddresses returns all addresses (receive + change) for a chain.
+func (w *Wallet) GetAllAddresses(chain ChainID) []Address {
+	result := make([]Address, 0, w.GetReceiveAddressCount(chain)+w.GetChangeAddressCount(chain))
+	result = append(result, w.Addresses[chain]...)
+	if w.ChangeAddresses != nil {
+		result = append(result, w.ChangeAddresses[chain]...)
+	}
+	return result
+}
+
+// FindAddressByString searches for an address string in both receive and change addresses.
+// Returns the Address and whether it's a change address, or nil if not found.
+func (w *Wallet) FindAddressByString(chain ChainID, addressStr string) (*Address, bool) {
+	// Search receive addresses
+	for i := range w.Addresses[chain] {
+		if w.Addresses[chain][i].Address == addressStr {
+			return &w.Addresses[chain][i], false
+		}
+	}
+	// Search change addresses
+	if w.ChangeAddresses != nil {
+		for i := range w.ChangeAddresses[chain] {
+			if w.ChangeAddresses[chain][i].Address == addressStr {
+				return &w.ChangeAddresses[chain][i], true
+			}
+		}
+	}
+	return nil, false
 }

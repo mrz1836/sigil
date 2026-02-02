@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 func TestTxBuilder_AddInput(t *testing.T) {
@@ -167,8 +169,11 @@ func TestZeroPrivateKey(t *testing.T) {
 }
 
 // TestAddOutput_DustLimitEdgeCases tests dust limit boundary conditions.
+// BSV removed dust limits in 2018, so 1 satoshi is the minimum valid output.
 func TestAddOutput_DustLimitEdgeCases(t *testing.T) {
 	t.Parallel()
+
+	dustLimit := chain.BSV.DustLimit() // 1 satoshi for BSV
 
 	tests := []struct {
 		name    string
@@ -177,21 +182,9 @@ func TestAddOutput_DustLimitEdgeCases(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "exact dust limit (546) succeeds",
-			amount:  DustLimit,
-			wantErr: false,
-		},
-		{
-			name:    "one below dust limit (545) fails",
-			amount:  DustLimit - 1,
-			wantErr: true,
-			errMsg:  "dust",
-		},
-		{
-			name:    "single satoshi (1) fails",
+			name:    "single satoshi (BSV minimum) succeeds",
 			amount:  1,
-			wantErr: true,
-			errMsg:  "dust",
+			wantErr: false,
 		},
 		{
 			name:    "zero amount fails",
@@ -200,13 +193,23 @@ func TestAddOutput_DustLimitEdgeCases(t *testing.T) {
 			errMsg:  "dust",
 		},
 		{
-			name:    "one above dust limit (547) succeeds",
-			amount:  DustLimit + 1,
+			name:    "exact dust limit succeeds",
+			amount:  dustLimit,
+			wantErr: false,
+		},
+		{
+			name:    "two satoshis succeeds",
+			amount:  2,
 			wantErr: false,
 		},
 		{
 			name:    "significantly above dust (10000) succeeds",
 			amount:  10000,
+			wantErr: false,
+		},
+		{
+			name:    "old BTC dust limit (546) succeeds on BSV",
+			amount:  546,
 			wantErr: false,
 		},
 		{
@@ -238,6 +241,8 @@ func TestAddOutput_DustLimitEdgeCases(t *testing.T) {
 // TestAddOutput_MultipleOutputs tests adding multiple outputs in various configurations.
 func TestAddOutput_MultipleOutputs(t *testing.T) {
 	t.Parallel()
+
+	dustLimit := chain.BSV.DustLimit() // 1 satoshi for BSV
 
 	tests := []struct {
 		name    string
@@ -303,13 +308,13 @@ func TestAddOutput_MultipleOutputs(t *testing.T) {
 			wantCount: 10,
 		},
 		{
-			name: "mixed amounts near dust limit",
+			name: "mixed amounts near dust limit (BSV = 1 sat)",
 			outputs: []struct {
 				address string
 				amount  uint64
 			}{
-				{validAddress(), DustLimit},      // Exactly at dust limit
-				{validAddress2(), DustLimit + 1}, // Just above
+				{validAddress(), dustLimit},      // Exactly at dust limit (1 sat)
+				{validAddress2(), dustLimit + 1}, // Just above (2 sats)
 				{validAddress(), 1000},           // Well above
 			},
 			wantCount: 3,
@@ -343,17 +348,19 @@ func TestAddOutput_100Outputs(t *testing.T) {
 	t.Parallel()
 	builder := NewTxBuilder()
 
+	dustLimit := chain.BSV.DustLimit() // 1 satoshi for BSV
+
 	for i := 0; i < 100; i++ {
 		addr := validAddress()
 		if i%2 == 1 {
 			addr = validAddress2()
 		}
-		err := builder.AddOutput(addr, DustLimit)
+		err := builder.AddOutput(addr, dustLimit)
 		require.NoError(t, err, "failed to add output %d", i)
 	}
 
 	assert.Len(t, builder.Outputs, 100)
-	assert.Equal(t, uint64(100*DustLimit), builder.TotalOutputAmount())
+	assert.Equal(t, uint64(100)*dustLimit, builder.TotalOutputAmount())
 }
 
 // TestTxBuilder_Validate_EdgeCases tests validation edge cases.
@@ -408,13 +415,14 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 				// 1 input, 100 outputs: size = 10 + 148 + (100*34) = 3558 bytes
 				// Fee at 1 sat/byte = 3558 satoshis
 				_ = b.AddInput(makeUTXO(testTxID(1), 5000000)) // 5M satoshis
+				dustLimit := chain.BSV.DustLimit()             // 1 satoshi for BSV
 				for i := 0; i < 100; i++ {
-					// 100 outputs at dust limit = 54600 satoshis
-					_ = b.AddOutput(validAddress(), DustLimit)
+					// 100 outputs at dust limit = 100 satoshis (BSV)
+					_ = b.AddOutput(validAddress(), dustLimit)
 				}
-				// Total output: 100 * 546 = 54600
+				// Total output: 100 * 1 = 100 (BSV dust limit is 1 sat)
 				// Fee: 3558
-				// Needed: 54600 + 3558 = 58158
+				// Needed: 100 + 3558 = 3658
 				// Have: 5000000 - plenty of room
 			},
 			wantErr: false,

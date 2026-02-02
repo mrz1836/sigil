@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	// DustLimit is the minimum output value in satoshis.
-	DustLimit = 546
-
 	// TAALBroadcastURL is the URL for TAAL's transaction broadcast API.
 	TAALBroadcastURL = "https://merchantapi.taal.com/mapi/tx"
 )
@@ -69,8 +66,9 @@ func (b *TxBuilder) AddOutput(address string, amount uint64) error {
 		return fmt.Errorf("invalid output address: %w", err)
 	}
 
-	if amount < DustLimit {
-		return fmt.Errorf("%w: %d satoshis (minimum: %d)", ErrDustOutput, amount, DustLimit)
+	dustLimit := chain.BSV.DustLimit()
+	if amount < dustLimit {
+		return fmt.Errorf("%w: %d satoshis (minimum: %d)", ErrDustOutput, amount, dustLimit)
 	}
 
 	b.Outputs = append(b.Outputs, TxOutput{
@@ -186,7 +184,8 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	}
 
 	// Add change output if above dust
-	if change >= DustLimit {
+	dustLimit := chain.BSV.DustLimit()
+	if change >= dustLimit {
 		// Use provided change address, or fall back to sender address
 		changeAddr := req.From
 		if req.ChangeAddress != "" {
@@ -326,9 +325,10 @@ func CalculateSweepAmount(totalInputs uint64, numInputs int, feeRate uint64) (ui
 	sendAmount := totalInputs - fee
 
 	// Verify result is above dust limit
-	if sendAmount < DustLimit {
+	dustLimit := chain.BSV.DustLimit()
+	if sendAmount < dustLimit {
 		return 0, fmt.Errorf("%w: remaining %d satoshis is below dust limit %d",
-			ErrSweepInsufficientFunds, sendAmount, DustLimit)
+			ErrSweepInsufficientFunds, sendAmount, dustLimit)
 	}
 
 	return sendAmount, nil

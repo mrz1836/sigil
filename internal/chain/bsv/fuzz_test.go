@@ -2,6 +2,8 @@ package bsv
 
 import (
 	"testing"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 // FuzzIsValidAddress tests that BSV address validation never panics.
@@ -153,8 +155,9 @@ func FuzzTxBuilder_AddOutput(f *testing.F) {
 				t.Error("successful AddOutput should add exactly one output")
 			}
 			// Amount should be at least dust limit
-			if amount < DustLimit {
-				t.Errorf("AddOutput succeeded with amount %d below dust limit %d", amount, DustLimit)
+			dustLimit := chain.BSV.DustLimit()
+			if amount < dustLimit {
+				t.Errorf("AddOutput succeeded with amount %d below dust limit %d", amount, dustLimit)
 			}
 		}
 	})
@@ -191,7 +194,8 @@ func FuzzTxBuilder_Validate(f *testing.F) {
 		}
 
 		// Add outputs (only if amount is above dust)
-		if outputAmount >= DustLimit {
+		dustLimit := chain.BSV.DustLimit()
+		if outputAmount >= dustLimit {
 			for i := uint8(0); i < numOutputs; i++ {
 				_ = builder.AddOutput(testAddress, outputAmount)
 			}
@@ -284,8 +288,9 @@ func FuzzCalculateSweepAmount(f *testing.F) {
 		// Verify invariants
 		if err == nil {
 			// Amount should be above dust limit
-			if amount < DustLimit {
-				t.Errorf("sweep amount %d below dust limit %d", amount, DustLimit)
+			dustLimit := chain.BSV.DustLimit()
+			if amount < dustLimit {
+				t.Errorf("sweep amount %d below dust limit %d", amount, dustLimit)
 			}
 
 			// Amount + fee should equal total (approximately, accounting for fee rate clamping)

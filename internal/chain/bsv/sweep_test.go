@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 // TestCalculateSweepAmount tests sweep amount calculation.
@@ -49,50 +51,49 @@ func TestCalculateSweepAmount(t *testing.T) {
 		},
 		{
 			name:        "tiny UTXO (fee exceeds value)",
-			totalInputs: 200,
+			totalInputs: 100,
 			numInputs:   1,
 			feeRate:     1,
-			// Fee: 192 satoshis > 200 total, so error
+			// Fee: 192 satoshis > 100 total, so error
 			expectedAmount: 0,
 			expectError:    true,
 			errContain:     "insufficient",
 		},
 		{
-			name:        "dust UTXO only",
-			totalInputs: 546,
+			name:        "BSV allows 1 satoshi outputs",
+			totalInputs: 193,
 			numInputs:   1,
 			feeRate:     1,
-			// Fee: 192 satoshis, remaining 354 < dust limit
-			expectedAmount: 0,
-			expectError:    true,
-			errContain:     "dust",
-		},
-		{
-			name:        "exactly covers fee but below dust",
-			totalInputs: 600,
-			numInputs:   1,
-			feeRate:     1,
-			// Fee: 192 satoshis, remaining 408 < dust limit 546
-			expectedAmount: 0,
-			expectError:    true,
-			errContain:     "dust",
-		},
-		{
-			name:        "exactly at dust limit after fee",
-			totalInputs: 738,
-			numInputs:   1,
-			feeRate:     1,
-			// Fee: 192 satoshis, remaining 738-192 = 546 = dust limit
-			expectedAmount: 546,
+			// Fee: 192 satoshis, remaining 193-192 = 1 = BSV dust limit
+			expectedAmount: 1,
 			expectError:    false,
 		},
 		{
-			name:        "just above dust limit after fee",
-			totalInputs: 739,
+			name:        "exactly covers fee leaves nothing",
+			totalInputs: 192,
 			numInputs:   1,
 			feeRate:     1,
-			// Fee: 192 satoshis, remaining 739-192 = 547 > dust limit
-			expectedAmount: 547,
+			// Fee: 192 satoshis, remaining 0 < dust limit (1)
+			expectedAmount: 0,
+			expectError:    true,
+			errContain:     "insufficient",
+		},
+		{
+			name:        "two satoshis remaining after fee",
+			totalInputs: 194,
+			numInputs:   1,
+			feeRate:     1,
+			// Fee: 192 satoshis, remaining 194-192 = 2 > dust limit (1)
+			expectedAmount: 2,
+			expectError:    false,
+		},
+		{
+			name:        "old BTC dust limit amount after fee",
+			totalInputs: 738,
+			numInputs:   1,
+			feeRate:     1,
+			// Fee: 192 satoshis, remaining 738-192 = 546 (old BTC dust, valid on BSV)
+			expectedAmount: 546,
 			expectError:    false,
 		},
 		{
@@ -260,8 +261,11 @@ func TestCalculateSweepAmount_ConsolidationScenarios(t *testing.T) {
 }
 
 // TestCalculateSweepAmount_EdgeCases tests edge cases and boundary conditions.
+// BSV removed dust limits in 2018, so 1 satoshi is the minimum valid output.
 func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 	t.Parallel()
+
+	dustLimit := chain.BSV.DustLimit() // 1 satoshi for BSV
 
 	t.Run("fee exactly equals total inputs", func(t *testing.T) {
 		t.Parallel()
@@ -288,29 +292,29 @@ func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 		assert.Contains(t, err.Error(), "insufficient")
 	})
 
-	t.Run("total inputs one satoshi more than fee", func(t *testing.T) {
+	t.Run("total inputs one satoshi more than fee (BSV allows this)", func(t *testing.T) {
 		t.Parallel()
 
 		totalInputs := uint64(193) // 192 fee + 1
 		numInputs := 1
 		feeRate := uint64(1)
 
-		// 1 satoshi remaining < dust limit
-		_, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "dust")
+		// 1 satoshi remaining = BSV dust limit, should succeed
+		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
+		require.NoError(t, err)
+		assert.Equal(t, dustLimit, amount)
 	})
 
-	t.Run("minimum viable sweep (dust limit after fee)", func(t *testing.T) {
+	t.Run("minimum viable sweep (1 satoshi after fee on BSV)", func(t *testing.T) {
 		t.Parallel()
 
-		// Need: fee (192) + dust limit (546) = 738 minimum
-		totalInputs := uint64(738)
+		// Need: fee (192) + BSV dust limit (1) = 193 minimum
+		totalInputs := uint64(193)
 		numInputs := 1
 		feeRate := uint64(1)
 
 		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
 		require.NoError(t, err)
-		assert.Equal(t, uint64(546), amount)
+		assert.Equal(t, dustLimit, amount)
 	})
 }

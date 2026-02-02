@@ -84,6 +84,23 @@ func (id ID) IsMVP() bool {
 	}
 }
 
+// DustLimit returns the minimum output value in satoshis for UTXO-based chains.
+// BSV removed dust limits in 2018, so 1 satoshi is the minimum valid output.
+// BTC/BCH use the standard 546 satoshi dust limit.
+// ETH uses gas instead of dust limits, so returns 0.
+func (id ID) DustLimit() uint64 {
+	switch id {
+	case BSV:
+		return 1 // BSV removed dust limit - 1 sat minimum for safety
+	case BTC, BCH:
+		return 546 // Standard dust limit
+	case ETH:
+		return 0 // ETH uses gas, not dust limits
+	default:
+		return 0
+	}
+}
+
 // ParseChainID parses a string into a ChainID.
 func ParseChainID(s string) (ID, bool) {
 	id := ID(s)

@@ -11,6 +11,12 @@ import (
 	"math/big"
 	"net/http"
 
+	"github.com/bsv-blockchain/go-sdk/chainhash"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-sdk/script"
+	"github.com/bsv-blockchain/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
+
 	"github.com/mrz1836/sigil/internal/chain"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -32,6 +38,18 @@ var (
 
 	// ErrBroadcastFailed indicates transaction broadcast failed.
 	ErrBroadcastFailed = errors.New("transaction broadcast failed")
+
+	// ErrInvalidTxID indicates an invalid transaction ID format.
+	ErrInvalidTxID = errors.New("invalid transaction ID")
+
+	// ErrSigningFailed indicates transaction signing failed.
+	ErrSigningFailed = errors.New("transaction signing failed")
+
+	// ErrInvalidPrivateKey indicates an invalid private key.
+	ErrInvalidPrivateKey = errors.New("invalid private key")
+
+	// ErrMissingLockingScript indicates a UTXO is missing its locking script.
+	ErrMissingLockingScript = errors.New("UTXO missing locking script")
 )
 
 // TxOutput represents a transaction output.
@@ -231,12 +249,129 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	}, nil
 }
 
-// BuildRawTransaction builds a raw transaction from the builder.
-// This is a simplified implementation - in production, use go-sdk.
-func BuildRawTransaction(_ *TxBuilder, _ []byte) ([]byte, error) {
-	// TODO: Implement proper transaction building using go-sdk
-	// For now, return an error indicating this needs to be implemented
-	return nil, sigilerr.ErrNotImplemented
+// BuildRawTransaction builds and signs a raw BSV transaction using go-sdk.
+// The builder contains the UTXOs to spend and the outputs to create.
+// The privateKey is used to sign all inputs (assumes all inputs are from the same key).
+//
+// This function handles:
+// - Transaction structure creation using go-sdk
+// - P2PKH locking script generation for outputs
+// - P2PKH unlocking script generation with SIGHASH_ALL|SIGHASH_FORKID signing
+// - Proper BSV transaction serialization
+func BuildRawTransaction(builder *TxBuilder, privateKey []byte) ([]byte, error) {
+	if err := validateBuildInputs(builder, privateKey); err != nil {
+		return nil, err
+	}
+
+	// Create private key and unlocking template
+	privKey, _ := ec.PrivateKeyFromBytes(privateKey)
+	unlocker, err := p2pkh.Unlock(privKey, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: creating unlocking template: %w", ErrSigningFailed, err)
+	}
+
+	// Build the transaction
+	tx := transaction.NewTransaction()
+
+	if err := addInputsToTx(tx, builder.Inputs, unlocker); err != nil {
+		return nil, err
+	}
+
+	if err := addOutputsToTx(tx, builder.Outputs); err != nil {
+		return nil, err
+	}
+
+	// Sign and verify
+	if err := signAndVerifyTx(tx); err != nil {
+		return nil, err
+	}
+
+	return tx.Bytes(), nil
+}
+
+// validateBuildInputs validates the inputs for BuildRawTransaction.
+func validateBuildInputs(builder *TxBuilder, privateKey []byte) error {
+	if builder == nil || len(builder.Inputs) == 0 {
+		return ErrNoInputs
+	}
+	if len(builder.Outputs) == 0 {
+		return ErrNoOutputs
+	}
+	if len(privateKey) != 32 {
+		return fmt.Errorf("%w: expected 32 bytes, got %d", ErrInvalidPrivateKey, len(privateKey))
+	}
+	return nil
+}
+
+// addInputsToTx adds all inputs from UTXOs to the transaction.
+func addInputsToTx(tx *transaction.Transaction, utxos []UTXO, unlocker *p2pkh.P2PKH) error {
+	for i, utxo := range utxos {
+		prevTxID, err := chainhash.NewHashFromHex(utxo.TxID)
+		if err != nil {
+			return fmt.Errorf("%w: input %d: %w", ErrInvalidTxID, i, err)
+		}
+
+		lockingScript, err := getLockingScript(utxo)
+		if err != nil {
+			return fmt.Errorf("%w: input %d: %w", ErrMissingLockingScript, i, err)
+		}
+
+		input := &transaction.TransactionInput{
+			SourceTXID:              prevTxID,
+			SourceTxOutIndex:        utxo.Vout,
+			SequenceNumber:          transaction.DefaultSequenceNumber,
+			UnlockingScriptTemplate: unlocker,
+		}
+		input.SetSourceTxOutput(&transaction.TransactionOutput{
+			Satoshis:      utxo.Amount,
+			LockingScript: lockingScript,
+		})
+		tx.AddInput(input)
+	}
+	return nil
+}
+
+// addOutputsToTx adds all outputs to the transaction.
+func addOutputsToTx(tx *transaction.Transaction, outputs []TxOutput) error {
+	for i, output := range outputs {
+		if err := tx.PayToAddress(output.Address, output.Amount); err != nil {
+			return fmt.Errorf("adding output %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// signAndVerifyTx signs all inputs and verifies signatures were created.
+func signAndVerifyTx(tx *transaction.Transaction) error {
+	if err := tx.Sign(); err != nil {
+		return fmt.Errorf("%w: %w", ErrSigningFailed, err)
+	}
+
+	for i, input := range tx.Inputs {
+		if input.UnlockingScript == nil || len(*input.UnlockingScript) == 0 {
+			return fmt.Errorf("%w: input %d: no signature generated", ErrSigningFailed, i)
+		}
+	}
+	return nil
+}
+
+// getLockingScript returns the locking script for a UTXO.
+// If ScriptPubKey is provided, it's parsed directly.
+// Otherwise, the script is derived from the UTXO's address.
+func getLockingScript(utxo UTXO) (*script.Script, error) {
+	if utxo.ScriptPubKey != "" {
+		return script.NewFromHex(utxo.ScriptPubKey)
+	}
+
+	if utxo.Address != "" {
+		addr, err := script.NewAddressFromString(utxo.Address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address: %w", err)
+		}
+		return p2pkh.Lock(addr)
+	}
+
+	return nil, ErrMissingLockingScript
 }
 
 // BroadcastTransaction broadcasts a raw transaction to the network.
@@ -251,7 +386,7 @@ func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string
 		return "", fmt.Errorf("marshaling payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, TAALBroadcastURL, bytes.NewReader(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.broadcastURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", fmt.Errorf("creating request: %w", err)
 	}

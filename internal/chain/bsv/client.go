@@ -76,6 +76,9 @@ type ClientOptions struct {
 	// BaseURL overrides the default WhatsOnChain API URL.
 	BaseURL string
 
+	// BroadcastURL overrides the default TAAL Merchant API URL for transaction broadcast.
+	BroadcastURL string
+
 	// APIKey is the optional WhatsOnChain API key for higher rate limits.
 	APIKey string
 
@@ -91,18 +94,20 @@ var _ chain.Chain = (*Client)(nil)
 
 // Client provides Bitcoin SV blockchain operations.
 type Client struct {
-	baseURL    string
-	apiKey     string
-	network    Network
-	httpClient *http.Client
-	logger     DebugLogger
+	baseURL      string
+	broadcastURL string
+	apiKey       string
+	network      Network
+	httpClient   *http.Client
+	logger       DebugLogger
 }
 
 // NewClient creates a new BSV client.
 func NewClient(opts *ClientOptions) *Client {
 	c := &Client{
-		baseURL: "https://api.whatsonchain.com/v1/bsv/main",
-		network: NetworkMainnet,
+		baseURL:      "https://api.whatsonchain.com/v1/bsv/main",
+		broadcastURL: "https://merchantapi.taal.com/mapi/tx",
+		network:      NetworkMainnet,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -347,6 +352,14 @@ func (c *Client) ParseAmount(amount string) (*big.Int, error) {
 func (c *Client) applyOptions(opts *ClientOptions) {
 	if opts.BaseURL != "" {
 		c.baseURL = opts.BaseURL
+		// When BaseURL is set (e.g., for testing), also use it as broadcast URL base
+		// unless BroadcastURL is explicitly set
+		if opts.BroadcastURL == "" {
+			c.broadcastURL = opts.BaseURL + "/mapi/tx"
+		}
+	}
+	if opts.BroadcastURL != "" {
+		c.broadcastURL = opts.BroadcastURL
 	}
 	if opts.APIKey != "" {
 		c.apiKey = opts.APIKey

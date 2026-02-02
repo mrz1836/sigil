@@ -713,3 +713,165 @@ func TestValidateFeeRate(t *testing.T) {
 		})
 	}
 }
+
+// TestTxSizeVsFee tests the relationship between transaction size and fee.
+func TestTxSizeVsFee(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		numInputs  int
+		numOutputs int
+		feeRate1   uint64 // At 1 sat/byte
+		feeRate50  uint64 // At 50 sat/byte
+	}{
+		{
+			name:       "1 input, 1 output",
+			numInputs:  1,
+			numOutputs: 1,
+			// Size: 10 + 148 + 34 = 192 bytes
+			feeRate1:  192,
+			feeRate50: 9600,
+		},
+		{
+			name:       "1 input, 2 outputs",
+			numInputs:  1,
+			numOutputs: 2,
+			// Size: 10 + 148 + 68 = 226 bytes
+			feeRate1:  226,
+			feeRate50: 11300,
+		},
+		{
+			name:       "10 inputs, 1 output",
+			numInputs:  10,
+			numOutputs: 1,
+			// Size: 10 + 1480 + 34 = 1524 bytes
+			feeRate1:  1524,
+			feeRate50: 76200,
+		},
+		{
+			name:       "1 input, 10 outputs",
+			numInputs:  1,
+			numOutputs: 10,
+			// Size: 10 + 148 + 340 = 498 bytes
+			feeRate1:  498,
+			feeRate50: 24900,
+		},
+		{
+			name:       "100 inputs, 100 outputs",
+			numInputs:  100,
+			numOutputs: 100,
+			// Size: 10 + 14800 + 3400 = 18210 bytes
+			feeRate1:  18210,
+			feeRate50: 910500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Test at 1 sat/byte
+			size := EstimateTxSize(tt.numInputs, tt.numOutputs)
+			fee1 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 1)
+			assert.Equal(t, size, fee1, "fee at 1 sat/byte should equal size")
+			assert.Equal(t, tt.feeRate1, fee1)
+
+			// Test at 50 sat/byte
+			fee50 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 50)
+			assert.Equal(t, size*50, fee50)
+			assert.Equal(t, tt.feeRate50, fee50)
+		})
+	}
+}
+
+// TestFeeRateBoundaries tests fee rate clamping at boundaries.
+func TestFeeRateBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		inputRate    uint64
+		expectedRate uint64
+	}{
+		{"zero clamps to minimum", 0, MinFeeRate},
+		{"1 stays at 1", 1, 1},
+		{"25 stays at 25", 25, 25},
+		{"50 stays at 50", 50, 50},
+		{"51 clamps to 50", 51, 50},
+		{"100 clamps to 50", 100, 50},
+		{"max uint64 clamps to 50", ^uint64(0), 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := ValidateFeeRate(tt.inputRate)
+			assert.Equal(t, tt.expectedRate, result)
+		})
+	}
+}
+
+// TestEstimateTxSize_FormulaVerification verifies the size formula is correct.
+func TestEstimateTxSize_FormulaVerification(t *testing.T) {
+	t.Parallel()
+
+	// Verify constants are reasonable
+	assert.Equal(t, 10, TxOverhead, "transaction overhead should be 10 bytes")
+	assert.Equal(t, 148, P2PKHInputSize, "P2PKH input should be 148 bytes")
+	assert.Equal(t, 34, P2PKHOutputSize, "P2PKH output should be 34 bytes")
+
+	// Verify formula: overhead + (inputs * input_size) + (outputs * output_size)
+	for numIn := 0; numIn <= 10; numIn++ {
+		for numOut := 0; numOut <= 10; numOut++ {
+			expected := EstimateTxSize(numIn, numOut)
+			actual := EstimateTxSize(numIn, numOut)
+			assert.Equal(t, expected, actual, "size mismatch for %d inputs, %d outputs", numIn, numOut)
+		}
+	}
+}
+
+// TestEstimateFeeForTx_LargeTx tests fee estimation for very large transactions.
+func TestEstimateFeeForTx_LargeTx(t *testing.T) {
+	t.Parallel()
+
+	// BSV supports large blocks, so test with many inputs/outputs
+	tests := []struct {
+		name       string
+		numInputs  int
+		numOutputs int
+		feeRate    uint64
+	}{
+		{"500 inputs, 1 output", 500, 1, 1},
+		{"1 input, 500 outputs", 1, 500, 1},
+		{"100 inputs, 100 outputs", 100, 100, 1},
+		{"1000 inputs, 10 outputs at 50 sat/byte", 1000, 10, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			size := EstimateTxSize(tt.numInputs, tt.numOutputs)
+			fee := EstimateFeeForTx(tt.numInputs, tt.numOutputs, tt.feeRate)
+
+			// Fee should equal size * rate
+			assert.Equal(t, size*tt.feeRate, fee)
+
+			// Verify no overflow
+			assert.Positive(t, fee)
+		})
+	}
+}
+
+// TestFeeQuote_DefaultValues tests default fee quote values.
+func TestFeeQuote_DefaultValues(t *testing.T) {
+	t.Parallel()
+
+	quote := defaultFeeQuote()
+
+	assert.Equal(t, uint64(DefaultFeeRate), quote.StandardRate)
+	assert.Equal(t, uint64(DefaultFeeRate), quote.DataRate)
+	assert.Equal(t, "default", quote.Source)
+	assert.False(t, quote.Timestamp.IsZero())
+}

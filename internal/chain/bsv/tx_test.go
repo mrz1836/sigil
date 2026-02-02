@@ -165,3 +165,451 @@ func TestZeroPrivateKey(t *testing.T) {
 		assert.Equal(t, byte(0), b, "byte at position %d should be zero", i)
 	}
 }
+
+// TestAddOutput_DustLimitEdgeCases tests dust limit boundary conditions.
+func TestAddOutput_DustLimitEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		amount  uint64
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "exact dust limit (546) succeeds",
+			amount:  DustLimit,
+			wantErr: false,
+		},
+		{
+			name:    "one below dust limit (545) fails",
+			amount:  DustLimit - 1,
+			wantErr: true,
+			errMsg:  "dust",
+		},
+		{
+			name:    "single satoshi (1) fails",
+			amount:  1,
+			wantErr: true,
+			errMsg:  "dust",
+		},
+		{
+			name:    "zero amount fails",
+			amount:  0,
+			wantErr: true,
+			errMsg:  "dust",
+		},
+		{
+			name:    "one above dust limit (547) succeeds",
+			amount:  DustLimit + 1,
+			wantErr: false,
+		},
+		{
+			name:    "significantly above dust (10000) succeeds",
+			amount:  10000,
+			wantErr: false,
+		},
+		{
+			name:    "1 BSV (100000000 satoshis) succeeds",
+			amount:  100000000,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			builder := NewTxBuilder()
+
+			err := builder.AddOutput(validAddress(), tt.amount)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, builder.Outputs, 1)
+				assert.Equal(t, tt.amount, builder.Outputs[0].Amount)
+			}
+		})
+	}
+}
+
+// TestAddOutput_MultipleOutputs tests adding multiple outputs in various configurations.
+func TestAddOutput_MultipleOutputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		outputs []struct {
+			address string
+			amount  uint64
+		}
+		wantCount int
+	}{
+		{
+			name: "2 outputs same address",
+			outputs: []struct {
+				address string
+				amount  uint64
+			}{
+				{validAddress(), 10000},
+				{validAddress(), 10000},
+			},
+			wantCount: 2,
+		},
+		{
+			name: "2 outputs different addresses",
+			outputs: []struct {
+				address string
+				amount  uint64
+			}{
+				{validAddress(), 10000},
+				{validAddress2(), 20000},
+			},
+			wantCount: 2,
+		},
+		{
+			name: "5 outputs batch payment",
+			outputs: []struct {
+				address string
+				amount  uint64
+			}{
+				{validAddress(), 1000},
+				{validAddress2(), 2000},
+				{validAddress(), 3000},
+				{validAddress2(), 4000},
+				{validAddress(), 5000},
+			},
+			wantCount: 5,
+		},
+		{
+			name: "10 outputs large batch",
+			outputs: []struct {
+				address string
+				amount  uint64
+			}{
+				{validAddress(), 1000},
+				{validAddress2(), 1000},
+				{validAddress(), 1000},
+				{validAddress2(), 1000},
+				{validAddress(), 1000},
+				{validAddress2(), 1000},
+				{validAddress(), 1000},
+				{validAddress2(), 1000},
+				{validAddress(), 1000},
+				{validAddress2(), 1000},
+			},
+			wantCount: 10,
+		},
+		{
+			name: "mixed amounts near dust limit",
+			outputs: []struct {
+				address string
+				amount  uint64
+			}{
+				{validAddress(), DustLimit},      // Exactly at dust limit
+				{validAddress2(), DustLimit + 1}, // Just above
+				{validAddress(), 1000},           // Well above
+			},
+			wantCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			builder := NewTxBuilder()
+
+			for _, out := range tt.outputs {
+				err := builder.AddOutput(out.address, out.amount)
+				require.NoError(t, err)
+			}
+
+			assert.Len(t, builder.Outputs, tt.wantCount)
+
+			// Verify total output amount
+			var expectedTotal uint64
+			for _, out := range tt.outputs {
+				expectedTotal += out.amount
+			}
+			assert.Equal(t, expectedTotal, builder.TotalOutputAmount())
+		})
+	}
+}
+
+// TestAddOutput_100Outputs tests adding 100 outputs (stress test).
+func TestAddOutput_100Outputs(t *testing.T) {
+	t.Parallel()
+	builder := NewTxBuilder()
+
+	for i := 0; i < 100; i++ {
+		addr := validAddress()
+		if i%2 == 1 {
+			addr = validAddress2()
+		}
+		err := builder.AddOutput(addr, DustLimit)
+		require.NoError(t, err, "failed to add output %d", i)
+	}
+
+	assert.Len(t, builder.Outputs, 100)
+	assert.Equal(t, uint64(100*DustLimit), builder.TotalOutputAmount())
+}
+
+// TestTxBuilder_Validate_EdgeCases tests validation edge cases.
+//
+//nolint:gocognit // Table-driven test with setup functions is inherently complex
+func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		setupFunc  func(*TxBuilder)
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name: "exact balance (input = output + fee)",
+			setupFunc: func(b *TxBuilder) {
+				// 1 input, 1 output: size = 10 + 148 + 34 = 192 bytes, fee = 192 satoshis
+				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
+				_ = b.AddOutput(validAddress(), 100000-192) // Exactly covers fee
+			},
+			wantErr: false,
+		},
+		{
+			name: "one satoshi short of covering fee",
+			setupFunc: func(b *TxBuilder) {
+				// Need 192 for fee, but only have 191 spare
+				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
+				_ = b.AddOutput(validAddress(), 100000-191) // One satoshi short
+			},
+			wantErr:    true,
+			errContain: "insufficient",
+		},
+		{
+			name: "large tx with 100 inputs",
+			setupFunc: func(b *TxBuilder) {
+				// 100 inputs, 1 output: size = 10 + (100*148) + 34 = 14844 bytes
+				// Fee at 1 sat/byte = 14844 satoshis
+				for i := 0; i < 100; i++ {
+					_ = b.AddInput(makeUTXO(testTxID(i), 1000))
+				}
+				// Total input: 100 * 1000 = 100000
+				// Fee: 14844
+				// Available for output: 100000 - 14844 = 85156
+				_ = b.AddOutput(validAddress(), 85156)
+			},
+			wantErr: false,
+		},
+		{
+			name: "large tx with 100 outputs",
+			setupFunc: func(b *TxBuilder) {
+				// 1 input, 100 outputs: size = 10 + 148 + (100*34) = 3558 bytes
+				// Fee at 1 sat/byte = 3558 satoshis
+				_ = b.AddInput(makeUTXO(testTxID(1), 5000000)) // 5M satoshis
+				for i := 0; i < 100; i++ {
+					// 100 outputs at dust limit = 54600 satoshis
+					_ = b.AddOutput(validAddress(), DustLimit)
+				}
+				// Total output: 100 * 546 = 54600
+				// Fee: 3558
+				// Needed: 54600 + 3558 = 58158
+				// Have: 5000000 - plenty of room
+			},
+			wantErr: false,
+		},
+		{
+			name: "fee rate affects validation - high fee rate insufficient funds",
+			setupFunc: func(b *TxBuilder) {
+				b.SetFeeRate(50) // Max fee rate
+				// 1 input, 1 output: size = 192, fee = 192 * 50 = 9600
+				_ = b.AddInput(makeUTXO(testTxID(1), 10000))
+				_ = b.AddOutput(validAddress(), 1000) // Valid output, but 10000 < 1000 + 9600
+			},
+			wantErr:    true,
+			errContain: "insufficient",
+		},
+		{
+			name: "fee rate 50 with adequate funds",
+			setupFunc: func(b *TxBuilder) {
+				b.SetFeeRate(50) // Max fee rate
+				// 1 input, 1 output: size = 192, fee = 192 * 50 = 9600
+				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
+				_ = b.AddOutput(validAddress(), 100000-9600) // 90400 satoshis
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			builder := NewTxBuilder()
+			tt.setupFunc(builder)
+
+			err := builder.Validate()
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContain != "" {
+					assert.Contains(t, err.Error(), tt.errContain)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestTxBuilder_SetFeeRate tests fee rate setting and validation.
+func TestTxBuilder_SetFeeRate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		inputRate    uint64
+		expectedRate uint64
+	}{
+		{"zero clamps to minimum", 0, MinFeeRate},
+		{"minimum stays at minimum", MinFeeRate, MinFeeRate},
+		{"mid-range stays unchanged", 25, 25},
+		{"maximum stays at maximum", MaxFeeRate, MaxFeeRate},
+		{"above maximum clamps to maximum", 100, MaxFeeRate},
+		{"way above maximum clamps to maximum", 1000000, MaxFeeRate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			builder := NewTxBuilder()
+
+			builder.SetFeeRate(tt.inputRate)
+
+			assert.Equal(t, tt.expectedRate, builder.FeeRate)
+		})
+	}
+}
+
+// TestTxBuilder_CalculateFee_Comprehensive tests fee calculation for various tx sizes.
+func TestTxBuilder_CalculateFee_Comprehensive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		numInputs  int
+		numOutputs int
+		feeRate    uint64
+		expected   uint64
+	}{
+		{
+			name:       "1 input, 1 output @ 1 sat/byte",
+			numInputs:  1,
+			numOutputs: 1,
+			feeRate:    1,
+			expected:   192, // 10 + 148 + 34
+		},
+		{
+			name:       "1 input, 2 outputs @ 1 sat/byte",
+			numInputs:  1,
+			numOutputs: 2,
+			feeRate:    1,
+			expected:   226, // 10 + 148 + 68
+		},
+		{
+			name:       "10 inputs, 1 output @ 1 sat/byte",
+			numInputs:  10,
+			numOutputs: 1,
+			feeRate:    1,
+			expected:   1524, // 10 + 1480 + 34
+		},
+		{
+			name:       "1 input, 10 outputs @ 1 sat/byte",
+			numInputs:  1,
+			numOutputs: 10,
+			feeRate:    1,
+			expected:   498, // 10 + 148 + 340
+		},
+		{
+			name:       "100 inputs, 100 outputs @ 1 sat/byte",
+			numInputs:  100,
+			numOutputs: 100,
+			feeRate:    1,
+			expected:   18210, // 10 + 14800 + 3400
+		},
+		{
+			name:       "1 input, 2 outputs @ 50 sat/byte",
+			numInputs:  1,
+			numOutputs: 2,
+			feeRate:    50,
+			expected:   11300, // 226 * 50
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			builder := NewTxBuilder()
+
+			// Add inputs
+			for i := 0; i < tt.numInputs; i++ {
+				_ = builder.AddInput(makeUTXO(testTxID(i), 1000000))
+			}
+
+			// Add outputs
+			for i := 0; i < tt.numOutputs; i++ {
+				_ = builder.AddOutput(validAddress(), 1000)
+			}
+
+			fee := builder.CalculateFee(tt.feeRate)
+			assert.Equal(t, tt.expected, fee)
+		})
+	}
+}
+
+// TestTxBuilder_TotalAmounts_Empty tests totals with no inputs/outputs.
+func TestTxBuilder_TotalAmounts_Empty(t *testing.T) {
+	t.Parallel()
+	builder := NewTxBuilder()
+
+	assert.Equal(t, uint64(0), builder.TotalInputAmount())
+	assert.Equal(t, uint64(0), builder.TotalOutputAmount())
+}
+
+// TestTxBuilder_TotalAmounts_Large tests totals with large amounts.
+func TestTxBuilder_TotalAmounts_Large(t *testing.T) {
+	t.Parallel()
+	builder := NewTxBuilder()
+
+	// Add inputs totaling 21 million BSV (max supply)
+	_ = builder.AddInput(makeUTXO(testTxID(1), 2100000000000000))
+
+	// Add output of 1 million BSV
+	_ = builder.AddOutput(validAddress(), 100000000000000)
+
+	assert.Equal(t, uint64(2100000000000000), builder.TotalInputAmount())
+	assert.Equal(t, uint64(100000000000000), builder.TotalOutputAmount())
+}
+
+// TestZeroPrivateKey_Empty tests zeroing an empty key.
+func TestZeroPrivateKey_Empty(t *testing.T) {
+	t.Parallel()
+	key := []byte{}
+	ZeroPrivateKey(key) // Should not panic
+	assert.Empty(t, key)
+}
+
+// TestZeroPrivateKey_32Bytes tests zeroing a standard 32-byte private key.
+func TestZeroPrivateKey_32Bytes(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+
+	ZeroPrivateKey(key)
+
+	for i, b := range key {
+		assert.Equal(t, byte(0), b, "byte at position %d should be zero", i)
+	}
+}

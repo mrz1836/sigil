@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain"
-	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // TestSend_InputValidation tests Send method input validation.
@@ -134,16 +133,25 @@ func TestSend_UTXOFlow(t *testing.T) {
 		assert.Contains(t, err.Error(), "insufficient")
 	})
 
-	t.Run("single UTXO sufficient - no change scenario", func(t *testing.T) {
+	t.Run("single UTXO sufficient - successful transaction", func(t *testing.T) {
 		t.Parallel()
+
+		// Get a valid key pair for signing
+		kp := getTestKeyPair()
 
 		// SelectUTXOs uses estimatedTxSize=225 for fee calculation
 		// UTXO needs: amount + 225 (estimated fee) to pass selection
 		// Then validation uses actual size: 1 input, 1 output = 192 bytes
 		// So we need UTXO >= amount + 225 for selection, and >= amount + 192 for validation
 		// With UTXO = amount + 225, change = 0, so only 1 output, validation uses 192, passes
-		utxos := makeUTXOs(50225) // 50000 + 225 estimated fee
-		server := mockUTXOServer(utxos)
+		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 estimated fee
+
+		// Create a multi-route server that handles both UTXO listing and broadcast
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         50225,
+			BroadcastTxHash: "broadcast_tx_hash_here",
+		})
 		defer server.Close()
 
 		client := NewClient(&ClientOptions{
@@ -153,16 +161,17 @@ func TestSend_UTXOFlow(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
 			To:         validAddress2(),
 			Amount:     big.NewInt(50000),
-			PrivateKey: make([]byte, 32),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		// Should fail at BuildRawTransaction step (not validation)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, sigilerr.ErrNotImplemented)
+		// Transaction should be built and broadcast successfully
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.NotEmpty(t, result.Hash)
 	})
 
 	t.Run("multiple UTXOs selected - documented validation issue", func(t *testing.T) {
@@ -286,13 +295,21 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		assert.Contains(t, err.Error(), "insufficient")
 	})
 
-	t.Run("exact match no change", func(t *testing.T) {
+	t.Run("exact match no change - successful build", func(t *testing.T) {
 		t.Parallel()
+
+		// Get a valid key pair for signing
+		kp := getTestKeyPair()
 
 		// SelectUTXOs uses estimatedTxSize=225, needs UTXO >= amount + 225
 		// Then with no change, actual fee = 192, validation passes
-		utxos := makeUTXOs(50225) // 50000 + 225 for selection
-		server := mockUTXOServer(utxos)
+		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 for selection
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         50225,
+			BroadcastTxHash: "tx_exact_match_hash",
+		})
 		defer server.Close()
 
 		client := NewClient(&ClientOptions{
@@ -302,16 +319,17 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
 			To:         validAddress2(),
 			Amount:     big.NewInt(50000),
-			PrivateKey: make([]byte, 32),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		require.Error(t, err)
-		// Should reach BuildRawTransaction
-		assert.ErrorIs(t, err, sigilerr.ErrNotImplemented)
+		// Should build and broadcast successfully
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "tx_exact_match_hash", result.Hash)
 	})
 }
 
@@ -353,91 +371,12 @@ func TestSend_PrivateKeyZeroing(t *testing.T) {
 func TestSend_AmountBoundaries(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		amount     *big.Int
-		utxoAmount uint64
-		wantErr    bool
-		errContain string
-	}{
-		{
-			name:       "zero amount (below BSV dust limit of 1)",
-			amount:     big.NewInt(0),
-			utxoAmount: 100000,
-			wantErr:    true,
-			// Will fail during AddOutput due to dust check
-			errContain: "dust",
-		},
-		{
-			name:       "one satoshi (BSV dust limit) - exact UTXO avoids change",
-			amount:     big.NewInt(1),
-			utxoAmount: 226, // 1 + 225 for SelectUTXOs (actual validation needs 192)
-			wantErr:    true,
-			// Should reach BuildRawTransaction since 1 sat is valid on BSV
-			errContain: "not implemented",
-		},
-		{
-			name:       "two satoshis - exact UTXO avoids change",
-			amount:     big.NewInt(2),
-			utxoAmount: 227, // 2 + 225 for SelectUTXOs
-			wantErr:    true,
-			errContain: "not implemented",
-		},
-		{
-			name:       "old BTC dust limit (546) - exact UTXO avoids change",
-			amount:     big.NewInt(546),
-			utxoAmount: 771, // 546 + 225 for SelectUTXOs (actual validation needs 192)
-			wantErr:    true,
-			errContain: "not implemented",
-		},
-		{
-			name:       "above old dust limit (1000) - exact UTXO avoids change",
-			amount:     big.NewInt(1000),
-			utxoAmount: 1225, // 1000 + 225 for SelectUTXOs
-			wantErr:    true,
-			errContain: "not implemented",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			utxos := makeUTXOs(tt.utxoAmount)
-			server := mockUTXOServer(utxos)
-			defer server.Close()
-
-			client := NewClient(&ClientOptions{
-				BaseURL: server.URL,
-			})
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			_, err := client.Send(ctx, chain.SendRequest{
-				From:       validAddress(),
-				To:         validAddress2(),
-				Amount:     tt.amount,
-				PrivateKey: make([]byte, 32),
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errContain)
-			}
-		})
-	}
-}
-
-// TestSend_P2SHAddresses tests sending to/from P2SH addresses.
-func TestSend_P2SHAddresses(t *testing.T) {
-	t.Parallel()
-
-	t.Run("send to P2SH address", func(t *testing.T) {
+	// Test zero amount separately (should fail with dust error)
+	t.Run("zero amount (below BSV dust limit of 1)", func(t *testing.T) {
 		t.Parallel()
 
-		// Use exact UTXO to avoid change (which causes validation mismatch)
-		utxos := makeUTXOs(50225) // 50000 + 225 for SelectUTXOs
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 100000)
 		server := mockUTXOServer(utxos)
 		defer server.Close()
 
@@ -449,15 +388,118 @@ func TestSend_P2SHAddresses(t *testing.T) {
 		defer cancel()
 
 		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
-			To:         validP2SHAddress(), // P2SH address
-			Amount:     big.NewInt(50000),
-			PrivateKey: make([]byte, 32),
+			From:       kp.Address,
+			To:         validAddress2(),
+			Amount:     big.NewInt(0),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		// Should fail at BuildRawTransaction, not address validation
 		require.Error(t, err)
-		assert.ErrorIs(t, err, sigilerr.ErrNotImplemented)
+		assert.Contains(t, err.Error(), "dust")
+	})
+
+	// Test valid small amounts - these should all succeed
+	smallAmountTests := []struct {
+		name       string
+		amount     int64
+		utxoAmount uint64
+	}{
+		{
+			name:       "one satoshi (BSV dust limit)",
+			amount:     1,
+			utxoAmount: 226, // 1 + 225 for SelectUTXOs
+		},
+		{
+			name:       "two satoshis",
+			amount:     2,
+			utxoAmount: 227, // 2 + 225 for SelectUTXOs
+		},
+		{
+			name:       "old BTC dust limit (546)",
+			amount:     546,
+			utxoAmount: 771, // 546 + 225 for SelectUTXOs
+		},
+		{
+			name:       "above old dust limit (1000)",
+			amount:     1000,
+			utxoAmount: 1225, // 1000 + 225 for SelectUTXOs
+		},
+	}
+
+	for _, tt := range smallAmountTests {
+		t.Run(tt.name+" - successful build", func(t *testing.T) {
+			t.Parallel()
+
+			kp := getTestKeyPair()
+			utxos := makeUTXOsWithKey(kp, tt.utxoAmount)
+
+			server := mockMultiRouteServer(mockServerConfig{
+				UTXOs:           utxos,
+				Balance:         int64(tt.utxoAmount), //nolint:gosec // Safe: test values are small
+				BroadcastTxHash: "broadcast_success",
+			})
+			defer server.Close()
+
+			client := NewClient(&ClientOptions{
+				BaseURL: server.URL,
+			})
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			result, err := client.Send(ctx, chain.SendRequest{
+				From:       kp.Address,
+				To:         validAddress2(),
+				Amount:     big.NewInt(tt.amount),
+				PrivateKey: kp.PrivateKey,
+			})
+
+			// Should successfully build and broadcast
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, "broadcast_success", result.Hash)
+		})
+	}
+}
+
+// TestSend_P2SHAddresses tests sending to P2SH addresses.
+// The go-sdk's PayToAddress doesn't support P2SH addresses directly.
+// This would require using a different output creation method.
+func TestSend_P2SHAddresses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("send to P2SH address - not supported by go-sdk PayToAddress", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		// Use exact UTXO to avoid change
+		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 for SelectUTXOs
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         50225,
+			BroadcastTxHash: "p2sh_output_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validP2SHAddress(), // P2SH address as recipient
+			Amount:     big.NewInt(50000),
+			PrivateKey: kp.PrivateKey,
+		})
+
+		// go-sdk's PayToAddress doesn't support P2SH addresses
+		// This documents the current limitation
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not supported")
 	})
 }
 

@@ -1,11 +1,15 @@
 package bsv
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-sdk/script"
 )
 
 // Test addresses - these are well-known Bitcoin addresses with valid checksums.
@@ -48,7 +52,7 @@ func makeUTXOs(amounts ...uint64) []UTXO {
 	utxos := make([]UTXO, len(amounts))
 	for i, amount := range amounts {
 		utxos[i] = UTXO{
-			TxID:    fmt.Sprintf("tx%064d", i+1)[:64], // Ensure 64-char txid
+			TxID:    testTxID(i + 1), // Use valid hex txid
 			Vout:    0,
 			Amount:  amount,
 			Address: testAddress,
@@ -168,6 +172,50 @@ func mockMultiRouteServer(cfg mockServerConfig) *httptest.Server {
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}))
+}
+
+// testKeyPair holds a valid private key and its corresponding address for testing.
+type testKeyPair struct {
+	PrivateKey []byte
+	Address    string
+}
+
+// generateTestKeyPair creates a deterministic key pair for testing.
+// Uses a fixed seed to ensure reproducible tests.
+func generateTestKeyPair() testKeyPair {
+	// Fixed 32-byte private key for deterministic testing
+	// This is NOT a real wallet key - it's just for tests
+	privateKeyHex := "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35"
+	privateKeyBytes, _ := hex.DecodeString(privateKeyHex)
+
+	// Derive the address from the private key
+	_, pubKey := ec.PrivateKeyFromBytes(privateKeyBytes)
+	addr, _ := script.NewAddressFromPublicKey(pubKey, true)
+
+	return testKeyPair{
+		PrivateKey: privateKeyBytes,
+		Address:    addr.AddressString,
+	}
+}
+
+// getTestKeyPair returns a fresh test key pair.
+// Returns a new copy each time to avoid race conditions in parallel tests.
+func getTestKeyPair() testKeyPair {
+	return generateTestKeyPair()
+}
+
+// makeUTXOsWithKey creates multiple UTXOs with sequential txids for a key pair.
+func makeUTXOsWithKey(kp testKeyPair, amounts ...uint64) []UTXO {
+	utxos := make([]UTXO, len(amounts))
+	for i, amount := range amounts {
+		utxos[i] = UTXO{
+			TxID:    testTxID(i + 1),
+			Vout:    0,
+			Amount:  amount,
+			Address: kp.Address,
+		}
+	}
+	return utxos
 }
 
 // Ensure mockServerConfig and mockMultiRouteServer are used (for godot linter).

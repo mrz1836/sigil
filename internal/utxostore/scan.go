@@ -226,6 +226,65 @@ func (s *Store) refreshAddress(ctx context.Context, addr *AddressMetadata, chain
 	}
 }
 
+// RefreshAddress refreshes UTXOs for a single address.
+// Returns the scan result for just that address.
+func (s *Store) RefreshAddress(ctx context.Context, address string, chainID chain.ID, client ChainClient) (*ScanResult, error) {
+	// Look up the address metadata
+	addr := s.getAddressByString(address, chainID)
+	if addr == nil {
+		// Address not in store - create minimal metadata
+		addr = &AddressMetadata{
+			Address: address,
+			ChainID: chainID,
+		}
+	}
+
+	result := &ScanResult{}
+	seenUTXOs := make(map[string]bool)
+
+	// Refresh the single address
+	s.refreshAddress(ctx, addr, chainID, client, result, seenUTXOs)
+
+	// Mark UTXOs for this address that weren't seen as spent
+	s.markAddressUTXOsAsSpent(address, chainID, seenUTXOs)
+
+	// Save changes
+	if err := s.Save(); err != nil {
+		return result, fmt.Errorf("saving UTXOs: %w", err)
+	}
+
+	return result, nil
+}
+
+// getAddressByString looks up address metadata by address string.
+func (s *Store) getAddressByString(address string, chainID chain.ID) *AddressMetadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, addr := range s.data.Addresses {
+		if addr.Address == address && addr.ChainID == chainID {
+			return addr
+		}
+	}
+	return nil
+}
+
+// markAddressUTXOsAsSpent marks UTXOs for a specific address not seen in the scan as spent.
+func (s *Store) markAddressUTXOsAsSpent(address string, chainID chain.ID, seenUTXOs map[string]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, utxo := range s.data.UTXOs {
+		if utxo.ChainID != chainID || utxo.Address != address || utxo.Spent {
+			continue
+		}
+		if !seenUTXOs[key] {
+			utxo.Spent = true
+			utxo.LastUpdated = time.Now()
+		}
+	}
+}
+
 // markMissingAsSpent marks UTXOs not seen in the scan as spent.
 func (s *Store) markMissingAsSpent(chainID chain.ID, seenUTXOs map[string]bool) {
 	s.mu.Lock()

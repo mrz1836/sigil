@@ -23,6 +23,8 @@ var (
 	receiveNew bool
 	// receiveLabel sets a label for the address.
 	receiveLabel string
+	// receiveQR displays a QR code for the address.
+	receiveQR bool
 )
 
 // receiveCmd shows a receiving address for a wallet.
@@ -41,7 +43,10 @@ Examples:
   sigil receive --wallet main --chain bsv
 
   # Generate a new address with a label
-  sigil receive --wallet main --chain bsv --new --label "Payment from Alice"`,
+  sigil receive --wallet main --chain bsv --new --label "Payment from Alice"
+
+  # Show address with QR code for mobile wallet scanning
+  sigil receive --wallet main --chain bsv --qr`,
 	RunE: runReceive,
 }
 
@@ -53,6 +58,7 @@ func init() {
 	receiveCmd.Flags().StringVarP(&receiveChain, "chain", "c", "bsv", "blockchain: eth, bsv")
 	receiveCmd.Flags().BoolVar(&receiveNew, "new", false, "force generation of a new address")
 	receiveCmd.Flags().StringVarP(&receiveLabel, "label", "l", "", "label for the address")
+	receiveCmd.Flags().BoolVar(&receiveQR, "qr", false, "display QR code for the address")
 
 	_ = receiveCmd.MarkFlagRequired("wallet")
 }
@@ -184,6 +190,15 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 	}
 	outln(w)
 
+	// Render QR code if requested and output is a terminal
+	if receiveQR && output.CanRenderQR(w) {
+		cfg := output.DefaultQRConfig()
+		_ = output.RenderQR(w, formatQRData(addr.Address), cfg)
+		outln(w)
+		outln(w, "  Scan with a mobile wallet to send BSV")
+		outln(w)
+	}
+
 	// Show explorer link based on chain
 	switch chainID {
 	case chain.BSV:
@@ -195,6 +210,12 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 	case chain.BTC, chain.BCH:
 		// Future chains - no explorer link yet
 	}
+}
+
+// formatQRData returns the address string formatted for QR code encoding.
+// Uses plain address format for maximum wallet compatibility.
+func formatQRData(address string) string {
+	return address
 }
 
 // displayReceiveJSON shows the receiving address in JSON format.

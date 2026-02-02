@@ -13,8 +13,14 @@ import (
 
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
+
+func TestMain(m *testing.M) {
+	sigilcrypto.SetScryptWorkFactor(10) // Fast for tests
+	os.Exit(m.Run())
+}
 
 // setupTestEnv creates a temporary environment for CLI testing.
 // It saves and restores global state to avoid test pollution.

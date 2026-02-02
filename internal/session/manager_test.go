@@ -7,7 +7,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
+
+func TestMain(m *testing.M) {
+	sigilcrypto.SetScryptWorkFactor(10) // Fast for tests
+	os.Exit(m.Run())
+}
 
 // MockKeyring is a mock implementation of the Keyring interface for testing.
 type MockKeyring struct {

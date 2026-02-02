@@ -7,7 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
+
+func TestMain(m *testing.M) {
+	sigilcrypto.SetScryptWorkFactor(10) // Fast for tests
+	os.Exit(m.Run())
+}
 
 func TestStorage_SaveAndLoad(t *testing.T) {
 	t.Parallel()

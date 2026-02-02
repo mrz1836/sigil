@@ -4,9 +4,34 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"filippo.io/age"
 )
+
+// scryptWorkFactor controls the scrypt work factor.
+// Default is 18 (age's secure default). Lower values for testing.
+//
+//nolint:gochecknoglobals // Package-level atomic for thread-safe work factor configuration
+var scryptWorkFactor atomic.Int32
+
+//nolint:gochecknoinits // Required to set secure default work factor
+func init() {
+	scryptWorkFactor.Store(18) // Secure default
+}
+
+// SetScryptWorkFactor sets the work factor for scrypt operations.
+// Lower values are faster but less secure. Use only for testing.
+// Range: 10 (fast/insecure) to 22 (very secure). Default: 18.
+func SetScryptWorkFactor(factor int) {
+	// Clamp to valid range to prevent overflow and invalid values
+	if factor < 10 {
+		factor = 10
+	} else if factor > 22 {
+		factor = 22
+	}
+	scryptWorkFactor.Store(int32(factor)) //nolint:gosec // Range is clamped above
+}
 
 // Encrypt encrypts plaintext using age with a password-based recipient.
 func Encrypt(plaintext []byte, password string) ([]byte, error) {
@@ -14,6 +39,7 @@ func Encrypt(plaintext []byte, password string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating scrypt recipient: %w", err)
 	}
+	recipient.SetWorkFactor(int(scryptWorkFactor.Load()))
 
 	buf := &bytes.Buffer{}
 	w, err := age.Encrypt(buf, recipient)
@@ -38,6 +64,7 @@ func Decrypt(ciphertext []byte, password string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating scrypt identity: %w", err)
 	}
+	identity.SetMaxWorkFactor(int(scryptWorkFactor.Load()))
 
 	r, err := age.Decrypt(bytes.NewReader(ciphertext), identity)
 	if err != nil {

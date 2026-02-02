@@ -22,6 +22,8 @@ var (
 	utxoWallet string
 	// utxoChain is the chain to list UTXOs for.
 	utxoChain string
+	// utxoAddresses is a list of specific addresses to refresh.
+	utxoAddresses []string
 )
 
 // utxoCmd is the parent command for UTXO operations.
@@ -56,8 +58,12 @@ var utxoRefreshCmd = &cobra.Command{
 	Long: `Re-scan all known addresses and update stored UTXOs.
 New UTXOs are added; spent UTXOs are marked as spent.
 
+Use --address to refresh specific addresses instead of all.
+
 Example:
-  sigil utxo refresh --wallet main`,
+  sigil utxo refresh --wallet main
+  sigil utxo refresh --wallet main --address 1ABC...
+  sigil utxo refresh --wallet main --address 1ABC... --address 1XYZ...`,
 	RunE: runUTXORefresh,
 }
 
@@ -89,6 +95,7 @@ func init() {
 
 	// utxo refresh flags
 	utxoRefreshCmd.Flags().StringVar(&utxoWallet, "wallet", "", "wallet name (required)")
+	utxoRefreshCmd.Flags().StringArrayVar(&utxoAddresses, "address", nil, "specific address(es) to refresh (optional, repeatable)")
 	_ = utxoRefreshCmd.MarkFlagRequired("wallet")
 
 	// utxo balance flags
@@ -243,15 +250,6 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading UTXO store: %w", loadErr)
 	}
 
-	// Check if store has addresses to refresh
-	addresses := store.GetAddresses(chain.BSV)
-	if len(addresses) == 0 {
-		w := cmd.OutOrStdout()
-		out(w, "No addresses found in UTXO store for wallet '%s'.\n", utxoWallet)
-		out(w, "Run 'sigil wallet restore --scan' to scan addresses first.\n")
-		return nil
-	}
-
 	// Create BSV client
 	client := bsv.NewClient(&bsv.ClientOptions{
 		APIKey: cfg.Networks.BSV.APIKey,
@@ -260,8 +258,22 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 	// Create adapter for refresh
 	adapter := &bsvRefreshAdapter{client: client}
 
-	// Run refresh
 	w := cmd.OutOrStdout()
+
+	// If specific addresses provided, refresh only those
+	if len(utxoAddresses) > 0 {
+		return refreshSpecificAddresses(ctx, cmd, store, adapter, utxoAddresses)
+	}
+
+	// Check if store has addresses to refresh
+	addresses := store.GetAddresses(chain.BSV)
+	if len(addresses) == 0 {
+		out(w, "No addresses found in UTXO store for wallet '%s'.\n", utxoWallet)
+		out(w, "Run 'sigil wallet restore --scan' to scan addresses first.\n")
+		return nil
+	}
+
+	// Run refresh for all addresses
 	out(w, "Refreshing UTXOs for wallet '%s'...\n", utxoWallet)
 
 	result, err := store.Refresh(ctx, chain.BSV, adapter)
@@ -271,6 +283,38 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 
 	// Display results
 	displayRefreshResults(w, result)
+	return nil
+}
+
+// refreshSpecificAddresses refreshes UTXOs for specific addresses only.
+func refreshSpecificAddresses(ctx context.Context, cmd *cobra.Command, store *utxostore.Store, adapter *bsvRefreshAdapter, addresses []string) error {
+	w := cmd.OutOrStdout()
+
+	out(w, "Refreshing %d specific address(es) for wallet '%s'...\n", len(addresses), utxoWallet)
+
+	// Aggregate results from all addresses
+	totalResult := &utxostore.ScanResult{}
+
+	for _, addr := range addresses {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		out(w, "  Scanning %s...\n", addr)
+		result, err := store.RefreshAddress(ctx, addr, chain.BSV, adapter)
+		if err != nil {
+			return fmt.Errorf("refreshing address %s: %w", addr, err)
+		}
+
+		// Aggregate results
+		totalResult.AddressesScanned += result.AddressesScanned
+		totalResult.UTXOsFound += result.UTXOsFound
+		totalResult.TotalBalance += result.TotalBalance
+		totalResult.Errors = append(totalResult.Errors, result.Errors...)
+	}
+
+	// Display aggregated results
+	displayRefreshResults(w, totalResult)
 	return nil
 }
 

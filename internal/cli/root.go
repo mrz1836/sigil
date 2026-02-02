@@ -25,6 +25,33 @@ import (
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
+// BuildInfo contains version information set at build time via ldflags.
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
+// buildInfo holds the version information passed from main.
+//
+//nolint:gochecknoglobals // Required to store build info passed from main
+var buildInfo BuildInfo
+
+// formatVersion returns a formatted version string with defaults for empty values.
+func formatVersion(info BuildInfo) string {
+	v, c, d := info.Version, info.Commit, info.Date
+	if v == "" {
+		v = "dev"
+	}
+	if c == "" {
+		c = "unknown"
+	}
+	if d == "" {
+		d = "unknown"
+	}
+	return fmt.Sprintf("%s (commit: %s, built: %s)", v, c, d)
+}
+
 var (
 	// Global flags
 	homeDir      string
@@ -63,8 +90,10 @@ Example:
 	},
 }
 
-// Execute runs the root command.
-func Execute() error {
+// Execute runs the root command with the provided build info.
+func Execute(info BuildInfo) error {
+	buildInfo = info
+	rootCmd.Version = formatVersion(info)
 	err := rootCmd.Execute()
 	if err != nil {
 		formatErr(err)
@@ -198,15 +227,6 @@ func Context() *CommandContext {
 	return cmdCtx
 }
 
-// Version information, set at build time.
-//
-//nolint:gochecknoglobals // Version info set at build time via ldflags
-var (
-	Version   = "dev"
-	GitCommit = "unknown"
-	BuildDate = "unknown"
-)
-
 // versionCmd shows version information.
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
@@ -215,16 +235,26 @@ var versionCmd = &cobra.Command{
 	Short: "Show version information",
 	Long:  `Display the version, build commit, and build date.`,
 	Run: func(cmd *cobra.Command, _ []string) {
+		v, c, d := buildInfo.Version, buildInfo.Commit, buildInfo.Date
+		if v == "" {
+			v = "dev"
+		}
+		if c == "" {
+			c = "unknown"
+		}
+		if d == "" {
+			d = "unknown"
+		}
 		if formatter != nil && formatter.Format() == output.FormatJSON {
 			cmd.Println("{")
-			cmd.Printf(`  "version": "%s",`+"\n", Version)
-			cmd.Printf(`  "commit": "%s",`+"\n", GitCommit)
-			cmd.Printf(`  "date": "%s"`+"\n", BuildDate)
+			cmd.Printf(`  "version": "%s",`+"\n", v)
+			cmd.Printf(`  "commit": "%s",`+"\n", c)
+			cmd.Printf(`  "date": "%s"`+"\n", d)
 			cmd.Println("}")
 		} else {
-			cmd.Printf("sigil version %s\n", Version)
-			cmd.Printf("  commit: %s\n", GitCommit)
-			cmd.Printf("  built:  %s\n", BuildDate)
+			cmd.Printf("sigil version %s\n", v)
+			cmd.Printf("  commit: %s\n", c)
+			cmd.Printf("  built:  %s\n", d)
 		}
 	},
 }

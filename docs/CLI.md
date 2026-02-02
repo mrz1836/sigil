@@ -54,6 +54,12 @@ sigil wallet create main
 sigil balance show --wallet main
 ```
 
+### Get a receiving address
+
+```bash
+sigil receive --wallet main --chain bsv
+```
+
 ### Send a transaction
 
 ```bash
@@ -218,6 +224,120 @@ sigil balance show --wallet main -o json
 
 <br>
 
+### receive
+
+Show or generate a receiving address for your wallet.
+
+```bash
+sigil receive [flags]
+```
+
+By default, shows the first unused address. The same address is shown until it receives funds, then the next unused address is returned. Use `--new` to force generation of a new address even if the current one hasn't been used yet.
+
+**Flags:**
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--wallet` | `-w` | - | Wallet name (required) |
+| `--chain` | `-c` | `bsv` | Blockchain: `eth`, `bsv` |
+| `--new` | - | `false` | Force generation of a new address |
+| `--label` | `-l` | - | Set a label for the address |
+
+**Examples:**
+```bash
+# Show next unused BSV receiving address
+sigil receive --wallet main --chain bsv
+
+# Generate a new address even if current is unused
+sigil receive --wallet main --chain bsv --new
+
+# Generate a new address with a label
+sigil receive --wallet main --chain bsv --new --label "Payment from Alice"
+
+# Show ETH receiving address
+sigil receive --wallet main --chain eth
+```
+
+<br>
+
+---
+
+<br>
+
+### addresses
+
+Manage and view wallet addresses.
+
+```bash
+sigil addresses <subcommand>
+```
+
+#### addresses list
+
+List all addresses in a wallet with their status and balance.
+
+```bash
+sigil addresses list [flags]
+```
+
+**Flags:**
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--wallet` | `-w` | - | Wallet name (required) |
+| `--chain` | `-c` | - | Filter by chain (`eth`, `bsv`) |
+| `--type` | `-t` | `all` | Filter: `receive`, `change`, `all` |
+| `--used` | - | `false` | Show only used addresses |
+| `--unused` | - | `false` | Show only unused addresses |
+
+**Examples:**
+```bash
+# List all BSV addresses
+sigil addresses list --wallet main --chain bsv
+
+# List only receiving addresses
+sigil addresses list --wallet main --type receive
+
+# List only unused addresses
+sigil addresses list --wallet main --unused
+
+# List only change addresses that have been used
+sigil addresses list --wallet main --type change --used
+
+# Output as JSON
+sigil addresses list --wallet main -o json
+```
+
+#### addresses label
+
+Set or update the label for an address.
+
+```bash
+sigil addresses label <address> <label> [flags]
+```
+
+**Arguments:**
+- `<address>` - The address to label (required)
+- `<label>` - Label text, use empty string "" to clear (required)
+
+**Flags:**
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--wallet` | `-w` | - | Wallet name (required) |
+
+**Examples:**
+```bash
+# Set a label
+sigil addresses label 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa "Savings" --wallet main
+
+# Clear a label
+sigil addresses label 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa "" --wallet main
+```
+
+<br>
+
+---
+
+<br>
+
 ### tx
 
 Manage transactions.
@@ -256,6 +376,10 @@ sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --am
 # Send BSV
 sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.001 --chain bsv
 ```
+
+**BSV Change Addresses:**
+
+When sending BSV, any change (remaining balance after sending the requested amount plus fees) is sent to a new change address on the BIP44 internal chain (`m/44'/236'/0'/1/x`). This improves privacy by avoiding address reuse. You can view your change addresses with `sigil addresses list --type change`.
 
 <br>
 

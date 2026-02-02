@@ -2,6 +2,8 @@
 
 Sigil is a terminal-based multi-chain cryptocurrency wallet for power users. It supports HD wallet creation with BIP39 mnemonics, balance checking, and transactions across Ethereum (ETH/USDC) and Bitcoin SV (BSV) networks.
 
+<br>
+
 ## Installation
 
 ```bash
@@ -15,6 +17,8 @@ git clone https://github.com/mrz1836/sigil.git
 cd sigil
 go build -o bin/sigil ./cmd/sigil
 ```
+
+<br>
 
 ## Quick Start
 
@@ -46,6 +50,8 @@ sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.0
 sigil backup create --wallet main
 ```
 
+<br>
+
 ## Global Flags
 
 These flags can be used with any command:
@@ -55,6 +61,8 @@ These flags can be used with any command:
 | `--home` | - | `~/.sigil` | Sigil data directory |
 | `--output` | `-o` | `auto` | Output format: `text`, `json`, `auto` |
 | `--verbose` | `-v` | `false` | Enable verbose output |
+
+<br>
 
 ## Commands
 
@@ -149,7 +157,11 @@ sigil wallet restore backup  # Interactive mode
 sigil wallet restore backup --input "..." --scan=false  # Skip UTXO scan
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### balance
 
@@ -180,7 +192,11 @@ sigil balance show --wallet main --chain eth
 sigil balance show --wallet main -o json
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### tx
 
@@ -221,7 +237,11 @@ sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --am
 sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.001 --chain bsv
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### utxo
 
@@ -288,7 +308,11 @@ sigil utxo balance --wallet main
 sigil utxo balance --wallet main -o json
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### config
 
@@ -368,7 +392,11 @@ sigil config set output.default_format json
 sigil config set logging.level debug
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### session
 
@@ -415,7 +443,11 @@ $ sigil session lock
 Ended 2 session(s)
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### backup
 
@@ -495,7 +527,11 @@ sigil backup ls    # alias
 sigil backup list
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### completion
 
@@ -549,7 +585,11 @@ sigil completion powershell > sigil.ps1
 # and source this file from your PowerShell profile.
 ```
 
+<br>
+
 ---
+
+<br>
 
 ### version
 
@@ -559,7 +599,11 @@ Display version, build commit, and build date.
 sigil version
 ```
 
+<br>
+
 ---
+
+<br>
 
 ## Environment Variables
 
@@ -585,7 +629,11 @@ export SIGIL_LOG_LEVEL=debug
 export SIGIL_SESSION_TTL=30  # 30 minute sessions
 ```
 
+<br>
+
 ---
+
+<br>
 
 ## Configuration Reference
 

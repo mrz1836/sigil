@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 // TestNewClient tests client creation.
@@ -320,4 +322,348 @@ func TestParseAmount(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFormatAmount_Nil tests nil handling in FormatAmount.
+func TestFormatAmount_Nil(t *testing.T) {
+	t.Parallel()
+	client := &Client{}
+
+	result := client.FormatAmount(nil)
+	assert.Equal(t, "0.000000000000000000", result)
+}
+
+// TestClientID tests the ID method.
+func TestClientID(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+	id := client.ID()
+
+	assert.Equal(t, chain.ETH, id)
+	assert.Equal(t, "eth", string(id))
+}
+
+// TestClientClose tests the Close method.
+func TestClientClose(t *testing.T) {
+	t.Parallel()
+
+	t.Run("close without connection", func(t *testing.T) {
+		t.Parallel()
+		client, err := NewClient("http://localhost:8545", nil)
+		require.NoError(t, err)
+
+		// Should not panic when closing without ever connecting
+		assert.NotPanics(t, func() {
+			client.Close()
+		})
+	})
+
+	t.Run("close sets rpcClient to nil", func(t *testing.T) {
+		t.Parallel()
+		client, err := NewClient("http://localhost:8545", nil)
+		require.NoError(t, err)
+
+		client.Close()
+		assert.Nil(t, client.rpcClient)
+	})
+
+	t.Run("double close is safe", func(t *testing.T) {
+		t.Parallel()
+		client, err := NewClient("http://localhost:8545", nil)
+		require.NoError(t, err)
+
+		assert.NotPanics(t, func() {
+			client.Close()
+			client.Close()
+		})
+	})
+}
+
+// TestClientWithOptions tests client creation with options.
+func TestClientWithOptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with custom chain ID", func(t *testing.T) {
+		t.Parallel()
+		opts := &ClientOptions{
+			ChainID: big.NewInt(5), // Goerli
+		}
+		client, err := NewClient("http://localhost:8545", opts)
+		require.NoError(t, err)
+		assert.Equal(t, big.NewInt(5), client.chainID)
+	})
+
+	t.Run("with nil options", func(t *testing.T) {
+		t.Parallel()
+		client, err := NewClient("http://localhost:8545", nil)
+		require.NoError(t, err)
+		assert.Nil(t, client.chainID)
+	})
+
+	t.Run("with empty options", func(t *testing.T) {
+		t.Parallel()
+		opts := &ClientOptions{}
+		client, err := NewClient("http://localhost:8545", opts)
+		require.NoError(t, err)
+		assert.Nil(t, client.chainID)
+	})
+}
+
+// TestEstimateFee tests fee estimation.
+func TestEstimateFee(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns fee for valid addresses", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case "eth_chainId":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case "eth_gasPrice":
+				// 20 Gwei
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x4a817c800", // 20 Gwei
+				}
+			case "eth_estimateGas":
+				// 21000 gas for simple transfer
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x5208", // 21000
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		fee, err := client.EstimateFee(
+			ctx,
+			"0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+			"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+			big.NewInt(1000000000000000000),
+		)
+		require.NoError(t, err)
+		assert.NotNil(t, fee)
+		assert.Positive(t, fee.Sign(), "fee should be positive")
+	})
+
+	t.Run("returns error for invalid from address", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			t.Fatal("should not reach server")
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		_, err = client.EstimateFee(ctx, "invalid", "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", big.NewInt(100))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "from address")
+	})
+
+	t.Run("returns error for invalid to address", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			t.Fatal("should not reach server")
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		_, err = client.EstimateFee(ctx, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", "invalid", big.NewInt(100))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "to address")
+	})
+}
+
+// TestGetNativeBalance tests native ETH balance queries.
+func TestGetNativeBalance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns ETH balance with metadata", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case "eth_chainId":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case "eth_getBalance":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0xde0b6b3a7640000", // 1 ETH
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		balance, err := client.GetNativeBalance(ctx, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+		require.NoError(t, err)
+
+		assert.Equal(t, "ETH", balance.Symbol)
+		assert.Equal(t, 18, balance.Decimals)
+		assert.Empty(t, balance.Token)
+		assert.Equal(t, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", balance.Address)
+	})
+}
+
+// TestGetUSDCBalance tests USDC balance queries.
+func TestGetUSDCBalance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns USDC balance with metadata", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case "eth_chainId":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case "eth_call":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x000000000000000000000000000000000000000000000000000000001dcd6500", // 500 USDC
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		balance, err := client.GetUSDCBalance(ctx, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+		require.NoError(t, err)
+
+		assert.Equal(t, "USDC", balance.Symbol)
+		assert.Equal(t, 6, balance.Decimals)
+		assert.Equal(t, USDCMainnet, balance.Token)
+	})
+}
+
+// TestGetAllBalances tests combined balance queries.
+func TestGetAllBalances(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns both ETH and USDC balances", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case "eth_chainId":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case "eth_getBalance":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0xde0b6b3a7640000", // 1 ETH
+				}
+			case "eth_call":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x000000000000000000000000000000000000000000000000000000001dcd6500", // 500 USDC
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		balances, err := client.GetAllBalances(ctx, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+		require.NoError(t, err)
+
+		assert.Len(t, balances, 2)
+		assert.Equal(t, "ETH", balances[0].Symbol)
+		assert.Equal(t, "USDC", balances[1].Symbol)
+	})
 }

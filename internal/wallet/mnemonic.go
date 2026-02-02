@@ -21,6 +21,12 @@ var (
 
 	// whitespaceRegex matches one or more whitespace characters.
 	whitespaceRegex = regexp.MustCompile(`\s+`)
+
+	// numberedListRegex matches numbered list prefixes like "1." "2)" "3:"
+	numberedListRegex = regexp.MustCompile(`(?m)^\s*\d+[\.\)\:]\s*`)
+
+	// bulletListRegex matches bullet prefixes like "- " "* " "• "
+	bulletListRegex = regexp.MustCompile(`(?m)^\s*[-*•]\s*`)
 )
 
 // GenerateMnemonic creates a new BIP39 mnemonic phrase.
@@ -66,11 +72,23 @@ func ValidateMnemonic(mnemonic string) error {
 
 // NormalizeMnemonicInput cleans and normalizes mnemonic input by:
 // - Converting to lowercase
+// - Removing numbered list prefixes (1. 2) 3: etc.)
+// - Removing bullet prefixes (- * •)
+// - Replacing commas with spaces
 // - Trimming leading and trailing whitespace
 // - Collapsing multiple whitespace characters to single spaces
 func NormalizeMnemonicInput(input string) string {
 	// Convert to lowercase
 	input = strings.ToLower(input)
+
+	// Remove numbered list prefixes (1. 2) 3: etc.)
+	input = numberedListRegex.ReplaceAllString(input, " ")
+
+	// Remove bullet prefixes (- * •)
+	input = bulletListRegex.ReplaceAllString(input, " ")
+
+	// Replace commas with spaces
+	input = strings.ReplaceAll(input, ",", " ")
 
 	// Replace all whitespace sequences with a single space
 	input = whitespaceRegex.ReplaceAllString(input, " ")

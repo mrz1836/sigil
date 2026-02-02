@@ -155,6 +155,7 @@ func TestNormalizeMnemonicInput(t *testing.T) {
 		input    string
 		expected string
 	}{
+		// Existing whitespace and case tests
 		{
 			name:     "already normalized",
 			input:    "abandon abandon about",
@@ -194,6 +195,128 @@ func TestNormalizeMnemonicInput(t *testing.T) {
 			name:     "mixed case",
 			input:    "Abandon ABANDON About",
 			expected: "abandon abandon about",
+		},
+
+		// Numbered list formats
+		{
+			name:     "numbered with dot",
+			input:    "1. abandon\n2. ability\n3. able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "numbered with paren",
+			input:    "1) abandon\n2) ability",
+			expected: "abandon ability",
+		},
+		{
+			name:     "numbered with colon",
+			input:    "1: abandon\n2: ability",
+			expected: "abandon ability",
+		},
+		{
+			name:     "numbered with leading spaces",
+			input:    "  1. abandon\n  2. ability",
+			expected: "abandon ability",
+		},
+		{
+			name:     "multi-digit numbers",
+			input:    "10. abandon\n11. ability\n12. able",
+			expected: "abandon ability able",
+		},
+
+		// Bullet list formats
+		{
+			name:     "dash bullets",
+			input:    "- abandon\n- ability\n- able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "asterisk bullets",
+			input:    "* abandon\n* ability",
+			expected: "abandon ability",
+		},
+		{
+			name:     "unicode bullets",
+			input:    "• abandon\n• ability",
+			expected: "abandon ability",
+		},
+		{
+			name:     "bullets with leading spaces",
+			input:    "  - abandon\n  - ability",
+			expected: "abandon ability",
+		},
+
+		// Comma-separated
+		{
+			name:     "comma separated",
+			input:    "abandon,ability,able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "comma with spaces",
+			input:    "abandon, ability, able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "comma with extra spaces",
+			input:    "abandon ,  ability  ,  able",
+			expected: "abandon ability able",
+		},
+
+		// Newline-separated (plain)
+		{
+			name:     "newline separated",
+			input:    "abandon\nability\nable",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "carriage return and newline",
+			input:    "abandon\r\nability\r\nable",
+			expected: "abandon ability able",
+		},
+
+		// Mixed formats
+		{
+			name:     "mixed numbered and bullets",
+			input:    "1. abandon\n- ability\nabout",
+			expected: "abandon ability about",
+		},
+		{
+			name:     "mixed with commas",
+			input:    "1. abandon, ability\n- able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "numbered with commas between",
+			input:    "1. abandon,\n2. ability,\n3. able",
+			expected: "abandon ability able",
+		},
+		{
+			name:     "complex mixed format",
+			input:    "  1. Abandon\n  2) ABILITY\n  - able, about\n  * abstract",
+			expected: "abandon ability able about abstract",
+		},
+
+		// Edge cases
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "only whitespace",
+			input:    "   \t\n  ",
+			expected: "",
+		},
+		{
+			name:     "only commas",
+			input:    ",,,",
+			expected: "",
+		},
+		{
+			name:     "single word with number prefix",
+			input:    "1. abandon",
+			expected: "abandon",
 		},
 	}
 

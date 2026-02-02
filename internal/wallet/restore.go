@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/mrz1836/go-sanitize"
+
 	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
 )
 
@@ -191,4 +193,18 @@ func isHexString(s string) bool {
 		}
 	}
 	return true
+}
+
+// SanitizeBitcoinAddress cleans user input for Bitcoin/BSV address validation.
+// It removes any characters that are not valid Base58Check characters (Bitcoin alphabet).
+// This is useful for cleaning user input that may contain spaces, invalid characters,
+// or copy-paste artifacts before validation.
+func SanitizeBitcoinAddress(input string) string {
+	return sanitize.BitcoinAddress(strings.TrimSpace(input))
+}
+
+// SanitizeWIF cleans user input for WIF private key validation.
+// It uses the same Base58Check character set as Bitcoin addresses.
+func SanitizeWIF(input string) string {
+	return sanitize.BitcoinAddress(strings.TrimSpace(input))
 }

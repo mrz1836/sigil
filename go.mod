@@ -6,6 +6,7 @@ require (
 	filippo.io/age v1.3.1
 	github.com/agnivade/levenshtein v1.2.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/mrz1836/go-sanitize v1.5.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tyler-smith/go-bip32 v1.0.0

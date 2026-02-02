@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/mrz1836/go-sanitize"
 )
 
 // Environment variable names.
@@ -27,7 +29,7 @@ func ApplyEnvironment(cfg *Config) {
 	}
 
 	if v := os.Getenv(EnvETHRPC); v != "" {
-		cfg.Networks.ETH.RPC = v
+		cfg.Networks.ETH.RPC = SanitizeURL(v)
 	}
 
 	if v := os.Getenv(EnvBSVAPIKey); v != "" {
@@ -67,4 +69,10 @@ func parseBool(s string) bool {
 	}
 	b, _ := strconv.ParseBool(s)
 	return b
+}
+
+// SanitizeURL cleans a URL string by removing invalid characters and trimming whitespace.
+// This is useful for cleaning user-provided RPC URLs that may contain copy-paste artifacts.
+func SanitizeURL(url string) string {
+	return sanitize.URL(strings.TrimSpace(url))
 }

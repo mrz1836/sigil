@@ -237,3 +237,144 @@ func TestApplyEnvironment_SessionTTL_InvalidValues(t *testing.T) {
 		})
 	}
 }
+
+// TestSanitizeURL tests URL sanitization.
+func TestSanitizeURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Clean URLs
+		{
+			name:     "valid http URL",
+			input:    "http://example.com",
+			expected: "http://example.com",
+		},
+		{
+			name:     "valid https URL",
+			input:    "https://mainnet.infura.io/v3/YOUR-KEY",
+			expected: "https://mainnet.infura.io/v3/YOUR-KEY",
+		},
+		{
+			name:     "valid localhost URL",
+			input:    "http://localhost:8545",
+			expected: "http://localhost:8545",
+		},
+		{
+			name:     "valid IP URL",
+			input:    "http://192.168.1.1:8545",
+			expected: "http://192.168.1.1:8545",
+		},
+
+		// Whitespace handling
+		{
+			name:     "leading whitespace",
+			input:    "  https://example.com",
+			expected: "https://example.com",
+		},
+		{
+			name:     "trailing whitespace",
+			input:    "https://example.com  ",
+			expected: "https://example.com",
+		},
+		{
+			name:     "both sides whitespace",
+			input:    "   https://example.com   ",
+			expected: "https://example.com",
+		},
+		{
+			name:     "with tabs",
+			input:    "\thttps://example.com\t",
+			expected: "https://example.com",
+		},
+		{
+			name:     "with newlines",
+			input:    "\nhttps://example.com\n",
+			expected: "https://example.com",
+		},
+		{
+			name:     "with carriage return",
+			input:    "https://example.com\r",
+			expected: "https://example.com",
+		},
+
+		// URL path handling
+		{
+			name:     "with path",
+			input:    "https://example.com/api/v1",
+			expected: "https://example.com/api/v1",
+		},
+		{
+			name:     "with query string",
+			input:    "https://example.com?key=value",
+			expected: "https://example.com?key=value",
+		},
+		{
+			name:     "with fragment",
+			input:    "https://example.com#section",
+			expected: "https://example.com#section",
+		},
+
+		// Edge cases
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "only whitespace",
+			input:    "   \t\n   ",
+			expected: "",
+		},
+		{
+			name:     "simple domain (no protocol)",
+			input:    "example.com",
+			expected: "example.com",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := config.SanitizeURL(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestApplyEnvironment_URLSanitization tests that URLs are sanitized when applied.
+func TestApplyEnvironment_URLSanitization(t *testing.T) {
+	cfg := config.Defaults()
+
+	// Set URL with extra whitespace
+	t.Setenv("SIGIL_ETH_RPC", "  https://mainnet.infura.io/v3/KEY  ")
+	config.ApplyEnvironment(cfg)
+
+	// Verify whitespace was trimmed
+	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
+}
+
+// TestApplyEnvironment_URLSanitization_WithTabs tests tab handling in URLs.
+func TestApplyEnvironment_URLSanitization_WithTabs(t *testing.T) {
+	cfg := config.Defaults()
+
+	// Set URL with tabs (common copy-paste error)
+	t.Setenv("SIGIL_ETH_RPC", "\thttps://mainnet.infura.io/v3/KEY\t")
+	config.ApplyEnvironment(cfg)
+
+	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
+}
+
+// TestApplyEnvironment_URLSanitization_WithNewlines tests newline handling in URLs.
+func TestApplyEnvironment_URLSanitization_WithNewlines(t *testing.T) {
+	cfg := config.Defaults()
+
+	// Set URL with newlines (common in multi-line pastes)
+	t.Setenv("SIGIL_ETH_RPC", "https://mainnet.infura.io/v3/KEY\n")
+	config.ApplyEnvironment(cfg)
+
+	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
+}

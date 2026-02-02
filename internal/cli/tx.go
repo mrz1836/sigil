@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mrz1836/go-sanitize"
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -425,10 +426,18 @@ func resolveToken(symbol string) (address string, decimals int, err error) {
 	}
 }
 
+// SanitizeAmount cleans an amount string by extracting only valid decimal characters.
+// This removes currency symbols, whitespace, and other invalid characters.
+func SanitizeAmount(amount string) string {
+	return sanitize.Decimal(strings.TrimSpace(amount))
+}
+
 // parseDecimalAmount parses a decimal string to big.Int with specified decimals.
 //
 //nolint:gocognit,gocyclo // Decimal parsing with precision requires multiple checks
 func parseDecimalAmount(amount string, decimals int) (*big.Int, error) {
+	// Pre-clean the input using sanitization
+	amount = SanitizeAmount(amount)
 	if amount == "" {
 		return nil, sigilerr.ErrAmountRequired
 	}

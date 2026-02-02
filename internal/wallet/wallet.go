@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/mrz1836/go-sanitize"
+
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -86,6 +88,21 @@ func ValidateWalletName(name string) error {
 		return ErrInvalidWalletName
 	}
 	return nil
+}
+
+// SuggestWalletName provides a sanitized version of an invalid wallet name.
+// It uses sanitize.PathName to clean the input, keeping only ASCII alphanumeric
+// characters, hyphens, and underscores. The result is truncated to 64 characters.
+// Returns empty string if the input cannot be sanitized to a valid name.
+func SuggestWalletName(name string) string {
+	suggested := sanitize.PathName(name)
+	if suggested == "" {
+		return ""
+	}
+	if len(suggested) > 64 {
+		suggested = suggested[:64]
+	}
+	return suggested
 }
 
 // NewWallet creates a new wallet with the given name and seed.

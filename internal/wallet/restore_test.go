@@ -225,3 +225,240 @@ func TestParseHexKey(t *testing.T) {
 		})
 	}
 }
+
+// TestSanitizeBitcoinAddress tests Bitcoin address sanitization.
+func TestSanitizeBitcoinAddress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Clean inputs
+		{
+			name:     "valid P2PKH address",
+			input:    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "valid P2SH address",
+			input:    "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+			expected: "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+		},
+
+		// Whitespace handling
+		{
+			name:     "leading whitespace",
+			input:    "  1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "trailing whitespace",
+			input:    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa  ",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "both sides whitespace",
+			input:    "   1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa   ",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with tabs",
+			input:    "\t1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa\t",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with newlines",
+			input:    "\n1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa\n",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+
+		// Invalid characters removed
+		{
+			name:     "with zero (invalid in Base58)",
+			input:    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa0",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with capital O (invalid in Base58)",
+			input:    "O1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with capital I (invalid in Base58)",
+			input:    "I1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with lowercase l (invalid in Base58)",
+			input:    "l1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+
+		// Special characters
+		{
+			name:     "with dash",
+			input:    "1A1zP1eP5QGefi2D-MPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with underscore",
+			input:    "1A1zP1eP5QGefi2D_MPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with colon prefix (colon removed)",
+			input:    "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "bitcoin1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with unicode",
+			input:    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa🚀",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+		{
+			name:     "with emoji prefix",
+			input:    "💰1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			expected: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+		},
+
+		// Edge cases
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "only whitespace",
+			input:    "   \t\n   ",
+			expected: "",
+		},
+		{
+			name:     "only invalid chars",
+			input:    "0OIl-_@#$%",
+			expected: "",
+		},
+		{
+			name:     "spaces between chars (copy-paste error)",
+			input:    "1A1z P1eP 5QGe fi2D",
+			expected: "1A1zP1eP5QGefi2D",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := SanitizeBitcoinAddress(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestSanitizeWIF tests WIF private key sanitization.
+func TestSanitizeWIF(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Clean WIF
+		{
+			name:     "valid WIF compressed",
+			input:    "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+			expected: "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+		},
+		{
+			name:     "valid WIF uncompressed",
+			input:    "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ",
+			expected: "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ",
+		},
+
+		// Whitespace handling
+		{
+			name:     "with leading space",
+			input:    " KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+			expected: "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+		},
+		{
+			name:     "with trailing space",
+			input:    "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617 ",
+			expected: "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+		},
+
+		// Invalid characters
+		{
+			name:     "with invalid 0",
+			input:    "0KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+			expected: "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+		},
+		{
+			name:     "with special chars",
+			input:    "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617!@#",
+			expected: "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := SanitizeWIF(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestSanitizeBitcoinAddress_ValidBase58Chars verifies only Base58 chars remain.
+func TestSanitizeBitcoinAddress_ValidBase58Chars(t *testing.T) {
+	t.Parallel()
+
+	// Base58 alphabet (excludes 0, O, I, l)
+	base58Chars := "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+	// Test that all Base58 chars are preserved
+	result := SanitizeBitcoinAddress(base58Chars)
+	assert.Equal(t, base58Chars, result, "all Base58 chars should be preserved")
+
+	// Test that excluded chars are removed
+	excluded := "0OIl"
+	result = SanitizeBitcoinAddress(excluded)
+	assert.Empty(t, result, "excluded chars should be removed")
+
+	// Test mixed input - note: order is preserved as chars appear
+	mixed := "0O1I2l3A4B5"
+	result = SanitizeBitcoinAddress(mixed)
+	assert.Equal(t, "123A4B5", result, "only valid Base58 chars should remain in order")
+}
+
+// TestSanitizeBitcoinAddress_PreservesValidAddress verifies valid addresses pass through.
+func TestSanitizeBitcoinAddress_PreservesValidAddress(t *testing.T) {
+	t.Parallel()
+
+	// P2PKH and P2SH addresses use only Base58 characters
+	p2pkhAndP2shAddresses := []string{
+		"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", // Satoshi's address (P2PKH)
+		"3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy", // P2SH
+	}
+
+	for _, addr := range p2pkhAndP2shAddresses {
+		t.Run(addr[:8], func(t *testing.T) {
+			t.Parallel()
+			result := SanitizeBitcoinAddress(addr)
+			// Valid Base58 addresses should pass through unchanged
+			assert.Equal(t, addr, result, "valid Base58 address should be preserved")
+		})
+	}
+
+	// Bech32 addresses contain '0' which is not valid Base58
+	// so they will be partially sanitized
+	t.Run("bech32_partial", func(t *testing.T) {
+		t.Parallel()
+		bech32 := "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+		result := SanitizeBitcoinAddress(bech32)
+		// '0' is removed from bech32 addresses
+		assert.NotContains(t, result, "0", "0 should be removed from bech32")
+		assert.Less(t, len(result), len(bech32), "result should be shorter")
+	})
+}

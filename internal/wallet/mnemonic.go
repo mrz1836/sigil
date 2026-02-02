@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/agnivade/levenshtein"
-	"github.com/tyler-smith/go-bip39"
+	"github.com/cosmos/go-bip39"
 )
 
 var (
@@ -63,7 +63,8 @@ func ValidateMnemonic(mnemonic string) error {
 	}
 
 	normalized := NormalizeMnemonicInput(mnemonic)
-	if !bip39.IsMnemonicValid(normalized) {
+	// MnemonicToByteArray validates word count, word validity, AND checksum
+	if _, err := bip39.MnemonicToByteArray(normalized); err != nil {
 		return ErrInvalidMnemonic
 	}
 
@@ -105,7 +106,8 @@ func NormalizeMnemonicInput(input string) string {
 func MnemonicToSeed(mnemonic, passphrase string) ([]byte, error) {
 	normalized := NormalizeMnemonicInput(mnemonic)
 
-	if !bip39.IsMnemonicValid(normalized) {
+	// MnemonicToByteArray validates word count, word validity, AND checksum
+	if _, err := bip39.MnemonicToByteArray(normalized); err != nil {
 		return nil, ErrInvalidMnemonic
 	}
 
@@ -115,13 +117,13 @@ func MnemonicToSeed(mnemonic, passphrase string) ([]byte, error) {
 
 // GetWordList returns the BIP39 English word list.
 func GetWordList() []string {
-	return bip39.GetWordList()
+	return bip39.WordList
 }
 
 // IsValidWord checks if a word is in the BIP39 word list.
 func IsValidWord(word string) bool {
 	word = strings.ToLower(word)
-	for _, w := range bip39.GetWordList() {
+	for _, w := range bip39.WordList {
 		if w == word {
 			return true
 		}
@@ -149,7 +151,7 @@ type TypoInfo struct {
 // Returns empty string if no word is close enough (distance > MaxTypoDistance).
 func SuggestWord(input string) string {
 	input = strings.ToLower(input)
-	wordList := bip39.GetWordList()
+	wordList := bip39.WordList
 
 	minDist := math.MaxInt
 	var suggestion string

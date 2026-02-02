@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/tyler-smith/go-bip32"
+	"github.com/decred/dcrd/hdkeychain/v3"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -49,6 +49,13 @@ func init() {
 	secp256k1B = big.NewInt(7)
 }
 
+// hdNetParams satisfies hdkeychain.NetworkParams for BIP32 key derivation.
+// Uses standard Bitcoin mainnet HD version bytes.
+type hdNetParams struct{}
+
+func (hdNetParams) HDPrivKeyVersion() [4]byte { return [4]byte{0x04, 0x88, 0xAD, 0xE4} }
+func (hdNetParams) HDPubKeyVersion() [4]byte  { return [4]byte{0x04, 0x88, 0xB2, 0x1E} }
+
 var (
 	// ErrUnsupportedChain indicates the chain is not supported.
 	ErrUnsupportedChain = errors.New("unsupported chain")
@@ -87,7 +94,7 @@ func GetDerivationPath(chain ChainID, account, index uint32) string {
 // DeriveAddress derives an address for the given chain and index from a BIP39 seed.
 func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address, error) {
 	// Create master key from seed
-	masterKey, err := bip32.NewMasterKey(seed)
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -123,7 +130,7 @@ func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address,
 // DerivePrivateKey derives a private key for signing operations.
 // The returned key must be zeroed by the caller after use.
 func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte, error) {
-	masterKey, err := bip32.NewMasterKey(seed)
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -134,42 +141,46 @@ func DerivePrivateKey(seed []byte, chain ChainID, account, index uint32) ([]byte
 	}
 
 	// Return a copy of the private key bytes
+	serialized, err := key.SerializedPrivKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize private key: %w", err)
+	}
 	privKey := make([]byte, 32)
-	copy(privKey, key.Key)
+	copy(privKey, serialized)
 	return privKey, nil
 }
 
 // deriveBIP44Key derives a key following BIP44 path structure.
 // Path: m / purpose' / coin_type' / account' / change / address_index
-func deriveBIP44Key(masterKey *bip32.Key, chain ChainID, account, index uint32) (*bip32.Key, error) {
+func deriveBIP44Key(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, index uint32) (*hdkeychain.ExtendedKey, error) {
 	coinType := chain.CoinType()
 
 	// m/44' (purpose)
-	purposeKey, err := masterKey.NewChildKey(bip32.FirstHardenedChild + 44)
+	purposeKey, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
 	}
 
 	// m/44'/coin_type'
-	coinTypeKey, err := purposeKey.NewChildKey(bip32.FirstHardenedChild + coinType)
+	coinTypeKey, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
 	}
 
 	// m/44'/coin_type'/account'
-	accountKey, err := coinTypeKey.NewChildKey(bip32.FirstHardenedChild + account)
+	accountKey, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive account key: %w", err)
 	}
 
 	// m/44'/coin_type'/account'/0 (external chain)
-	changeKey, err := accountKey.NewChildKey(0)
+	changeKey, err := accountKey.ChildBIP32Std(0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive change key: %w", err)
 	}
 
 	// m/44'/coin_type'/account'/0/index
-	indexKey, err := changeKey.NewChildKey(index)
+	indexKey, err := changeKey.ChildBIP32Std(index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive index key: %w", err)
 	}
@@ -178,9 +189,9 @@ func deriveBIP44Key(masterKey *bip32.Key, chain ChainID, account, index uint32) 
 }
 
 // deriveETHAddress derives an Ethereum address from a BIP32 key.
-func deriveETHAddress(key *bip32.Key) (address, pubKeyHex string, err error) {
+func deriveETHAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, err error) {
 	// Get the public key (BIP32 gives us compressed 33-byte key)
-	pubKeyCompressed := key.PublicKey().Key
+	pubKeyCompressed := key.SerializedPubKey()
 
 	// For ETH, we need the uncompressed public key (65 bytes)
 	pubKeyUncompressed, err := decompressPublicKey(pubKeyCompressed)
@@ -208,9 +219,9 @@ func deriveETHAddress(key *bip32.Key) (address, pubKeyHex string, err error) {
 // deriveBSVAddress derives a Bitcoin SV (or BTC/BCH) address from a BIP32 key.
 //
 //nolint:unparam // error return is for interface consistency with deriveETHAddress
-func deriveBSVAddress(key *bip32.Key) (address, pubKeyHex string, _ error) {
+func deriveBSVAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, _ error) {
 	// Get compressed public key (33 bytes)
-	pubKey := key.PublicKey().Key
+	pubKey := key.SerializedPubKey()
 
 	// P2PKH address: Base58Check(0x00 + RIPEMD160(SHA256(pubkey)))
 	pubKeyHash := bitcoin.Hash160(pubKey)

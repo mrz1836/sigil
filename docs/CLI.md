@@ -2,6 +2,26 @@
 
 Sigil is a terminal-based multi-chain cryptocurrency wallet for power users. It supports HD wallet creation with BIP39 mnemonics, balance checking, and transactions across Ethereum (ETH/USDC) and Bitcoin SV (BSV) networks.
 
+---
+
+> ⚠️ **IMPORTANT DISCLAIMER — PLEASE READ BEFORE USE**
+>
+> Sigil is experimental, open-source software provided **"AS-IS" WITHOUT WARRANTY OF ANY KIND**, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement.
+>
+> **BY USING SIGIL, YOU ACKNOWLEDGE AND AGREE THAT:**
+>
+> 1. **You are solely responsible for your private keys and seed phrases.** Sigil does not store, transmit, or have any access to your cryptographic keys. If you lose your mnemonic phrase, password, or backup files, your funds are permanently unrecoverable. No support service exists that can retrieve them.
+>
+> 2. **You bear all risk of loss.** Cryptocurrency transactions are irreversible. Sending funds to incorrect addresses, misconfiguring fees, or any other user error may result in permanent, total loss of funds.
+>
+> 3. **This software has not been audited.** While developed with security in mind, Sigil has not undergone formal security audits. Use at your own risk.
+>
+> 4. **The authors and contributors accept no liability.** Under no circumstances shall the developers, contributors, or affiliated parties be held liable for any direct, indirect, incidental, special, or consequential damages arising from the use or inability to use this software.
+>
+> **Do not use Sigil with funds you cannot afford to lose.**
+
+---
+
 <br>
 
 ## Installation

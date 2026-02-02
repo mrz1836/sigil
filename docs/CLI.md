@@ -241,6 +241,7 @@ By default, shows the first unused address. The same address is shown until it r
 | `--chain` | `-c` | `bsv` | Blockchain: `eth`, `bsv` |
 | `--new` | - | `false` | Force generation of a new address |
 | `--label` | `-l` | - | Set a label for the address |
+| `--qr` | - | `false` | Display QR code for the address |
 
 **Examples:**
 ```bash
@@ -255,6 +256,9 @@ sigil receive --wallet main --chain bsv --new --label "Payment from Alice"
 
 # Show ETH receiving address
 sigil receive --wallet main --chain eth
+
+# Show address with QR code for mobile wallet scanning
+sigil receive --wallet main --chain bsv --qr
 ```
 
 <br>

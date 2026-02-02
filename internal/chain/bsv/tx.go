@@ -289,3 +289,42 @@ func ZeroPrivateKey(key []byte) {
 func amountToBigInt(amount uint64) *big.Int {
 	return new(big.Int).SetUint64(amount)
 }
+
+// ErrSweepInsufficientFunds indicates there are not enough funds to cover the fee.
+var ErrSweepInsufficientFunds = errors.New("insufficient funds: fee exceeds total balance")
+
+// CalculateSweepAmount calculates the maximum amount that can be sent when sweeping
+// all UTXOs from a wallet. It accounts for the transaction fee based on the number
+// of inputs and a single output.
+//
+// Parameters:
+//   - totalInputs: total amount in satoshis from all UTXOs
+//   - numInputs: number of UTXOs being spent
+//   - feeRate: fee rate in satoshis per byte
+//
+// Returns:
+//   - sendAmount: the amount that can be sent after deducting the fee
+//   - err: error if fee exceeds available funds
+func CalculateSweepAmount(totalInputs uint64, numInputs int, feeRate uint64) (uint64, error) {
+	// Validate fee rate
+	feeRate = ValidateFeeRate(feeRate)
+
+	// Calculate fee for numInputs -> 1 output transaction
+	// No change output since we're sweeping everything
+	fee := EstimateFeeForTx(numInputs, 1, feeRate)
+
+	if fee >= totalInputs {
+		return 0, fmt.Errorf("%w: total %d satoshis, fee %d satoshis",
+			ErrSweepInsufficientFunds, totalInputs, fee)
+	}
+
+	sendAmount := totalInputs - fee
+
+	// Verify result is above dust limit
+	if sendAmount < DustLimit {
+		return 0, fmt.Errorf("%w: remaining %d satoshis is below dust limit %d",
+			ErrSweepInsufficientFunds, sendAmount, DustLimit)
+	}
+
+	return sendAmount, nil
+}

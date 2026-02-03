@@ -378,3 +378,82 @@ func TestApplyEnvironment_URLSanitization_WithNewlines(t *testing.T) {
 
 	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
 }
+
+func TestConfig_GetHome(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Home = "/custom/home/path"
+	assert.Equal(t, "/custom/home/path", cfg.GetHome())
+}
+
+func TestConfig_GetETHRPC(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Networks.ETH.RPC = "https://custom-rpc.example.com"
+	assert.Equal(t, "https://custom-rpc.example.com", cfg.GetETHRPC())
+}
+
+func TestConfig_GetBSVAPIKey(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Networks.BSV.APIKey = "test-bsv-key"
+	assert.Equal(t, "test-bsv-key", cfg.GetBSVAPIKey())
+}
+
+func TestConfig_GetLoggingLevel(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Logging.Level = "debug"
+	assert.Equal(t, "debug", cfg.GetLoggingLevel())
+}
+
+func TestConfig_GetLoggingFile(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Logging.File = "/var/log/sigil.log"
+	assert.Equal(t, "/var/log/sigil.log", cfg.GetLoggingFile())
+}
+
+func TestConfig_GetOutputFormat(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Output.DefaultFormat = "json"
+	assert.Equal(t, "json", cfg.GetOutputFormat())
+}
+
+func TestConfig_IsVerbose(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	// Default should be false
+	assert.False(t, cfg.IsVerbose())
+
+	// Set to true
+	cfg.Output.Verbose = true
+	assert.True(t, cfg.IsVerbose())
+}
+
+func TestConfig_GetSecurity(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Security.AutoLockSeconds = 300
+	cfg.Security.RequireConfirmAbove = 1000.0
+	cfg.Security.MemoryLock = false
+	cfg.Security.SessionEnabled = false
+	cfg.Security.SessionTTLMinutes = 30
+
+	security := cfg.GetSecurity()
+	assert.Equal(t, 300, security.AutoLockSeconds)
+	assert.InDelta(t, 1000.0, security.RequireConfirmAbove, 0.001)
+	assert.False(t, security.MemoryLock)
+	assert.False(t, security.SessionEnabled)
+	assert.Equal(t, 30, security.SessionTTLMinutes)
+}
+
+func TestSave_MkdirAllFails(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	// Use a path that cannot be created (root-owned directory)
+	err := config.Save(cfg, "/proc/nonexistent/config.yaml")
+	assert.Error(t, err)
+}

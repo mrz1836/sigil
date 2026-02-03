@@ -343,3 +343,126 @@ func TestParseDecimalAmount_WithSanitization(t *testing.T) {
 		})
 	}
 }
+
+func TestAmountToBigInt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		amount   uint64
+		expected string
+	}{
+		{
+			name:     "zero",
+			amount:   0,
+			expected: "0",
+		},
+		{
+			name:     "one",
+			amount:   1,
+			expected: "1",
+		},
+		{
+			name:     "small value",
+			amount:   100,
+			expected: "100",
+		},
+		{
+			name:     "typical satoshi value",
+			amount:   100000000, // 1 BTC in satoshis
+			expected: "100000000",
+		},
+		{
+			name:     "large value",
+			amount:   1000000000000,
+			expected: "1000000000000",
+		},
+		{
+			name:     "max uint64",
+			amount:   ^uint64(0), // 18446744073709551615
+			expected: "18446744073709551615",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := amountToBigInt(tc.amount)
+			assert.Equal(t, tc.expected, result.String())
+		})
+	}
+}
+
+func TestResolveToken(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		symbol       string
+		wantAddress  bool
+		wantDecimals int
+		wantErr      bool
+	}{
+		{
+			name:         "USDC uppercase",
+			symbol:       "USDC",
+			wantAddress:  true,
+			wantDecimals: 6,
+			wantErr:      false,
+		},
+		{
+			name:         "usdc lowercase",
+			symbol:       "usdc",
+			wantAddress:  true,
+			wantDecimals: 6,
+			wantErr:      false,
+		},
+		{
+			name:         "Usdc mixed case",
+			symbol:       "Usdc",
+			wantAddress:  true,
+			wantDecimals: 6,
+			wantErr:      false,
+		},
+		{
+			name:        "unsupported token ETH",
+			symbol:      "ETH",
+			wantAddress: false,
+			wantErr:     true,
+		},
+		{
+			name:        "unsupported token USDT",
+			symbol:      "USDT",
+			wantAddress: false,
+			wantErr:     true,
+		},
+		{
+			name:        "unsupported token DAI",
+			symbol:      "DAI",
+			wantAddress: false,
+			wantErr:     true,
+		},
+		{
+			name:        "empty symbol",
+			symbol:      "",
+			wantAddress: false,
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			address, decimals, err := resolveToken(tc.symbol)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, address)
+				assert.Zero(t, decimals)
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, address)
+				assert.Equal(t, tc.wantDecimals, decimals)
+			}
+		})
+	}
+}

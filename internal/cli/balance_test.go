@@ -14,6 +14,7 @@ import (
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // mockConfigProvider implements ConfigProvider for testing.
@@ -430,4 +431,53 @@ func TestFetchETHBalances_FallbackRPCOrder(t *testing.T) {
 	_, stale, err := fetchETHBalances(ctx, "0xabc", balanceCache, cfg)
 	require.Error(t, err)
 	assert.True(t, stale) // Should be stale since we couldn't fetch
+}
+
+func TestGetChainSymbol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		chainID  wallet.ChainID
+		expected string
+	}{
+		{
+			name:     "ETH chain",
+			chainID:  wallet.ChainETH,
+			expected: "ETH",
+		},
+		{
+			name:     "BSV chain",
+			chainID:  wallet.ChainBSV,
+			expected: "BSV",
+		},
+		{
+			name:     "BTC chain",
+			chainID:  wallet.ChainBTC,
+			expected: "BTC",
+		},
+		{
+			name:     "BCH chain",
+			chainID:  wallet.ChainBCH,
+			expected: "BCH",
+		},
+		{
+			name:     "unknown chain",
+			chainID:  wallet.ChainID("unknown"),
+			expected: "???",
+		},
+		{
+			name:     "empty chain",
+			chainID:  wallet.ChainID(""),
+			expected: "???",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := getChainSymbol(tc.chainID)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }

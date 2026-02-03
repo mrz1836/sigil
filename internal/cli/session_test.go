@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/mrz1836/sigil/internal/session"
 )
 
 func TestFormatDuration(t *testing.T) {
@@ -101,6 +105,149 @@ func TestFormatDuration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := formatDuration(tc.duration)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestOutputSessionStatusJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		sessions     []*session.Session
+		wantContains []string
+	}{
+		{
+			name:     "no sessions",
+			sessions: []*session.Session{},
+			wantContains: []string{
+				`"available": true`,
+				`"sessions": []`,
+			},
+		},
+		{
+			name: "single session",
+			sessions: []*session.Session{
+				{
+					WalletName: "test-wallet",
+					CreatedAt:  time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(15 * time.Minute),
+				},
+			},
+			wantContains: []string{
+				`"available": true`,
+				`"sessions": [`,
+				`"wallet": "test-wallet"`,
+				`"expires_in":`,
+				`"created_at": "2026-01-31T12:00:00Z"`,
+			},
+		},
+		{
+			name: "multiple sessions",
+			sessions: []*session.Session{
+				{
+					WalletName: "wallet-1",
+					CreatedAt:  time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(10 * time.Minute),
+				},
+				{
+					WalletName: "wallet-2",
+					CreatedAt:  time.Date(2026, 1, 31, 13, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(20 * time.Minute),
+				},
+			},
+			wantContains: []string{
+				`"available": true`,
+				`"wallet": "wallet-1"`,
+				`"wallet": "wallet-2"`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&buf)
+
+			outputSessionStatusJSON(cmd, tc.sessions)
+
+			output := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, output, s)
+			}
+		})
+	}
+}
+
+func TestOutputSessionStatusText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		sessions     []*session.Session
+		wantContains []string
+	}{
+		{
+			name:     "no sessions",
+			sessions: []*session.Session{},
+			wantContains: []string{
+				"No active sessions",
+			},
+		},
+		{
+			name: "single session",
+			sessions: []*session.Session{
+				{
+					WalletName: "my-wallet",
+					CreatedAt:  time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(5 * time.Minute),
+				},
+			},
+			wantContains: []string{
+				"Active Sessions:",
+				"my-wallet:",
+				"expires in",
+			},
+		},
+		{
+			name: "multiple sessions",
+			sessions: []*session.Session{
+				{
+					WalletName: "wallet-a",
+					CreatedAt:  time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(3 * time.Minute),
+				},
+				{
+					WalletName: "wallet-b",
+					CreatedAt:  time.Date(2026, 1, 31, 13, 0, 0, 0, time.UTC),
+					ExpiresAt:  time.Now().Add(7 * time.Minute),
+				},
+			},
+			wantContains: []string{
+				"Active Sessions:",
+				"wallet-a:",
+				"wallet-b:",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&buf)
+
+			outputSessionStatusText(cmd, tc.sessions)
+
+			output := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, output, s)
+			}
 		})
 	}
 }

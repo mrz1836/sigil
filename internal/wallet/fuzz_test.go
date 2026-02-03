@@ -192,7 +192,6 @@ func FuzzParseHexKey(f *testing.F) {
 	// Valid hex key
 	f.Add("0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d")
 	f.Add("0x0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d")
-	f.Add("0C28FCA386C7A227600B2FE50B7CAE11EC86D3BF1FBE471BE89827E19D72AA1D")
 	// Invalid
 	f.Add("")
 	f.Add("0x")

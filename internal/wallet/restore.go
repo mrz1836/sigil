@@ -108,7 +108,7 @@ func isWIFFormat(input string) bool {
 // isHexKeyFormat checks if input looks like a hex private key.
 func isHexKeyFormat(input string) bool {
 	hexInput := input
-	if strings.HasPrefix(strings.ToLower(input), "0x") {
+	if strings.HasPrefix(input, "0x") || strings.HasPrefix(input, "0X") {
 		hexInput = input[2:]
 	}
 	return len(hexInput) == 64 && isHexString(hexInput)
@@ -154,7 +154,7 @@ func ParseHexKey(hexKey string) ([]byte, error) {
 	hexKey = strings.TrimSpace(hexKey)
 
 	// Strip 0x prefix if present
-	if strings.HasPrefix(strings.ToLower(hexKey), "0x") {
+	if strings.HasPrefix(hexKey, "0x") || strings.HasPrefix(hexKey, "0X") {
 		hexKey = hexKey[2:]
 	}
 

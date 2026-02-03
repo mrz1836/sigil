@@ -484,6 +484,159 @@ func DerivePrivateKeyForChain(seed []byte, chain ChainID, index uint32) ([]byte,
 	return DerivePrivateKey(seed, chain, 0, index)
 }
 
+// DeriveAddressWithCoinType derives a BSV-style address using an arbitrary coin type.
+// This is useful for discovering funds from wallets that use different coin types
+// (e.g., MoneyButton uses 0 for BTC, Exodus uses 145 for BCH).
+//
+// Parameters:
+//   - seed: BIP39 seed bytes
+//   - coinType: BIP44 coin type (0=BTC, 145=BCH, 236=BSV)
+//   - account: account index (typically 0)
+//   - change: 0 for external (receiving), 1 for internal (change)
+//   - index: address index
+//
+// Returns the address string, public key hex, and derivation path.
+func DeriveAddressWithCoinType(seed []byte, coinType, account, change, index uint32) (string, string, string, error) {
+	// Create master key from seed
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to create master key: %w", err)
+	}
+
+	// Derive using BIP44 path with arbitrary coin type
+	key, err := deriveBIP44KeyWithCoinType(masterKey, coinType, account, change, index)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	// Derive BSV-style address (P2PKH)
+	address, pubKeyHex, err := deriveBSVAddress(key)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	path := fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, index)
+	return address, pubKeyHex, path, nil
+}
+
+// DerivePrivateKeyWithCoinType derives a private key using an arbitrary coin type.
+// This is used for signing transactions from discovered addresses.
+// The returned key must be zeroed by the caller after use.
+func DerivePrivateKeyWithCoinType(seed []byte, coinType, account, change, index uint32) ([]byte, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create master key: %w", err)
+	}
+
+	key, err := deriveBIP44KeyWithCoinType(masterKey, coinType, account, change, index)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return a copy of the private key bytes
+	serialized, err := key.SerializedPrivKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize private key: %w", err)
+	}
+	privKey := make([]byte, 32)
+	copy(privKey, serialized)
+	return privKey, nil
+}
+
+// DeriveLegacyAddress derives an address using the legacy HandCash 1.x path (m/0'/index).
+// This non-standard path was used by early versions of HandCash.
+func DeriveLegacyAddress(seed []byte, index uint32) (string, string, string, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to create master key: %w", err)
+	}
+
+	// m/0' (hardened)
+	purposeKey, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 0)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive m/0' key: %w", err)
+	}
+
+	// m/0'/index (non-hardened)
+	indexKey, err := purposeKey.ChildBIP32Std(index)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
+	}
+
+	address, pubKeyHex, err := deriveBSVAddress(indexKey)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	path := fmt.Sprintf("m/0'/%d", index)
+	return address, pubKeyHex, path, nil
+}
+
+// DeriveLegacyPrivateKey derives a private key using the legacy HandCash 1.x path.
+// The returned key must be zeroed by the caller after use.
+func DeriveLegacyPrivateKey(seed []byte, index uint32) ([]byte, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create master key: %w", err)
+	}
+
+	// m/0' (hardened)
+	purposeKey, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive m/0' key: %w", err)
+	}
+
+	// m/0'/index (non-hardened)
+	indexKey, err := purposeKey.ChildBIP32Std(index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive index key: %w", err)
+	}
+
+	serialized, err := indexKey.SerializedPrivKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize private key: %w", err)
+	}
+	privKey := make([]byte, 32)
+	copy(privKey, serialized)
+	return privKey, nil
+}
+
+// deriveBIP44KeyWithCoinType derives a key using an arbitrary coin type.
+// Path: m / 44' / coin_type' / account' / change / address_index
+func deriveBIP44KeyWithCoinType(masterKey *hdkeychain.ExtendedKey, coinType, account, change, index uint32) (*hdkeychain.ExtendedKey, error) {
+	// m/44' (purpose)
+	purposeKey, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
+	}
+
+	// m/44'/coin_type'
+	coinTypeKey, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
+	}
+
+	// m/44'/coin_type'/account'
+	accountKey, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive account key: %w", err)
+	}
+
+	// m/44'/coin_type'/account'/change
+	changeKey, err := accountKey.ChildBIP32Std(change)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive change key: %w", err)
+	}
+
+	// m/44'/coin_type'/account'/change/index
+	indexKey, err := changeKey.ChildBIP32Std(index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive index key: %w", err)
+	}
+
+	return indexKey, nil
+}
+
 // ZeroBytes zeros out a byte slice.
 func ZeroBytes(data []byte) {
 	for i := range data {

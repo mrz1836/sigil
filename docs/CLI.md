@@ -183,6 +183,106 @@ sigil wallet restore backup  # Interactive mode
 sigil wallet restore backup --input "..." --scan=false  # Skip UTXO scan
 ```
 
+#### wallet discover
+
+Discover and recover funds from any BSV wallet by scanning multiple derivation paths. This is useful when you have a mnemonic phrase from another wallet (RelayX, MoneyButton, HandCash, etc.) and want to find all funds.
+
+```bash
+sigil wallet discover [flags]
+```
+
+**How It Works:**
+
+Different BSV wallets use different BIP44 derivation paths. For example:
+- **RelayX, RockWallet, Twetch** use `m/44'/236'/0'/...` (BSV standard)
+- **MoneyButton, ElectrumSV** use `m/44'/0'/0'/...` (Bitcoin coin type)
+- **Exodus, Simply.Cash** use `m/44'/145'/0'/...` (Bitcoin Cash coin type)
+- **HandCash 1.x** uses `m/0'/...` (legacy non-BIP44)
+
+The `discover` command scans all these paths automatically to find your funds, regardless of which wallet originally created them.
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input` | - | Mnemonic phrase (or interactive prompt if omitted) |
+| `--passphrase` | `false` | Prompt for BIP39 passphrase |
+| `--gap` | `20` | Gap limit for address scanning |
+| `--scheme` | - | Scan only a specific scheme (e.g., `BSV Standard`) |
+| `--path` | - | Custom derivation path to scan |
+| `--migrate` | `false` | Consolidate discovered funds to a sigil wallet |
+| `--wallet` | - | Target wallet name for migration (required with `--migrate`) |
+
+**Supported Wallet Schemes:**
+
+| Scheme | Derivation Path | Wallets |
+|--------|-----------------|---------|
+| BSV Standard | `m/44'/236'/0'/...` | RelayX, RockWallet, Twetch, Trezor, Ledger |
+| Bitcoin Legacy | `m/44'/0'/0'/...` | MoneyButton, ElectrumSV imports |
+| Bitcoin Cash | `m/44'/145'/0'/...` | Exodus, Simply.Cash, BCH fork splits |
+| HandCash Legacy | `m/0'/...` | HandCash 1.x only |
+| Multi-Account | `m/44'/236'/1-4'/...` | Power users with multiple accounts |
+
+**Examples:**
+```bash
+# Interactive discovery (prompts for mnemonic)
+sigil wallet discover
+
+# Provide mnemonic directly
+sigil wallet discover --input "abandon abandon abandon ... about"
+
+# Use with BIP39 passphrase (Centbee uses 4-digit PIN as passphrase)
+sigil wallet discover --passphrase
+
+# Increase gap limit for wallets with many addresses
+sigil wallet discover --gap 50
+
+# Scan only a specific scheme
+sigil wallet discover --scheme "Bitcoin Legacy"
+
+# Scan a custom derivation path
+sigil wallet discover --path "m/44'/0'/0'/0/*"
+
+# Output as JSON for scripting
+sigil wallet discover -o json
+
+# Discover and consolidate funds to your sigil wallet
+sigil wallet discover --migrate --wallet main
+```
+
+**Sample Output:**
+```
+Scanning derivation paths...
+  BSV Standard...
+    Found: 1ABC...xyz (52340 sats)
+  Bitcoin Legacy...
+    Found: 1DEF...uvw (120000 sats)
+
+═══════════════════════════════════════════════════════════════
+                    DISCOVERED FUNDS
+═══════════════════════════════════════════════════════════════
+
+Scheme              Address              Path                    Balance
+----------------    -----------------    --------------------    ----------
+BSV Standard        1ABC...xyz           m/44'/236'/0'/0/3       0.00052340 BSV
+Bitcoin Legacy      1DEF...uvw           m/44'/0'/0'/0/0         0.00120000 BSV
+
+───────────────────────────────────────────────────────────────
+Total: 0.00172340 BSV (2 addresses, 3 UTXOs)
+Scan Time: 12.3s
+═══════════════════════════════════════════════════════════════
+
+Use --migrate --wallet <name> to consolidate funds.
+```
+
+**Known Limitations:**
+
+| Wallet | Status | Notes |
+|--------|--------|-------|
+| HandCash 2.0+ | Not supported | Uses proprietary non-exportable keys |
+| Centbee | Partial | Uses 4-digit PIN as BIP39 passphrase |
+
+> **Tip:** If you're migrating from HandCash 2.0 or later, you'll need to use the HandCash app to transfer funds to another wallet first, as these versions don't allow mnemonic export.
+
 <br>
 
 ---

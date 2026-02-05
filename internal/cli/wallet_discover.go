@@ -114,7 +114,7 @@ type DiscoverMigrationResponse struct {
 
 //nolint:gocognit,gocyclo // CLI command handler with validation, setup, and output - complexity is necessary
 func runWalletDiscover(cmd *cobra.Command, _ []string) error {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 
 	// Validate flags
 	if discoverMigrate && discoverWallet == "" {
@@ -187,7 +187,7 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Set up progress callback for text output
-	if cmdCtx.Fmt.Format() != output.FormatJSON {
+	if cc.Fmt.Format() != output.FormatJSON {
 		opts.ProgressCallback = createProgressCallback(cmd.OutOrStderr())
 	}
 
@@ -215,7 +215,7 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 
 	// Handle migration if requested
 	if discoverMigrate && result.HasFunds() {
-		migrationResp, err := executeMigration(ctx, cmd, cmdCtx, seed, result, client)
+		migrationResp, err := executeMigration(ctx, cmd, cc, seed, result, client)
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,7 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Output results
-	if cmdCtx.Fmt.Format() == output.FormatJSON {
+	if cc.Fmt.Format() == output.FormatJSON {
 		outputDiscoverJSON(cmd.OutOrStdout(), response)
 	} else {
 		outputDiscoverText(cmd.OutOrStdout(), response, discoverMigrate && response.Migration != nil)

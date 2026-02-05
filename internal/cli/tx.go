@@ -89,7 +89,7 @@ func init() {
 
 //nolint:gocyclo // CLI flow involves validation and routing
 func runTxSend(cmd *cobra.Command, _ []string) error {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -111,7 +111,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Load wallet and get private key (using session if available)
-	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	storage := wallet.NewFileStorage(filepath.Join(cc.Cfg.GetHome(), "wallets"))
 	wlt, seed, err := loadWalletWithSession(txWallet, storage, cmd)
 	if err != nil {
 		return err
@@ -143,7 +143,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 
 //nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
 func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, seed []byte) error {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 
 	// Validate ETH address
 	if err := eth.ValidateChecksumAddress(txTo); err != nil {
@@ -156,7 +156,7 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	}
 
 	// Get RPC URL from config
-	rpcURL := cmdCtx.Cfg.GetETHRPC()
+	rpcURL := cc.Cfg.GetETHRPC()
 	if rpcURL == "" {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrConfigInvalid,
@@ -257,7 +257,7 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 
 //nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
 func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *wallet.FileStorage, fromAddress string, seed []byte) error {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 
 	// Validate BSV address
 	if err := bsv.ValidateBase58CheckAddress(txTo); err != nil {
@@ -269,7 +269,7 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *
 
 	// Create BSV client
 	client := bsv.NewClient(&bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+		APIKey: cc.Cfg.GetBSVAPIKey(),
 	})
 
 	// Parse amount
@@ -386,9 +386,9 @@ func displayBSVTxDetails(cmd *cobra.Command, from, to, amount string, fee, feeRa
 
 // displayBSVTxResult shows the BSV transaction result.
 func displayBSVTxResult(cmd *cobra.Command, result *chain.TransactionResult) {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 	w := cmd.OutOrStdout()
-	format := cmdCtx.Fmt.Format()
+	format := cc.Fmt.Format()
 
 	if format == output.FormatJSON {
 		displayBSVTxResultJSON(w, result)
@@ -610,9 +610,9 @@ func displayTxDetails(cmd *cobra.Command, from, to, amount, token string, estima
 
 // displayTxResult shows the transaction result.
 func displayTxResult(cmd *cobra.Command, result *chain.TransactionResult) {
-	cmdCtx := GetCmdContext(cmd)
+	cc := GetCmdContext(cmd)
 	w := cmd.OutOrStdout()
-	format := cmdCtx.Fmt.Format()
+	format := cc.Fmt.Format()
 
 	if format == output.FormatJSON {
 		displayTxResultJSON(w, result)

@@ -139,17 +139,13 @@ func TestSend_UTXOFlow(t *testing.T) {
 		// Get a valid key pair for signing
 		kp := getTestKeyPair()
 
-		// SelectUTXOs uses estimatedTxSize=225 for fee calculation
-		// UTXO needs: amount + 225 (estimated fee) to pass selection
-		// Then validation uses actual size: 1 input, 1 output = 192 bytes
-		// So we need UTXO >= amount + 225 for selection, and >= amount + 192 for validation
-		// With UTXO = amount + 225, change = 0, so only 1 output, validation uses 192, passes
-		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 estimated fee
+		fee := EstimateTxSize(1, 2) * DefaultFeeRate
+		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
 		// Create a multi-route server that handles both UTXO listing and broadcast
 		server := mockMultiRouteServer(mockServerConfig{
 			UTXOs:           utxos,
-			Balance:         50225,
+			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "broadcast_tx_hash_here",
 		})
 		defer server.Close()
@@ -174,11 +170,16 @@ func TestSend_UTXOFlow(t *testing.T) {
 		assert.NotEmpty(t, result.Hash)
 	})
 
-	t.Run("multiple UTXOs selected - documented validation issue", func(t *testing.T) {
+	t.Run("multiple UTXOs selected - successful transaction", func(t *testing.T) {
 		t.Parallel()
 
-		utxos := makeUTXOs(30000, 30000, 30000) // 90k total
-		server := mockUTXOServer(utxos)
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 40000, 40000, 40000) // 120k total
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         120000,
+			BroadcastTxHash: "multi_input_tx_hash",
+		})
 		defer server.Close()
 
 		client := NewClient(&ClientOptions{
@@ -189,16 +190,13 @@ func TestSend_UTXOFlow(t *testing.T) {
 		defer cancel()
 
 		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
+			From:       kp.Address,
 			To:         validAddress2(),
 			Amount:     big.NewInt(80000), // Needs multiple UTXOs
-			PrivateKey: make([]byte, 32),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		// Due to SelectUTXOs using fixed estimate vs Validate using actual size,
-		// validation fails when change is involved
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "insufficient")
+		require.NoError(t, err)
 	})
 
 	t.Run("network error during UTXO fetch", func(t *testing.T) {
@@ -226,19 +224,19 @@ func TestSend_UTXOFlow(t *testing.T) {
 }
 
 // TestSend_TransactionBuilding tests transaction building scenarios.
-// The current implementation has a known issue where SelectUTXOs uses
-// estimatedTxSize (225 bytes) but Validate() calculates fee based on actual
-// inputs/outputs. This causes validation to fail when change is added (2 outputs = 226 bytes).
-// These tests document the current behavior.
 func TestSend_TransactionBuilding(t *testing.T) {
 	t.Parallel()
 
-	t.Run("change causes validation mismatch with current implementation", func(t *testing.T) {
+	t.Run("change output with sufficient funds succeeds", func(t *testing.T) {
 		t.Parallel()
 
-		// UTXO with enough for amount + fee + change above dust
-		utxos := makeUTXOs(100000) // 100k satoshis
-		server := mockUTXOServer(utxos)
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 100000) // 100k satoshis
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         100000,
+			BroadcastTxHash: "tx_change_hash",
+		})
 		defer server.Close()
 
 		client := NewClient(&ClientOptions{
@@ -248,32 +246,26 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Send 50k, should have ~49k change (above dust)
-		// Current implementation: SelectUTXOs uses 225 bytes, but with
-		// change output the tx is 226 bytes, causing 1 satoshi shortfall
 		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
+			From:       kp.Address,
 			To:         validAddress2(),
 			Amount:     big.NewInt(50000),
-			PrivateKey: make([]byte, 32),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		require.Error(t, err)
-		// Documents current behavior - validation fails due to fee estimate mismatch
-		assert.Contains(t, err.Error(), "insufficient")
+		require.NoError(t, err)
 	})
 
-	t.Run("small change creates output with BSV 1 sat dust", func(t *testing.T) {
+	t.Run("small change above dust succeeds", func(t *testing.T) {
 		t.Parallel()
 
-		// With BSV dust limit of 1 satoshi, even small change creates output
-		// SelectUTXOs estimates 225 bytes, change = 50400 - 50000 - 225 = 175
-		// 175 >= 1 (BSV dust), so change output is created
-		// Actual tx: 1 input, 2 outputs = 226 bytes @ 1 sat/byte = 226 fee
-		// Validation: have 50400, need 50000 + 175 + 226 = 50401 -> fails by 1 sat
-		// This documents the known fee estimation discrepancy
-		utxos := makeUTXOs(50400)
-		server := mockUTXOServer(utxos)
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 50400)
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         50400,
+			BroadcastTxHash: "tx_small_change_hash",
+		})
 		defer server.Close()
 
 		client := NewClient(&ClientOptions{
@@ -284,15 +276,13 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		defer cancel()
 
 		_, err := client.Send(ctx, chain.SendRequest{
-			From:       validAddress(),
+			From:       kp.Address,
 			To:         validAddress2(),
 			Amount:     big.NewInt(50000),
-			PrivateKey: make([]byte, 32),
+			PrivateKey: kp.PrivateKey,
 		})
 
-		require.Error(t, err)
-		// With 1 sat dust limit, small change creates output, causing validation mismatch
-		assert.Contains(t, err.Error(), "insufficient")
+		require.NoError(t, err)
 	})
 
 	t.Run("exact match no change - successful build", func(t *testing.T) {
@@ -301,13 +291,12 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		// Get a valid key pair for signing
 		kp := getTestKeyPair()
 
-		// SelectUTXOs uses estimatedTxSize=225, needs UTXO >= amount + 225
-		// Then with no change, actual fee = 192, validation passes
-		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 for selection
+		fee := EstimateTxSize(1, 2) * DefaultFeeRate
+		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
 		server := mockMultiRouteServer(mockServerConfig{
 			UTXOs:           utxos,
-			Balance:         50225,
+			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "tx_exact_match_hash",
 		})
 		defer server.Close()
@@ -400,29 +389,24 @@ func TestSend_AmountBoundaries(t *testing.T) {
 
 	// Test valid small amounts - these should all succeed
 	smallAmountTests := []struct {
-		name       string
-		amount     int64
-		utxoAmount uint64
+		name   string
+		amount int64
 	}{
 		{
-			name:       "one satoshi (BSV dust limit)",
-			amount:     1,
-			utxoAmount: 226, // 1 + 225 for SelectUTXOs
+			name:   "one satoshi (BSV dust limit)",
+			amount: 1,
 		},
 		{
-			name:       "two satoshis",
-			amount:     2,
-			utxoAmount: 227, // 2 + 225 for SelectUTXOs
+			name:   "two satoshis",
+			amount: 2,
 		},
 		{
-			name:       "old BTC dust limit (546)",
-			amount:     546,
-			utxoAmount: 771, // 546 + 225 for SelectUTXOs
+			name:   "old BTC dust limit (546)",
+			amount: 546,
 		},
 		{
-			name:       "above old dust limit (1000)",
-			amount:     1000,
-			utxoAmount: 1225, // 1000 + 225 for SelectUTXOs
+			name:   "above old dust limit (1000)",
+			amount: 1000,
 		},
 	}
 
@@ -431,11 +415,13 @@ func TestSend_AmountBoundaries(t *testing.T) {
 			t.Parallel()
 
 			kp := getTestKeyPair()
-			utxos := makeUTXOsWithKey(kp, tt.utxoAmount)
+			fee := EstimateTxSize(1, 2) * DefaultFeeRate
+			utxoAmount := uint64(tt.amount) + fee //nolint:gosec // Test values are small and safe
+			utxos := makeUTXOsWithKey(kp, utxoAmount)
 
 			server := mockMultiRouteServer(mockServerConfig{
 				UTXOs:           utxos,
-				Balance:         int64(tt.utxoAmount), //nolint:gosec // Safe: test values are small
+				Balance:         int64(utxoAmount), //nolint:gosec // Safe: test values are small
 				BroadcastTxHash: "broadcast_success",
 			})
 			defer server.Close()
@@ -472,12 +458,12 @@ func TestSend_P2SHAddresses(t *testing.T) {
 		t.Parallel()
 
 		kp := getTestKeyPair()
-		// Use exact UTXO to avoid change
-		utxos := makeUTXOsWithKey(kp, 50225) // 50000 + 225 for SelectUTXOs
+		fee := EstimateTxSize(1, 2) * DefaultFeeRate
+		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
 		server := mockMultiRouteServer(mockServerConfig{
 			UTXOs:           utxos,
-			Balance:         50225,
+			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "p2sh_output_tx",
 		})
 		defer server.Close()

@@ -278,26 +278,25 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 		return sorted[i].Amount > sorted[j].Amount
 	})
 
-	// Calculate estimated fee
-	estimatedFee := uint64(estimatedTxSize) * feeRate
-	target := amount + estimatedFee
-
 	var total uint64
+	var estimatedFee uint64
 	for _, utxo := range sorted {
 		selected = append(selected, utxo)
 		total += utxo.Amount
 
+		estimatedFee = EstimateTxSize(len(selected), 2) * feeRate
+		target := amount + estimatedFee
 		if total >= target {
-			break
+			change = total - target
+			if change < chain.BSV.DustLimit() {
+				change = 0
+			}
+			return selected, change, nil
 		}
 	}
 
-	if total < target {
-		return nil, 0, fmt.Errorf("%w: need %d satoshis, have %d", ErrInsufficientFunds, target, total)
-	}
-
-	change = total - target
-	return selected, change, nil
+	target := amount + estimatedFee
+	return nil, 0, fmt.Errorf("%w: need %d satoshis, have %d", ErrInsufficientFunds, target, total)
 }
 
 // EstimateFee estimates the fee for a transaction.

@@ -27,8 +27,8 @@ func TestSpend_SingleAddressWithChange(t *testing.T) {
 	assert.Len(t, selected, 1)
 	assert.Equal(t, uint64(100000), selected[0].Amount)
 
-	// Change = 100000 - 50000 - 225 (estimated fee) = 49775
-	expectedChange := uint64(100000 - 50000 - estimatedTxSize*DefaultFeeRate)
+	fee := EstimateTxSize(1, 2) * DefaultFeeRate
+	expectedChange := 100000 - 50000 - fee
 	assert.Equal(t, expectedChange, change)
 
 	// Change should be above dust limit
@@ -84,9 +84,8 @@ func TestSpend_ExactAmount_NoChange(t *testing.T) {
 	t.Parallel()
 
 	// UTXO that exactly covers amount + fee
-	// Fee estimate: 225 bytes at 1 sat/byte = 225 satoshis
 	targetAmount := uint64(50000)
-	exactUTXO := targetAmount + uint64(estimatedTxSize*DefaultFeeRate)
+	exactUTXO := targetAmount + EstimateTxSize(1, 2)*DefaultFeeRate
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: exactUTXO, Address: testAddress},
@@ -110,11 +109,11 @@ func TestSpend_ChangeBelowDust_BTC(t *testing.T) {
 
 	// Create UTXO where change would be below BTC dust limit
 	// UTXO - amount - fee = change < 546
-	// Let's say UTXO = 51000, amount = 50000, fee = 225
-	// change = 51000 - 50000 - 225 = 775 (above dust)
-	// For change = 400 (below dust): UTXO = 50000 + 225 + 400 = 50625
+	// Let's say UTXO = 51000, amount = 50000, fee = EstimateTxSize(1,2)
+	// change = 51000 - 50000 - fee (above dust)
+	// For change = 400 (below dust): UTXO = 50000 + fee + 400
 	targetAmount := uint64(50000)
-	utxoAmount := targetAmount + uint64(estimatedTxSize) + 400 // 400 sats change
+	utxoAmount := targetAmount + EstimateTxSize(1, 2) + 400 // 400 sats change
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
@@ -142,7 +141,7 @@ func TestSpend_ChangeBelowDust_BSV(t *testing.T) {
 
 	// Create UTXO where change = 1 satoshi (valid on BSV)
 	targetAmount := uint64(50000)
-	utxoAmount := targetAmount + uint64(estimatedTxSize) + 1 // 1 sat change
+	utxoAmount := targetAmount + EstimateTxSize(1, 2) + 1 // 1 sat change
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
@@ -227,11 +226,11 @@ func TestSpend_MultiInputTransaction(t *testing.T) {
 	selected, change, err := client.SelectUTXOs(utxos, 12000, DefaultFeeRate)
 	require.NoError(t, err)
 
-	// Should select all 3 (5000 + 5000 = 10000 < 12225, so need 3)
+	// Should select all 3 since fee grows with inputs
 	assert.Len(t, selected, 3)
 
-	// Change should be: 15000 - 12000 - 225 = 2775
-	expectedChange := uint64(15000 - 12000 - estimatedTxSize*DefaultFeeRate)
+	fee := EstimateTxSize(3, 2) * DefaultFeeRate
+	expectedChange := 15000 - 12000 - fee
 	assert.Equal(t, expectedChange, change)
 }
 
@@ -310,7 +309,8 @@ func TestSpend_LargeTransaction(t *testing.T) {
 	for _, u := range selected {
 		total += u.Amount
 	}
-	assert.GreaterOrEqual(t, total, uint64(80225)) // 80000 + estimated fee
+	fee := EstimateTxSize(len(selected), 2) * DefaultFeeRate
+	assert.GreaterOrEqual(t, total, uint64(80000)+fee)
 
 	t.Logf("Selected %d UTXOs totaling %d, change %d", len(selected), total, change)
 }
@@ -328,7 +328,7 @@ func TestSpend_MaxOutput(t *testing.T) {
 	client := NewClient(nil)
 
 	// Try to send max (UTXO - fee)
-	feeEstimate := uint64(estimatedTxSize * DefaultFeeRate)
+	feeEstimate := EstimateTxSize(1, 2) * DefaultFeeRate
 	maxSendAmount := utxoAmount - feeEstimate
 
 	selected, change, err := client.SelectUTXOs(utxos, maxSendAmount, DefaultFeeRate)
@@ -364,7 +364,7 @@ func TestSpend_InsufficientFunds(t *testing.T) {
 			utxos: []UTXO{
 				{TxID: testTxID(0), Vout: 0, Amount: 200, Address: testAddress},
 			},
-			amount: 100, // 200 - 100 = 100, but fee is 225
+			amount: 100, // 200 - 100 = 100, but fee exceeds available
 		},
 	}
 

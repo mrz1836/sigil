@@ -254,7 +254,7 @@ func verifySelectUTXOsInvariants(t *testing.T, selected []UTXO, change uint64, e
 	for _, u := range selected {
 		total += u.Amount
 	}
-	fee := estimatedTxSize * feeRate
+	fee := EstimateTxSize(len(selected), 2) * feeRate
 	if total < targetAmount+fee {
 		t.Errorf("selected total %d < target %d + fee %d", total, targetAmount, fee)
 	}

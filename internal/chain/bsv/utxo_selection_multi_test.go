@@ -9,6 +9,11 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 )
 
+// estimateFee calculates the fee for a transaction with the given number of inputs and outputs.
+func estimateFee(inputs, outputs int, feeRate uint64) uint64 {
+	return EstimateTxSize(inputs, outputs) * feeRate
+}
+
 // TestSelectUTXOs_MultipleAddresses tests UTXO selection across multiple addresses.
 func TestSelectUTXOs_MultipleAddresses(t *testing.T) {
 	t.Parallel()
@@ -67,9 +72,7 @@ func TestSelectUTXOs_PreferFewerInputs(t *testing.T) {
 func TestSelectUTXOs_ExactAmountAcross3(t *testing.T) {
 	t.Parallel()
 
-	// 3 UTXOs that together exactly cover target + fee
-	// Fee for 3 inputs, 1 output at 1 sat/byte:
-	// Size = 10 + (3 * 148) + 34 = 488 bytes
+	// 3 UTXOs that together cover target + fee for 3 inputs.
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: 200, Address: testAddress},
 		{TxID: testTxID(1), Vout: 0, Amount: 200, Address: testAddress2},
@@ -78,12 +81,11 @@ func TestSelectUTXOs_ExactAmountAcross3(t *testing.T) {
 
 	client := NewClient(nil)
 
-	// Try to select - will likely fail due to fee
-	// estimatedTxSize = 225 bytes at 1 sat/byte = 225 fee
-	// 600 total, trying to send any amount with 225 fee
-	_, _, err := client.SelectUTXOs(utxos, 300, DefaultFeeRate)
+	fee := estimateFee(3, 2, DefaultFeeRate)
+	target := uint64(50)
+	require.LessOrEqual(t, target+fee, uint64(600))
 
-	// Should succeed because 600 >= 300 + 225
+	_, _, err := client.SelectUTXOs(utxos, target, DefaultFeeRate)
 	require.NoError(t, err)
 }
 
@@ -137,32 +139,29 @@ func TestSelectUTXOs_SingleSatoshis(t *testing.T) {
 	dustLimit := chain.BSV.DustLimit()
 	require.Equal(t, uint64(1), dustLimit)
 
-	// Create 1000 UTXOs of 1 satoshi each
-	utxos := make([]UTXO, 1000)
+	// Create 100 UTXOs of 500 satoshis each (small but enough to cover per-input fee)
+	utxos := make([]UTXO, 100)
 	for i := range utxos {
 		utxos[i] = UTXO{
 			TxID:    testTxID(i),
 			Vout:    0,
-			Amount:  1,
+			Amount:  500,
 			Address: testAddress,
 		}
 	}
 
 	client := NewClient(nil)
 
-	// Current implementation uses fixed estimatedTxSize (225 bytes) for fee.
-	// At 1 sat/byte, need 100 + 225 = 325 sats
-	// With 1000 1-sat UTXOs, we have enough to select (though many inputs)
 	selected, change, err := client.SelectUTXOs(utxos, 100, DefaultFeeRate)
 	require.NoError(t, err)
 
-	// Should select enough to cover 100 + 225 = 325
+	fee := estimateFee(len(selected), 2, DefaultFeeRate)
 	var total uint64
 	for _, u := range selected {
 		total += u.Amount
 	}
-	require.GreaterOrEqual(t, total, uint64(325))
-	assert.Equal(t, total-325, change)
+	require.GreaterOrEqual(t, total, uint64(100)+fee)
+	assert.Equal(t, total-uint64(100)-fee, change)
 }
 
 // TestSelectUTXOs_MixedAmounts tests selection with a mix of large and small UTXOs.
@@ -224,14 +223,14 @@ func TestSelectUTXOs_AllSameAmount(t *testing.T) {
 
 	client := NewClient(nil)
 
-	// Select 5000 sats - needs at least 6 UTXOs (5000 + 225 fee estimate)
+	// Select 5000 sats - needs at least 6 UTXOs once fee grows with inputs
 	selected, change, err := client.SelectUTXOs(utxos, 5000, DefaultFeeRate)
 	require.NoError(t, err)
 
-	// Should select 6 UTXOs (6000 >= 5000 + 225)
+	// Should select 6 UTXOs
 	assert.Len(t, selected, 6)
 
-	// Change should be approximately 6000 - 5000 - 225 = 775
+	// Change should be positive
 	assert.Positive(t, change)
 }
 
@@ -250,12 +249,12 @@ func TestSelectUTXOs_SortOrder(t *testing.T) {
 
 	client := NewClient(nil)
 
-	// Select amount that needs 2 UTXOs: 500 + fee (225) = 725
+	// Select amount that needs 2 UTXOs after fee growth
 	// The two largest (500 + 400 = 900) should be enough
 	selected, _, err := client.SelectUTXOs(utxos, 500, DefaultFeeRate)
 	require.NoError(t, err)
 
-	// Should select the 2 largest (500 + 400 = 900 >= 500 + 225)
+	// Should select the 2 largest
 	require.Len(t, selected, 2)
 	assert.Equal(t, uint64(500), selected[0].Amount)
 	assert.Equal(t, uint64(400), selected[1].Amount)
@@ -296,10 +295,10 @@ func TestSelectUTXOs_ZeroAmount(t *testing.T) {
 func TestSelectUTXOs_VariousFeeRates(t *testing.T) {
 	t.Parallel()
 
-	// Need enough to cover high fee rates: at 50 sat/byte, fee = 225 * 50 = 11,250
-	// Plus target 5000 = 16,250 needed. Use 20,000 total to have buffer.
+	// Need enough to cover high fee rates: at 50 sat/byte with 1 input,
+	// fee = 226*50 = 11300. Target 5000 + fee = 16300. Use 55000 total for buffer.
 	utxos := []UTXO{
-		{TxID: testTxID(0), Vout: 0, Amount: 15000, Address: testAddress},
+		{TxID: testTxID(0), Vout: 0, Amount: 50000, Address: testAddress},
 		{TxID: testTxID(1), Vout: 0, Amount: 5000, Address: testAddress},
 	}
 
@@ -321,7 +320,7 @@ func TestSelectUTXOs_VariousFeeRates(t *testing.T) {
 			t.Parallel()
 			selected, change, err := client.SelectUTXOs(utxos, 5000, tt.feeRate)
 
-			// All should succeed for small amount with 20000 available
+			// All should succeed for small amount with 55000 available
 			require.NoError(t, err)
 			assert.NotEmpty(t, selected)
 
@@ -351,11 +350,11 @@ func TestSelectUTXOs_ConsolidationScenario(t *testing.T) {
 
 	client := NewClient(nil)
 
-	// Try to consolidate all - select total minus fee
+	// Try to consolidate most - select total minus enough headroom for dynamic fees
 	totalAvailable := numUTXOs * amountEach // 100000 sats
-	// For 50 inputs, fee estimate grows but SelectUTXOs uses fixed 225 estimate
+	// For 50 inputs at feeRate 1: fee = (10 + 50*148 + 2*34) = 7478
 
-	selected, _, err := client.SelectUTXOs(utxos, totalAvailable-1000, DefaultFeeRate)
+	selected, _, err := client.SelectUTXOs(utxos, totalAvailable-10000, DefaultFeeRate)
 	require.NoError(t, err)
 
 	// Should select all or most UTXOs

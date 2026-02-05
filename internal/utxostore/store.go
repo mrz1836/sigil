@@ -144,6 +144,10 @@ func (s *Store) Save() error {
 		return fmt.Errorf("marshaling utxos: %w", err)
 	}
 
+	if err := os.MkdirAll(s.walletPath, 0o750); err != nil {
+		return fmt.Errorf("creating utxo directory: %w", err)
+	}
+
 	// Atomic write via temp file
 	tempPath := s.filePath() + ".tmp"
 	if err := os.WriteFile(tempPath, data, filePermissions); err != nil {

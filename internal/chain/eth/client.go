@@ -78,7 +78,7 @@ type Client struct {
 	rpcURL    string
 	rpcClient *rpc.Client
 	chainID   *big.Int
-	initOnce  sync.Once
+	mu        sync.Mutex
 	initErr   error
 }
 
@@ -251,20 +251,29 @@ func (c *Client) Close() {
 }
 
 // connect establishes the RPC connection if not already connected.
-// This method is thread-safe and uses sync.Once to prevent race conditions.
+// This method is thread-safe and allows retries after transient failures.
 func (c *Client) connect(ctx context.Context) error {
-	c.initOnce.Do(func() {
-		c.rpcClient = rpc.NewClient(c.rpcURL)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-		// Get chain ID if not set
-		if c.chainID == nil {
-			chainID, err := c.rpcClient.ChainID(ctx)
-			if err != nil {
-				c.initErr = fmt.Errorf("getting chain ID: %w", err)
-				return
-			}
-			c.chainID = chainID
+	if c.rpcClient != nil && c.initErr == nil {
+		return nil
+	}
+
+	c.rpcClient = rpc.NewClient(c.rpcURL)
+
+	// Get chain ID if not set
+	if c.chainID == nil {
+		chainID, err := c.rpcClient.ChainID(ctx)
+		if err != nil {
+			c.rpcClient.Close()
+			c.rpcClient = nil
+			c.initErr = fmt.Errorf("getting chain ID: %w", err)
+			return c.initErr
 		}
-	})
-	return c.initErr
+		c.chainID = chainID
+	}
+
+	c.initErr = nil
+	return nil
 }

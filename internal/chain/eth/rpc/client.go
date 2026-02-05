@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,27 @@ var (
 	ErrRPCRequest = &sigilerr.SigilError{
 		Code:     "RPC_REQUEST_FAILED",
 		Message:  "RPC request failed",
+		ExitCode: sigilerr.ExitGeneral,
+	}
+
+	// ErrRPCRateLimited indicates the RPC endpoint rate limited the request.
+	ErrRPCRateLimited = &sigilerr.SigilError{
+		Code:     "RATE_LIMITED",
+		Message:  "rate limited",
+		ExitCode: sigilerr.ExitGeneral,
+	}
+
+	// ErrRPCRetryable indicates a retryable RPC error (e.g., 5xx).
+	ErrRPCRetryable = &sigilerr.SigilError{
+		Code:     "RETRYABLE_ERROR",
+		Message:  "retryable error",
+		ExitCode: sigilerr.ExitGeneral,
+	}
+
+	// ErrRPCTimeout indicates the RPC request timed out.
+	ErrRPCTimeout = &sigilerr.SigilError{
+		Code:     "TIMEOUT",
+		Message:  "operation timed out",
 		ExitCode: sigilerr.ExitGeneral,
 	}
 
@@ -343,6 +365,10 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, c.handleHTTPError(httpResp, respBody)
+	}
+
 	var resp response
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshaling response: %w", err)
@@ -353,4 +379,33 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 	}
 
 	return resp.Result, nil
+}
+
+// handleHTTPError creates an appropriate error based on HTTP status code and response.
+func (c *Client) handleHTTPError(httpResp *http.Response, respBody []byte) error {
+	details := map[string]string{
+		"status": strconv.Itoa(httpResp.StatusCode),
+	}
+	if retryAfter := httpResp.Header.Get("Retry-After"); retryAfter != "" {
+		details["retry_after"] = retryAfter
+	}
+
+	body := strings.TrimSpace(string(respBody))
+	if body != "" {
+		if len(body) > 512 {
+			body = body[:512] + "..."
+		}
+		details["body"] = body
+	}
+
+	switch {
+	case httpResp.StatusCode == http.StatusTooManyRequests:
+		return sigilerr.WithDetails(ErrRPCRateLimited, details)
+	case httpResp.StatusCode == http.StatusRequestTimeout || httpResp.StatusCode == http.StatusGatewayTimeout:
+		return sigilerr.WithDetails(ErrRPCTimeout, details)
+	case httpResp.StatusCode >= http.StatusInternalServerError:
+		return sigilerr.WithDetails(ErrRPCRetryable, details)
+	default:
+		return sigilerr.WithDetails(ErrRPCRequest, details)
+	}
 }

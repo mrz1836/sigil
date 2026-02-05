@@ -198,6 +198,10 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		}
 	}
 
+	if len(req.PrivateKey) > 0 {
+		defer ZeroPrivateKey(req.PrivateKey)
+	}
+
 	// Determine if this is an ERC-20 or native transfer
 	var params *TxParams
 	var tokenSymbol string
@@ -235,6 +239,8 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		params.GasLimit = req.GasLimit
 	}
 
+	feeTotal := new(big.Int).Mul(params.GasPrice, new(big.Int).SetUint64(params.GasLimit))
+
 	// Build transaction
 	tx, err := c.BuildTransaction(ctx, params)
 	if err != nil {
@@ -260,7 +266,7 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		To:       req.To,
 		Amount:   c.FormatAmount(req.Amount),
 		Token:    tokenSymbol,
-		Fee:      c.FormatAmount(estimate.Total),
+		Fee:      c.FormatAmount(feeTotal),
 		GasUsed:  params.GasLimit,
 		GasPrice: FormatGasPrice(params.GasPrice),
 		Status:   "pending",

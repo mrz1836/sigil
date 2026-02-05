@@ -99,10 +99,10 @@ func TestWalletCreateValidation(t *testing.T) {
 			errMsg:     "", // Just check error occurs
 		},
 		{
-			name:       "invalid wallet name with dash",
+			name:       "valid wallet name with dash",
 			walletName: "test-wallet",
 			wordCount:  12,
-			wantErr:    true,
+			wantErr:    false,
 		},
 		{
 			name:       "invalid wallet name with space",
@@ -630,7 +630,7 @@ func TestWalletRestoreValidation(t *testing.T) {
 	}{
 		{name: "valid name", walletName: "restored", wantErr: false},
 		{name: "name with underscore", walletName: "my_restored_wallet", wantErr: false},
-		{name: "invalid name with dash", walletName: "my-wallet", wantErr: true},
+		{name: "valid name with dash", walletName: "my-wallet", wantErr: false},
 		{name: "invalid name with space", walletName: "my wallet", wantErr: true},
 		{name: "empty name", walletName: "", wantErr: true},
 	}

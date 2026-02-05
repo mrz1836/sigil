@@ -130,7 +130,7 @@ func (s *FileStorage) Load(name string, password []byte) (*Wallet, []byte, error
 
 	// Read wallet file
 	// SECURITY: Path is safe because:
-	// 1. ValidateWalletName restricts name to [a-zA-Z0-9_]{1,64}
+	// 1. ValidateWalletName restricts name to [a-zA-Z0-9_-]{1,64}
 	// 2. walletPath uses filepath.Join with fixed extension
 	// 3. walletPath includes defensive traversal check
 	//nolint:gosec // G304: Path validated by ValidateWalletName + walletPath
@@ -251,7 +251,7 @@ func (s *FileStorage) LoadMetadata(name string) (*Wallet, error) {
 
 // walletPath returns the full path for a wallet file.
 // The wallet name has already been validated by ValidateWalletName to match
-// [a-zA-Z0-9_]{1,64}, which prevents path traversal attacks.
+// [a-zA-Z0-9_-]{1,64}, which prevents path traversal attacks.
 func (s *FileStorage) walletPath(name string) string {
 	path := filepath.Join(s.basePath, name+walletFileExtension)
 

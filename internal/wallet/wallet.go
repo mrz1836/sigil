@@ -25,13 +25,13 @@ var (
 	ErrWalletExists = sigilerr.ErrWalletExists
 
 	// ErrInvalidWalletName indicates the wallet name is invalid.
-	ErrInvalidWalletName = sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, "wallet name must be 1-64 alphanumeric characters or underscores")
+	ErrInvalidWalletName = sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, "wallet name must be 1-64 alphanumeric characters, underscores, or hyphens")
 
 	// ErrInvalidAddressCount indicates the address count is invalid.
 	ErrInvalidAddressCount = sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, "invalid address count")
 
-	// walletNameRegex validates wallet names: alphanumeric + underscore, 1-64 chars.
-	walletNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
+	// walletNameRegex validates wallet names: alphanumeric + underscore + hyphen, 1-64 chars.
+	walletNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 )
 
 // Wallet represents an HD wallet with multi-chain address derivation.

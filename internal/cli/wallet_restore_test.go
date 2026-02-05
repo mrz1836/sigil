@@ -121,9 +121,9 @@ func TestValidateRestoreTarget(t *testing.T) {
 			errIs:   wallet.ErrWalletExists,
 		},
 		{
-			name:    "invalid name with dashes",
+			name:    "valid name with dashes",
 			target:  "my-wallet",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "empty name",

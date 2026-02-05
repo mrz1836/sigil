@@ -242,13 +242,13 @@ func TestValidateWalletName(t *testing.T) {
 		{"valid", false},
 		{"Valid123", false},
 		{"wallet_name", false},
+		{"with-dash", false},
 		{"ALLCAPS", false},
 		{"a", false},
 		{longValid, false}, // 64 chars
 
 		{"", true},
 		{longInvalid, true}, // 65 chars
-		{"with-dash", true},
 		{"with space", true},
 		{"with.dot", true},
 		{"with@symbol", true},

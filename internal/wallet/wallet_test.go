@@ -265,13 +265,7 @@ func TestSuggestWalletName_ValidatesAfterSanitization(t *testing.T) {
 			t.Parallel()
 			suggested := SuggestWalletName(input)
 			if suggested != "" {
-				err := ValidateWalletName(suggested)
-				// Hyphens may cause validation failure, which is expected
-				// since sanitize.PathName allows hyphens but wallet validation doesn't
-				if err != nil {
-					// This is expected for inputs with hyphens
-					assert.Contains(t, input, "-", "validation only fails for hyphen inputs")
-				}
+				assert.NoError(t, ValidateWalletName(suggested))
 			}
 		})
 	}

@@ -198,6 +198,22 @@ func TestDisplayReceiveText(t *testing.T) {
 				"Etherscan",
 			},
 		},
+		{
+			name: "BTC address no explorer link",
+			addr: &wallet.Address{
+				Index:   0,
+				Address: "bc1qtest",
+				Path:    "m/44'/0'/0'/0/0",
+			},
+			chainID: chain.BTC,
+			label:   "",
+			isNew:   false,
+			contains: []string{
+				"Receiving address:",
+				"Chain:   btc",
+				"bc1qtest",
+			},
+		},
 	}
 
 	for _, tc := range tests {

@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/discovery"
 )
 
 func TestTruncateString(t *testing.T) {
@@ -105,4 +110,387 @@ func TestTruncateString(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+func TestBuildDiscoverResponse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		result *discovery.Result
+		check  func(t *testing.T, resp DiscoverResponse)
+	}{
+		{
+			name: "empty result",
+			result: &discovery.Result{
+				FoundAddresses:   map[string][]discovery.DiscoveredAddress{},
+				SchemesScanned:   []string{"BSV Standard"},
+				AddressesScanned: 20,
+				Duration:         2 * time.Second,
+			},
+			check: func(t *testing.T, resp DiscoverResponse) {
+				assert.Equal(t, uint64(0), resp.TotalBalance)
+				assert.Equal(t, 0, resp.TotalUTXOs)
+				assert.Empty(t, resp.Addresses)
+				assert.Equal(t, []string{"BSV Standard"}, resp.SchemesScanned)
+				assert.Equal(t, 20, resp.AddressesScanned)
+				assert.Equal(t, int64(2000), resp.DurationMs)
+				assert.False(t, resp.PassphraseUsed)
+				assert.Nil(t, resp.Errors)
+			},
+		},
+		{
+			name: "with addresses and errors",
+			result: &discovery.Result{
+				FoundAddresses: map[string][]discovery.DiscoveredAddress{
+					"BSV Standard": {
+						{
+							Address:    "1abc",
+							Path:       "m/44'/236'/0'/0/0",
+							SchemeName: "BSV Standard",
+							Balance:    50000,
+							UTXOCount:  2,
+							IsChange:   false,
+						},
+					},
+					"Bitcoin Legacy": {
+						{
+							Address:    "1def",
+							Path:       "m/44'/0'/0'/1/3",
+							SchemeName: "Bitcoin Legacy",
+							Balance:    10000,
+							UTXOCount:  1,
+							IsChange:   true,
+						},
+					},
+				},
+				TotalBalance:     60000,
+				TotalUTXOs:       3,
+				SchemesScanned:   []string{"BSV Standard", "Bitcoin Legacy"},
+				AddressesScanned: 40,
+				Duration:         5 * time.Second,
+				PassphraseUsed:   true,
+				Errors:           []string{"timeout on HandCash Legacy"},
+			},
+			check: func(t *testing.T, resp DiscoverResponse) {
+				assert.Equal(t, uint64(60000), resp.TotalBalance)
+				assert.Equal(t, 3, resp.TotalUTXOs)
+				assert.Len(t, resp.Addresses, 2)
+				assert.True(t, resp.PassphraseUsed)
+				assert.Equal(t, []string{"timeout on HandCash Legacy"}, resp.Errors)
+				assert.Equal(t, int64(5000), resp.DurationMs)
+
+				// Verify addresses are mapped correctly
+				found := map[string]bool{}
+				for _, addr := range resp.Addresses {
+					found[addr.Address] = true
+					if addr.Address == "1def" {
+						assert.True(t, addr.IsChange)
+						assert.Equal(t, "Bitcoin Legacy", addr.Scheme)
+						assert.Equal(t, uint64(10000), addr.Balance)
+					}
+				}
+				assert.True(t, found["1abc"])
+				assert.True(t, found["1def"])
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			resp := buildDiscoverResponse(tc.result)
+			tc.check(t, resp)
+		})
+	}
+}
+
+func TestOutputDiscoverJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		response     DiscoverResponse
+		wantContains []string
+		wantMissing  []string
+	}{
+		{
+			name: "empty no addresses",
+			response: DiscoverResponse{
+				TotalBalance:     0,
+				TotalUTXOs:       0,
+				SchemesScanned:   []string{"BSV Standard"},
+				AddressesScanned: 20,
+				DurationMs:       1500,
+			},
+			wantContains: []string{
+				`"total_balance": 0`,
+				`"total_utxos": 0`,
+				`"addresses_scanned": 20`,
+				`"BSV Standard"`,
+				`"addresses": [`,
+			},
+			wantMissing: []string{`"errors"`, `"migration"`},
+		},
+		{
+			name: "with addresses",
+			response: DiscoverResponse{
+				TotalBalance:     50000,
+				TotalUTXOs:       2,
+				SchemesScanned:   []string{"BSV Standard"},
+				AddressesScanned: 10,
+				DurationMs:       3000,
+				Addresses: []DiscoverAddressResponse{
+					{
+						Scheme:    "BSV Standard",
+						Address:   "1abc",
+						Path:      "m/44'/236'/0'/0/0",
+						Balance:   50000,
+						UTXOCount: 2,
+					},
+				},
+			},
+			wantContains: []string{
+				`"scheme": "BSV Standard"`,
+				`"address": "1abc"`,
+				`"path": "m/44'/236'/0'/0/0"`,
+				`"balance": 50000`,
+				`"utxo_count": 2`,
+			},
+		},
+		{
+			name: "with errors",
+			response: DiscoverResponse{
+				SchemesScanned: []string{},
+				Errors:         []string{"scan timeout", "api error"},
+			},
+			wantContains: []string{
+				`"errors": [`,
+				`"scan timeout"`,
+				`"api error"`,
+			},
+		},
+		{
+			name: "with migration",
+			response: DiscoverResponse{
+				SchemesScanned: []string{},
+				Migration: &DiscoverMigrationResponse{
+					Destination:  "1dest",
+					TotalInput:   100000,
+					EstimatedFee: 500,
+					NetAmount:    99500,
+				},
+			},
+			wantContains: []string{
+				`"migration": {`,
+				`"destination": "1dest"`,
+				`"total_input": 100000`,
+				`"estimated_fee": 500`,
+				`"net_amount": 99500`,
+			},
+		},
+		{
+			name: "with passphrase_used",
+			response: DiscoverResponse{
+				SchemesScanned: []string{},
+				PassphraseUsed: true,
+			},
+			wantContains: []string{
+				`"passphrase_used": true`,
+			},
+		},
+		{
+			name: "with migration and tx_id",
+			response: DiscoverResponse{
+				SchemesScanned: []string{},
+				Migration: &DiscoverMigrationResponse{
+					Destination:  "1dest",
+					TotalInput:   200000,
+					EstimatedFee: 1000,
+					NetAmount:    199000,
+					TxID:         "txid123abc",
+				},
+			},
+			wantContains: []string{
+				`"tx_id": "txid123abc"`,
+			},
+		},
+		{
+			name: "with change address",
+			response: DiscoverResponse{
+				SchemesScanned: []string{},
+				Addresses: []DiscoverAddressResponse{
+					{
+						Scheme:    "BSV Standard",
+						Address:   "1change",
+						Path:      "m/44'/236'/0'/1/0",
+						Balance:   1000,
+						UTXOCount: 1,
+						IsChange:  true,
+					},
+				},
+			},
+			wantContains: []string{
+				`"is_change": true`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			outputDiscoverJSON(&buf, tc.response)
+			out := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, out, s)
+			}
+			for _, s := range tc.wantMissing {
+				assert.NotContains(t, out, s)
+			}
+		})
+	}
+}
+
+func TestOutputDiscoverText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		response      DiscoverResponse
+		showMigration bool
+		wantContains  []string
+		wantMissing   []string
+	}{
+		{
+			name: "empty no funds",
+			response: DiscoverResponse{
+				Addresses: nil,
+			},
+			showMigration: false,
+			wantContains: []string{
+				"No funds discovered",
+				"Check if you entered the correct mnemonic",
+				"--passphrase",
+				"--gap 50",
+			},
+		},
+		{
+			name: "with addresses shows table and totals",
+			response: DiscoverResponse{
+				TotalBalance: 50000,
+				TotalUTXOs:   2,
+				DurationMs:   3000,
+				Addresses: []DiscoverAddressResponse{
+					{
+						Scheme:    "BSV Standard",
+						Address:   "1abc",
+						Path:      "m/44'/236'/0'/0/0",
+						Balance:   50000,
+						UTXOCount: 2,
+					},
+				},
+			},
+			showMigration: false,
+			wantContains: []string{
+				"DISCOVERED FUNDS",
+				"BSV Standard",
+				"50000 sat",
+				"Total:",
+				"Use --migrate --wallet",
+			},
+		},
+		{
+			name: "with errors shows warnings",
+			response: DiscoverResponse{
+				TotalBalance: 10000,
+				TotalUTXOs:   1,
+				DurationMs:   2000,
+				Addresses: []DiscoverAddressResponse{
+					{
+						Scheme:    "BSV Standard",
+						Address:   "1abc",
+						Path:      "m/44'/236'/0'/0/0",
+						Balance:   10000,
+						UTXOCount: 1,
+					},
+				},
+				Errors: []string{"timeout on scheme X"},
+			},
+			showMigration: false,
+			wantContains: []string{
+				"Warnings:",
+				"timeout on scheme X",
+			},
+		},
+		{
+			name: "showMigration true hides migrate hint",
+			response: DiscoverResponse{
+				TotalBalance: 10000,
+				TotalUTXOs:   1,
+				DurationMs:   1000,
+				Addresses: []DiscoverAddressResponse{
+					{
+						Scheme:    "BSV Standard",
+						Address:   "1abc",
+						Path:      "m/44'/236'/0'/0/0",
+						Balance:   10000,
+						UTXOCount: 1,
+					},
+				},
+			},
+			showMigration: true,
+			wantMissing: []string{
+				"Use --migrate",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			outputDiscoverText(&buf, tc.response, tc.showMigration)
+			out := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, out, s)
+			}
+			for _, s := range tc.wantMissing {
+				assert.NotContains(t, out, s)
+			}
+		})
+	}
+}
+
+func TestCreateProgressCallback(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cb := createProgressCallback(&buf)
+	require.NotNil(t, cb)
+
+	// First update: scanning a new scheme
+	cb(discovery.ProgressUpdate{
+		Phase:      "scanning",
+		SchemeName: "BSV Standard",
+	})
+	assert.Contains(t, buf.String(), "BSV Standard")
+
+	// Found an address
+	cb(discovery.ProgressUpdate{
+		Phase:          "found",
+		SchemeName:     "BSV Standard",
+		CurrentAddress: "1abc123",
+		BalanceFound:   50000,
+	})
+	assert.Contains(t, buf.String(), "1abc123")
+	assert.Contains(t, buf.String(), "50000")
+
+	// Switch to new scheme
+	buf.Reset()
+	cb(discovery.ProgressUpdate{
+		Phase:      "scanning",
+		SchemeName: "Bitcoin Legacy",
+	})
+	assert.Contains(t, buf.String(), "Bitcoin Legacy")
 }

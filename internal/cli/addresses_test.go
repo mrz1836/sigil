@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/utxostore"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 func TestFormatSatoshis(t *testing.T) {
@@ -530,5 +532,68 @@ func TestDisplayAddressesTextZeroBalance(t *testing.T) {
 			assert.Contains(t, line, "-")
 			break
 		}
+	}
+}
+
+func TestBuildAddressInfo(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	store := utxostore.New(tmpDir)
+
+	// Add an address with activity to the store
+	store.AddAddress(&utxostore.AddressMetadata{
+		Address:     "1ActiveAddr",
+		ChainID:     chain.BSV,
+		HasActivity: true,
+		Label:       "Active",
+	})
+	store.AddUTXO(&utxostore.StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "abc123",
+		Vout:    0,
+		Amount:  50000,
+		Address: "1ActiveAddr",
+	})
+
+	tests := []struct {
+		name        string
+		addr        wallet.Address
+		chainID     chain.ID
+		wantUsed    bool
+		wantBalance uint64
+		wantLabel   string
+	}{
+		{
+			name:        "address with no store data",
+			addr:        wallet.Address{Index: 0, Address: "1UnknownAddr", Path: "m/44'/236'/0'/0/0"},
+			chainID:     chain.BSV,
+			wantUsed:    false,
+			wantBalance: 0,
+			wantLabel:   "",
+		},
+		{
+			name:        "address with activity",
+			addr:        wallet.Address{Index: 1, Address: "1ActiveAddr", Path: "m/44'/236'/0'/0/1"},
+			chainID:     chain.BSV,
+			wantUsed:    true,
+			wantBalance: 50000,
+			wantLabel:   "Active",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			info := buildAddressInfo("receive", &tc.addr, tc.chainID, store)
+			assert.Equal(t, "receive", info.Type)
+			assert.Equal(t, tc.addr.Index, info.Index)
+			assert.Equal(t, tc.addr.Address, info.Address)
+			assert.Equal(t, tc.chainID, info.ChainID)
+			assert.Equal(t, tc.wantUsed, info.Used)
+			assert.Equal(t, tc.wantBalance, info.Balance)
+			assert.Equal(t, tc.wantLabel, info.Label)
+		})
 	}
 }

@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/output"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -184,4 +186,80 @@ func TestExitCode(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestGlobalGetters tests Config(), Logger(), Formatter(), Context() getters.
+// NOT parallel: mutates package-level globals.
+func TestGlobalGetters(t *testing.T) {
+	// Save original values
+	origCfg := cfg
+	origLogger := logger
+	origFormatter := formatter
+	origCmdCtx := cmdCtx
+	defer func() {
+		cfg = origCfg
+		logger = origLogger
+		formatter = origFormatter
+		cmdCtx = origCmdCtx
+	}()
+
+	testCfg := config.Defaults()
+	testLogger := config.NullLogger()
+	testFmt := output.NewFormatter(output.FormatText, nil)
+	testCtx := &CommandContext{Cfg: testCfg}
+
+	cfg = testCfg
+	logger = testLogger
+	formatter = testFmt
+	cmdCtx = testCtx
+
+	assert.Equal(t, testCfg, Config())
+	assert.Equal(t, testLogger, Logger())
+	assert.Equal(t, testFmt, Formatter())
+	assert.Equal(t, testCtx, Context())
+}
+
+// TestCleanup_NilLogger verifies cleanup doesn't panic with nil logger.
+func TestCleanup_NilLogger(t *testing.T) {
+	origLogger := logger
+	defer func() { logger = origLogger }()
+
+	logger = nil
+	assert.NotPanics(t, func() { cleanup() })
+}
+
+// TestCleanup_WithLogger verifies cleanup doesn't panic with a valid logger.
+func TestCleanup_WithLogger(t *testing.T) {
+	origLogger := logger
+	defer func() { logger = origLogger }()
+
+	logger = config.NullLogger()
+	assert.NotPanics(t, func() { cleanup() })
+}
+
+// TestFormatErr_NilFormatter verifies formatErr with nil formatter doesn't panic.
+func TestFormatErr_NilFormatter(t *testing.T) {
+	origFormatter := formatter
+	defer func() { formatter = origFormatter }()
+
+	formatter = nil
+	assert.NotPanics(t, func() { formatErr(sigilerr.ErrGeneral) })
+}
+
+// TestFormatErr_WithFormatter verifies formatErr with a valid formatter doesn't panic.
+func TestFormatErr_WithFormatter(t *testing.T) {
+	origFormatter := formatter
+	defer func() { formatter = origFormatter }()
+
+	formatter = output.NewFormatter(output.FormatText, nil)
+	assert.NotPanics(t, func() { formatErr(sigilerr.ErrGeneral) })
+}
+
+// TestFormatErr_JSONFormat verifies formatErr with JSON formatter doesn't panic.
+func TestFormatErr_JSONFormat(t *testing.T) {
+	origFormatter := formatter
+	defer func() { formatter = origFormatter }()
+
+	formatter = output.NewFormatter(output.FormatJSON, nil)
+	assert.NotPanics(t, func() { formatErr(sigilerr.ErrInvalidInput) })
 }

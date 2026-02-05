@@ -481,3 +481,112 @@ func TestGetChainSymbol(t *testing.T) {
 		})
 	}
 }
+
+func TestOutputBalanceJSON_TokenAndStale(t *testing.T) {
+	t.Parallel()
+
+	response := BalanceShowResponse{
+		Wallet:    "test",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Warning:   "Some balances could not be fetched",
+		Balances: []BalanceResult{
+			{
+				Chain:    "eth",
+				Address:  "0x123",
+				Balance:  "100.0",
+				Symbol:   "USDC",
+				Token:    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+				Decimals: 6,
+				Stale:    true,
+				CacheAge: "5m ago",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	outputBalanceJSON(&buf, response)
+	out := buf.String()
+
+	assert.Contains(t, out, `"token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"`)
+	assert.Contains(t, out, `"stale": true`)
+	assert.Contains(t, out, `"cache_age": "5m ago"`)
+	assert.Contains(t, out, `"warning":`)
+}
+
+func TestOutputBalanceText_Empty(t *testing.T) {
+	t.Parallel()
+
+	response := BalanceShowResponse{
+		Wallet:    "empty",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Balances:  nil,
+	}
+
+	var buf bytes.Buffer
+	outputBalanceText(&buf, response)
+	out := buf.String()
+
+	assert.Contains(t, out, "No balances found")
+}
+
+func TestFetchBalancesForAddress_BTC_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	balanceCache := cache.NewBalanceCache()
+	cfg := &mockConfigProvider{}
+
+	entries, stale, err := fetchBalancesForAddress(ctx, wallet.ChainBTC, "1btcaddr", balanceCache, cfg)
+	assert.Nil(t, entries)
+	assert.False(t, stale)
+	assert.NoError(t, err)
+}
+
+func TestFetchBalancesForAddress_BCH_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	balanceCache := cache.NewBalanceCache()
+	cfg := &mockConfigProvider{}
+
+	entries, stale, err := fetchBalancesForAddress(ctx, wallet.ChainBCH, "1bchaddr", balanceCache, cfg)
+	assert.Nil(t, entries)
+	assert.False(t, stale)
+	assert.NoError(t, err)
+}
+
+// TestFetchBSVBalances_NoAPIKey_WithCache tests that fetchBSVBalances returns cached data
+// when the API call fails (e.g. no API key configured) but cache is populated.
+func TestFetchBSVBalances_NoAPIKey_WithCache(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1BSVTestAddr",
+		Balance:  "0.5",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+	ctx := context.Background()
+
+	// fetchBSVBalances will fail to connect (no real API), so it should fall back to cache
+	entries, stale, err := fetchBSVBalances(ctx, "1BSVTestAddr", balanceCache)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "0.5", entries[0].Balance)
+	assert.False(t, stale)
+}
+
+// TestFetchBSVBalances_NoAPIKey_NoCache tests that fetchBSVBalances returns error
+// when API call fails and no cache exists.
+func TestFetchBSVBalances_NoAPIKey_NoCache(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// No cache, API will fail → should return error
+	_, _, err := fetchBSVBalances(ctx, "1BSVNonexistent", balanceCache)
+	require.Error(t, err)
+}

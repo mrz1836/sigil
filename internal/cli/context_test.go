@@ -254,10 +254,16 @@ func TestCommandContext_BuilderChaining(t *testing.T) {
 	assert.Equal(t, sessionMgr, ctx.SessionMgr)
 }
 
+// mockFormatProvider implements FormatProvider for testing.
+type mockFormatProvider struct{ format output.Format }
+
+func (m *mockFormatProvider) Format() output.Format { return m.format }
+
 // Compile-time check that mock types implement interfaces.
 var (
 	_ wallet.Storage  = (*mockStorage)(nil)
 	_ cache.Cache     = (*mockCache)(nil)
 	_ chain.Factory   = (*mockFactory)(nil)
 	_ session.Manager = (*mockSessionManager)(nil)
+	_ FormatProvider  = (*mockFormatProvider)(nil)
 )

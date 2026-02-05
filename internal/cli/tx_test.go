@@ -1,10 +1,18 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"math/big"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/eth"
+	"github.com/mrz1836/sigil/internal/output"
 )
 
 // TestSanitizeAmount tests amount string sanitization.
@@ -465,4 +473,357 @@ func TestResolveToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDisplayBSVTxDetails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		from, to     string
+		amount       string
+		fee, feeRate uint64
+		wantContains []string
+	}{
+		{
+			name:    "standard BSV tx",
+			from:    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			to:      "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+			amount:  "0.001",
+			fee:     226,
+			feeRate: 1,
+			wantContains: []string{
+				"TRANSACTION DETAILS",
+				"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+				"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+				"0.001 BSV",
+				"1 sat/byte",
+				"226 satoshis",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&buf)
+			displayBSVTxDetails(cmd, tc.from, tc.to, tc.amount, tc.fee, tc.feeRate)
+			result := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, result, s)
+			}
+		})
+	}
+}
+
+func TestDisplayBSVTxResultText(t *testing.T) {
+	t.Parallel()
+
+	result := &chain.TransactionResult{
+		Hash:   "abc123def456",
+		Status: "pending",
+		Amount: "0.001",
+		Fee:    "0.00000226",
+	}
+
+	var buf bytes.Buffer
+	displayBSVTxResultText(&buf, result)
+	out := buf.String()
+
+	assert.Contains(t, out, "Transaction broadcast successfully!")
+	assert.Contains(t, out, "abc123def456")
+	assert.Contains(t, out, "pending")
+	assert.Contains(t, out, "0.001 BSV")
+	assert.Contains(t, out, "0.00000226 BSV")
+	assert.Contains(t, out, "whatsonchain.com/tx/abc123def456")
+}
+
+func TestDisplayBSVTxResultJSON(t *testing.T) {
+	t.Parallel()
+
+	result := &chain.TransactionResult{
+		Hash:   "abc123",
+		From:   "1From",
+		To:     "1To",
+		Amount: "0.5",
+		Fee:    "0.0001",
+		Status: "pending",
+	}
+
+	var buf bytes.Buffer
+	displayBSVTxResultJSON(&buf, result)
+	out := buf.String()
+
+	assert.Contains(t, out, `"hash": "abc123"`)
+	assert.Contains(t, out, `"from": "1From"`)
+	assert.Contains(t, out, `"to": "1To"`)
+	assert.Contains(t, out, `"amount": "0.5"`)
+	assert.Contains(t, out, `"fee": "0.0001"`)
+	assert.Contains(t, out, `"status": "pending"`)
+}
+
+func TestDisplayTxDetails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		from, to     string
+		amount       string
+		token        string
+		estimate     *eth.GasEstimate
+		wantContains []string
+	}{
+		{
+			name:   "ETH native transfer",
+			from:   "0xFromAddr",
+			to:     "0xToAddr",
+			amount: "1.5",
+			token:  "",
+			estimate: &eth.GasEstimate{
+				GasPrice: big.NewInt(20_000_000_000),
+				GasLimit: 21000,
+				Total:    big.NewInt(420_000_000_000_000),
+			},
+			wantContains: []string{
+				"TRANSACTION DETAILS",
+				"0xFromAddr",
+				"0xToAddr",
+				"1.5 ETH",
+				"21000",
+			},
+		},
+		{
+			name:   "USDC token transfer",
+			from:   "0xFromAddr",
+			to:     "0xToAddr",
+			amount: "100",
+			token:  "USDC",
+			estimate: &eth.GasEstimate{
+				GasPrice: big.NewInt(20_000_000_000),
+				GasLimit: 65000,
+				Total:    big.NewInt(1_300_000_000_000_000),
+			},
+			wantContains: []string{
+				"100 USDC",
+				"65000",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&buf)
+			displayTxDetails(cmd, tc.from, tc.to, tc.amount, tc.token, tc.estimate)
+			result := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, result, s)
+			}
+		})
+	}
+}
+
+func TestDisplayTxResultText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		result       *chain.TransactionResult
+		wantContains []string
+	}{
+		{
+			name: "ETH native result",
+			result: &chain.TransactionResult{
+				Hash:   "0xhash123",
+				Status: "pending",
+				Amount: "1.5",
+				Token:  "",
+				Fee:    "0.00042",
+			},
+			wantContains: []string{
+				"Transaction broadcast successfully!",
+				"0xhash123",
+				"1.5 ETH",
+				"etherscan.io/tx/0xhash123",
+			},
+		},
+		{
+			name: "USDC token result",
+			result: &chain.TransactionResult{
+				Hash:   "0xhash456",
+				Status: "pending",
+				Amount: "100",
+				Token:  "USDC",
+				Fee:    "0.00065",
+			},
+			wantContains: []string{
+				"100 USDC",
+				"etherscan.io/tx/0xhash456",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			displayTxResultText(&buf, tc.result)
+			out := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, out, s)
+			}
+		})
+	}
+}
+
+func TestDisplayTxResultJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		result       *chain.TransactionResult
+		wantContains []string
+		wantMissing  []string
+	}{
+		{
+			name: "without token",
+			result: &chain.TransactionResult{
+				Hash:     "0xhash",
+				From:     "0xfrom",
+				To:       "0xto",
+				Amount:   "1.0",
+				Token:    "",
+				Fee:      "0.001",
+				GasUsed:  21000,
+				GasPrice: "20 Gwei",
+				Status:   "pending",
+			},
+			wantContains: []string{
+				`"hash": "0xhash"`,
+				`"from": "0xfrom"`,
+				`"to": "0xto"`,
+				`"amount": "1.0"`,
+				`"fee": "0.001"`,
+				`"gas_used": 21000`,
+				`"gas_price": "20 Gwei"`,
+				`"status": "pending"`,
+			},
+			wantMissing: []string{`"token"`},
+		},
+		{
+			name: "with token",
+			result: &chain.TransactionResult{
+				Hash:     "0xhash2",
+				From:     "0xfrom",
+				To:       "0xto",
+				Amount:   "100",
+				Token:    "USDC",
+				Fee:      "0.002",
+				GasUsed:  65000,
+				GasPrice: "25 Gwei",
+				Status:   "pending",
+			},
+			wantContains: []string{
+				`"token": "USDC"`,
+				`"gas_used": 65000`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			displayTxResultJSON(&buf, tc.result)
+			out := buf.String()
+			for _, s := range tc.wantContains {
+				assert.Contains(t, out, s)
+			}
+			for _, s := range tc.wantMissing {
+				assert.NotContains(t, out, s)
+			}
+		})
+	}
+}
+
+// newTestCmdWithContext creates a cobra.Command with a CommandContext set up for testing.
+func newTestCmdWithContext(format output.Format) *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetCmdContext(cmd, &CommandContext{
+		Fmt: &mockFormatProvider{format: format},
+	})
+	return cmd
+}
+
+func TestDisplayTxResult_TextAndJSON(t *testing.T) {
+	t.Parallel()
+
+	result := &chain.TransactionResult{
+		Hash:     "0xabc",
+		From:     "0xfrom",
+		To:       "0xto",
+		Amount:   "1.0",
+		Fee:      "0.001",
+		GasUsed:  21000,
+		GasPrice: "20 Gwei",
+		Status:   "pending",
+	}
+
+	t.Run("text format", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		cmd := newTestCmdWithContext(output.FormatText)
+		cmd.SetOut(&buf)
+		displayTxResult(cmd, result)
+		assert.Contains(t, buf.String(), "Transaction broadcast successfully!")
+		assert.Contains(t, buf.String(), "etherscan.io/tx/0xabc")
+	})
+
+	t.Run("json format", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		cmd := newTestCmdWithContext(output.FormatJSON)
+		cmd.SetOut(&buf)
+		displayTxResult(cmd, result)
+		assert.Contains(t, buf.String(), `"hash": "0xabc"`)
+		assert.Contains(t, buf.String(), `"gas_used": 21000`)
+	})
+}
+
+func TestDisplayBSVTxResult_TextAndJSON(t *testing.T) {
+	t.Parallel()
+
+	result := &chain.TransactionResult{
+		Hash:   "bsvhash123",
+		From:   "1From",
+		To:     "1To",
+		Amount: "0.5",
+		Fee:    "0.0001",
+		Status: "pending",
+	}
+
+	t.Run("text format", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		cmd := newTestCmdWithContext(output.FormatText)
+		cmd.SetOut(&buf)
+		displayBSVTxResult(cmd, result)
+		assert.Contains(t, buf.String(), "Transaction broadcast successfully!")
+		assert.Contains(t, buf.String(), "whatsonchain.com/tx/bsvhash123")
+	})
+
+	t.Run("json format", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		cmd := newTestCmdWithContext(output.FormatJSON)
+		cmd.SetOut(&buf)
+		displayBSVTxResult(cmd, result)
+		assert.Contains(t, buf.String(), `"hash": "bsvhash123"`)
+		assert.Contains(t, buf.String(), `"status": "pending"`)
+	})
 }

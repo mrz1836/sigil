@@ -105,6 +105,7 @@ func init() {
 
 //nolint:gocognit,gocyclo // Display logic for UTXO list is complex
 func runUTXOList(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -117,7 +118,7 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Load wallet
-	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
+	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
 	exists, err := storage.Exists(utxoWallet)
 	if err != nil {
 		return err
@@ -154,7 +155,7 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 
 	// Create BSV client
 	client := bsv.NewClient(&bsv.ClientOptions{
-		APIKey: cfg.Networks.BSV.APIKey,
+		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
 	})
 
 	// List UTXOs
@@ -165,7 +166,7 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 
 	// Display results
 	w := cmd.OutOrStdout()
-	format := formatter.Format()
+	format := cmdCtx.Fmt.Format()
 
 	if len(utxos) == 0 {
 		if format == output.FormatJSON {
@@ -226,12 +227,13 @@ func displayUTXOsJSON(w interface {
 
 // runUTXORefresh re-scans addresses and updates stored UTXOs.
 func runUTXORefresh(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Load wallet
-	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	walletPath := filepath.Join(cfg.Home, "wallets", utxoWallet)
+	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	walletPath := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", utxoWallet)
 
 	exists, err := storage.Exists(utxoWallet)
 	if err != nil {
@@ -252,7 +254,7 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 
 	// Create BSV client
 	client := bsv.NewClient(&bsv.ClientOptions{
-		APIKey: cfg.Networks.BSV.APIKey,
+		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
 	})
 
 	// Create adapter for refresh
@@ -366,9 +368,11 @@ func displayRefreshResults(w interface {
 
 // runUTXOBalance shows offline balance from stored UTXOs.
 func runUTXOBalance(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
+
 	// Load wallet path
-	storage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	walletPath := filepath.Join(cfg.Home, "wallets", utxoWallet)
+	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	walletPath := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", utxoWallet)
 
 	exists, err := storage.Exists(utxoWallet)
 	if err != nil {
@@ -388,7 +392,7 @@ func runUTXOBalance(cmd *cobra.Command, _ []string) error {
 	}
 
 	w := cmd.OutOrStdout()
-	format := formatter.Format()
+	format := cmdCtx.Fmt.Format()
 
 	if store.IsEmpty() {
 		if format == output.FormatJSON {

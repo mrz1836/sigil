@@ -114,9 +114,11 @@ func init() {
 }
 
 func runBackupCreate(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+
 	// Get backup service
-	walletStorage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	backupDir := filepath.Join(cfg.Home, "backups")
+	walletStorage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	backupDir := filepath.Join(cmdCtx.Cfg.GetHome(), "backups")
 	svc := backup.NewService(backupDir, walletStorage)
 
 	// Check wallet exists
@@ -159,9 +161,11 @@ func runBackupCreate(cmd *cobra.Command, _ []string) error {
 }
 
 func runBackupVerify(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+
 	// Get backup service
-	walletStorage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	backupDir := filepath.Join(cfg.Home, "backups")
+	walletStorage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	backupDir := filepath.Join(cmdCtx.Cfg.GetHome(), "backups")
 	svc := backup.NewService(backupDir, walletStorage)
 
 	// First verify without decryption
@@ -202,9 +206,11 @@ func runBackupVerify(cmd *cobra.Command, _ []string) error {
 }
 
 func runBackupRestore(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+
 	// Get backup service
-	walletStorage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	backupDir := filepath.Join(cfg.Home, "backups")
+	walletStorage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	backupDir := filepath.Join(cmdCtx.Cfg.GetHome(), "backups")
 	svc := backup.NewService(backupDir, walletStorage)
 
 	// First verify the backup
@@ -248,7 +254,7 @@ func runBackupRestore(cmd *cobra.Command, _ []string) error {
 	outln(w, "Wallet restored successfully!")
 	outln(w)
 	out(w, "  Name: %s\n", walletName)
-	out(w, "  Path: %s\n", filepath.Join(cfg.Home, "wallets", walletName+".wallet"))
+	out(w, "  Path: %s\n", filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", walletName+".wallet"))
 	outln(w)
 	outln(w, "Verify your addresses with: sigil wallet show "+walletName)
 
@@ -257,9 +263,11 @@ func runBackupRestore(cmd *cobra.Command, _ []string) error {
 
 //nolint:gocognit // Display logic for backup list is complex
 func runBackupList(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+
 	// Get backup service
-	walletStorage := wallet.NewFileStorage(filepath.Join(cfg.Home, "wallets"))
-	backupDir := filepath.Join(cfg.Home, "backups")
+	walletStorage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	backupDir := filepath.Join(cmdCtx.Cfg.GetHome(), "backups")
 	svc := backup.NewService(backupDir, walletStorage)
 
 	// List backups
@@ -269,7 +277,7 @@ func runBackupList(cmd *cobra.Command, _ []string) error {
 	}
 
 	w := cmd.OutOrStdout()
-	format := formatter.Format()
+	format := cmdCtx.Fmt.Format()
 
 	if len(backups) == 0 {
 		if format == output.FormatJSON {

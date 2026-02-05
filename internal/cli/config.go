@@ -476,7 +476,11 @@ func displayConfigText(w interface {
 	if apiKey == "" {
 		apiKey = "(not configured)"
 	} else {
-		apiKey = apiKey[:4] + "..." // Mask API key
+		if len(apiKey) >= 4 {
+			apiKey = apiKey[:4] + "..."
+		} else {
+			apiKey = "***..."
+		}
 	}
 	out(w, "      api_key: %s\n", apiKey)
 

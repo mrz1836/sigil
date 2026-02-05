@@ -559,6 +559,19 @@ func TestDisplayConfigText_EmptyAPIKey(t *testing.T) {
 	assert.Contains(t, out, "api_key: (not configured)")
 }
 
+func TestDisplayConfigText_ShortAPIKey(t *testing.T) {
+	testCfg := config.Defaults()
+	testCfg.Networks.BSV.APIKey = "ab" // Less than 4 chars
+
+	buf := new(bytes.Buffer)
+	err := displayConfigText(buf, testCfg)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "api_key: ***...")
+	assert.NotContains(t, out, "api_key: ab")
+}
+
 func TestDisplayConfigJSON(t *testing.T) {
 	testCfg := config.Defaults()
 	testCfg.Home = "/test/sigil"

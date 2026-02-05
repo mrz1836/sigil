@@ -17,8 +17,8 @@ import (
 
 // TestRunBackupList_Empty tests listing when no backups exist.
 func TestRunBackupList_Empty(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	// Create backups directory
 	backupsDir := filepath.Join(tmpDir, "backups")
@@ -63,8 +63,8 @@ func TestRunBackupList_Empty(t *testing.T) {
 
 // TestRunBackupList_Multiple tests listing multiple backups.
 func TestRunBackupList_Multiple(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	// Create backups directory with test backup files
 	backupsDir := filepath.Join(tmpDir, "backups")
@@ -129,8 +129,8 @@ func TestRunBackupList_Multiple(t *testing.T) {
 
 // TestBackupRestore_WalletExists tests that restore fails when wallet already exists.
 func TestBackupRestore_WalletExists(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	password := []byte("testpassword123")
@@ -163,8 +163,8 @@ func TestBackupRestore_WalletExists(t *testing.T) {
 
 // TestBackupVerify_InvalidFile tests verify with non-existent file.
 func TestBackupVerify_InvalidFile(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -178,8 +178,8 @@ func TestBackupVerify_InvalidFile(t *testing.T) {
 
 // TestBackupVerify_CorruptedFile tests verify with corrupted backup.
 func TestBackupVerify_CorruptedFile(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -198,8 +198,8 @@ func TestBackupVerify_CorruptedFile(t *testing.T) {
 
 // TestBackupCreateVerifyRestore_E2E is an end-to-end test for the full backup flow.
 func TestBackupCreateVerifyRestore_E2E(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -272,8 +272,8 @@ func TestBackupCreateVerifyRestore_E2E(t *testing.T) {
 
 // TestBackupRestore_WithNewName tests restoring with a custom name.
 func TestBackupRestore_WithNewName(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -317,8 +317,8 @@ func TestBackupRestore_WithNewName(t *testing.T) {
 
 // TestBackupList_CreatesDirIfMissing tests that List creates the backup directory.
 func TestBackupList_CreatesDirIfMissing(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -342,8 +342,8 @@ func TestBackupList_CreatesDirIfMissing(t *testing.T) {
 
 // TestBackupVerify_InvalidChecksum tests verify with mismatched checksum.
 func TestBackupVerify_InvalidChecksum(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")
@@ -375,8 +375,8 @@ func TestBackupVerify_InvalidChecksum(t *testing.T) {
 
 // TestBackupRestore_WrongPassword tests restore with incorrect password.
 func TestBackupRestore_WrongPassword(t *testing.T) {
-	tmpDir, cleanup := setupTestEnv(t)
-	defer cleanup()
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 	backupDir := filepath.Join(tmpDir, "backups")

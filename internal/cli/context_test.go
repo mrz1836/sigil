@@ -129,21 +129,21 @@ func TestSetCmdContext_GetCmdContext_Roundtrip(t *testing.T) {
 	testLogger := config.NullLogger()
 	testFormatter := output.NewFormatter(output.FormatText, nil)
 
-	cmdCtx := NewCommandContext(testCfg, testLogger, testFormatter)
+	cc := NewCommandContext(testCfg, testLogger, testFormatter)
 
 	cmd := &cobra.Command{}
 	// Initialize the command's context (required before SetCmdContext)
 	cmd.SetContext(context.Background())
 
 	// Set the context
-	SetCmdContext(cmd, cmdCtx)
+	SetCmdContext(cmd, cc)
 
 	// Get it back
 	retrieved := GetCmdContext(cmd)
 	require.NotNil(t, retrieved)
 
 	// Verify it's the same context
-	assert.Equal(t, cmdCtx, retrieved)
+	assert.Equal(t, cc, retrieved)
 	assert.Equal(t, testCfg, retrieved.Cfg)
 	assert.Equal(t, testLogger, retrieved.Log)
 	assert.Equal(t, testFormatter, retrieved.Fmt)

@@ -2,12 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/output"
 )
 
 func TestGetConfigValue(t *testing.T) {
@@ -584,4 +587,187 @@ func TestDisplayConfigJSON(t *testing.T) {
 	// YAML output should contain the config values
 	assert.Contains(t, out, "home: /test/sigil")
 	assert.Contains(t, out, "version: 1")
+}
+
+// --- Tests for runConfigInit, runConfigShow, runConfigGet, runConfigSet ---
+
+// newConfigTestCmd creates a cobra.Command for config run* testing with output capture.
+func newConfigTestCmd() (*cobra.Command, *bytes.Buffer) {
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	return cmd, &buf
+}
+
+func TestRunConfigInit_Success(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, buf := newConfigTestCmd()
+
+	err := runConfigInit(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Configuration initialized")
+
+	// Verify config file was created
+	configPath := config.Path(tmpDir)
+	_, statErr := os.Stat(configPath)
+	assert.NoError(t, statErr, "config file should exist")
+}
+
+func TestRunConfigInit_ForceOverwrite(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create initial config
+	cmd, _ := newConfigTestCmd()
+	err := runConfigInit(cmd, nil)
+	require.NoError(t, err)
+
+	// Init again with force
+	configForce = true
+	defer func() { configForce = false }()
+
+	cmd2, buf2 := newConfigTestCmd()
+	err = runConfigInit(cmd2, nil)
+	require.NoError(t, err)
+	assert.Contains(t, buf2.String(), "Configuration initialized")
+
+	// Verify file still exists
+	configPath := config.Path(tmpDir)
+	_, statErr := os.Stat(configPath)
+	assert.NoError(t, statErr)
+}
+
+func TestRunConfigInit_AlreadyExistsWithoutForce(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create initial config
+	cmd, _ := newConfigTestCmd()
+	err := runConfigInit(cmd, nil)
+	require.NoError(t, err)
+
+	// Try again without force
+	configForce = false
+	cmd2, _ := newConfigTestCmd()
+	err = runConfigInit(cmd2, nil)
+	require.Error(t, err, "should fail when config already exists without --force")
+}
+
+func TestRunConfigShow_TextFormat(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Set formatter to text
+	formatter = output.NewFormatter(output.FormatText, os.Stdout)
+
+	cmd, buf := newConfigTestCmd()
+	err := runConfigShow(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Configuration:")
+	assert.Contains(t, result, "Home:")
+}
+
+func TestRunConfigShow_JSONFormat(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Set formatter to JSON
+	formatter = output.NewFormatter(output.FormatJSON, os.Stdout)
+
+	cmd, buf := newConfigTestCmd()
+	err := runConfigShow(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	// JSON format outputs YAML
+	assert.Contains(t, result, "home:")
+	assert.Contains(t, result, "version:")
+}
+
+func TestRunConfigGet_ValidPath(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, buf := newConfigTestCmd()
+	err := runConfigGet(cmd, []string{"home"})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cfg.Home)
+}
+
+func TestRunConfigGet_ValidNestedPath(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, buf := newConfigTestCmd()
+	err := runConfigGet(cmd, []string{"output.default_format"})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cfg.Output.DefaultFormat)
+}
+
+func TestRunConfigGet_InvalidPath(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, _ := newConfigTestCmd()
+	err := runConfigGet(cmd, []string{"nonexistent"})
+	require.Error(t, err, "should return error for invalid config path")
+}
+
+func TestRunConfigSet_ValidValue(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create config file first so runConfigSet can load and save it
+	cmd0, _ := newConfigTestCmd()
+	require.NoError(t, runConfigInit(cmd0, nil))
+
+	cmd, buf := newConfigTestCmd()
+	err := runConfigSet(cmd, []string{"logging.level", "debug"})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Set logging.level = debug")
+
+	// Verify the config file was updated
+	configPath := config.Path(tmpDir)
+	updatedCfg, loadErr := config.Load(configPath)
+	require.NoError(t, loadErr)
+	assert.Equal(t, "debug", updatedCfg.Logging.Level)
+}
+
+func TestRunConfigSet_InvalidPath(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, _ := newConfigTestCmd()
+	err := runConfigSet(cmd, []string{"nonexistent", "value"})
+	require.Error(t, err, "should return error for invalid config path")
+}
+
+func TestRunConfigSet_InvalidValue(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create config file first
+	cmd0, _ := newConfigTestCmd()
+	require.NoError(t, runConfigInit(cmd0, nil))
+
+	cmd, _ := newConfigTestCmd()
+	err := runConfigSet(cmd, []string{"output.default_format", "yaml"})
+	require.Error(t, err, "should reject invalid format value")
+}
+
+func TestRunConfigSet_NoConfigFile(t *testing.T) {
+	_, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Don't create config file — runConfigSet falls back to defaults
+	cmd, buf := newConfigTestCmd()
+	err := runConfigSet(cmd, []string{"logging.level", "warn"})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Set logging.level = warn")
 }

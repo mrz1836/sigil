@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"context"
+	"os"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
@@ -262,4 +266,186 @@ func TestFormatErr_JSONFormat(t *testing.T) {
 
 	formatter = output.NewFormatter(output.FormatJSON, nil)
 	assert.NotPanics(t, func() { formatErr(sigilerr.ErrInvalidInput) })
+}
+
+// --- Tests for initGlobals ---
+
+// saveGlobals saves all package-level globals and returns a restore function.
+func saveGlobals(t *testing.T) func() {
+	t.Helper()
+	origCfg := cfg
+	origLogger := logger
+	origFormatter := formatter
+	origCmdCtx := cmdCtx
+	origHomeDir := homeDir
+	origOutputFormat := outputFormat
+	origVerbose := verbose
+	return func() {
+		cfg = origCfg
+		logger = origLogger
+		formatter = origFormatter
+		cmdCtx = origCmdCtx
+		homeDir = origHomeDir
+		outputFormat = origOutputFormat
+		verbose = origVerbose
+	}
+}
+
+func TestInitGlobals_DefaultConfig(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Set homeDir to temp dir (no config file there)
+	homeDir = tmpDir
+	outputFormat = ""
+	verbose = false
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	// Verify globals are initialized
+	require.NotNil(t, cfg, "cfg should be set")
+	require.NotNil(t, logger, "logger should be set")
+	require.NotNil(t, formatter, "formatter should be set")
+	require.NotNil(t, cmdCtx, "cmdCtx should be set")
+
+	assert.Equal(t, tmpDir, cfg.Home)
+}
+
+func TestInitGlobals_CustomHome(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-home")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	homeDir = tmpDir
+	outputFormat = ""
+	verbose = false
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	assert.Equal(t, tmpDir, cfg.Home)
+}
+
+func TestInitGlobals_VerboseFlag(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-verbose")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	homeDir = tmpDir
+	outputFormat = ""
+	verbose = true
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Output.Verbose)
+	assert.Equal(t, "debug", cfg.Logging.Level)
+}
+
+func TestInitGlobals_OutputFormatFlag(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-format")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	homeDir = tmpDir
+	outputFormat = "json"
+	verbose = false
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	assert.Equal(t, "json", cfg.Output.DefaultFormat)
+}
+
+func TestInitGlobals_WithExistingConfig(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-existing")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create a valid config file
+	testCfg := config.Defaults()
+	testCfg.Home = tmpDir
+	testCfg.Logging.Level = "warn"
+	configPath := config.Path(tmpDir)
+	require.NoError(t, os.MkdirAll(tmpDir, 0o750))
+	require.NoError(t, config.Save(testCfg, configPath))
+
+	homeDir = tmpDir
+	outputFormat = ""
+	verbose = false
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	assert.Equal(t, "warn", cfg.Logging.Level)
+}
+
+func TestInitGlobals_EnvHome(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-initglobals-env")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Use env var instead of flag
+	homeDir = ""
+	outputFormat = ""
+	verbose = false
+	t.Setenv(config.EnvHome, tmpDir)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err = initGlobals(cmd)
+	require.NoError(t, err)
+
+	assert.Equal(t, tmpDir, cfg.Home)
+}
+
+// --- Tests for Execute ---
+
+func TestExecute_VersionFlag(t *testing.T) {
+	restore := saveGlobals(t)
+	defer restore()
+
+	// Reset rootCmd args for version test
+	origArgs := os.Args
+	os.Args = []string{"sigil", "version"}
+	defer func() { os.Args = origArgs }()
+
+	err := Execute(BuildInfo{Version: "v1.0.0-test", Commit: "abc", Date: "2026-01-01"})
+	assert.NoError(t, err)
 }

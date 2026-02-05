@@ -2,12 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -143,4 +147,87 @@ func TestDisplayWalletJSONMultipleChains(t *testing.T) {
 	assert.Contains(t, result, `"1BSVaddr1"`)
 	assert.Contains(t, result, `"1BSVaddr2"`)
 	assert.Contains(t, result, `"0xETHaddr1"`)
+}
+
+// --- Tests for runWalletList ---
+
+// newWalletListTestCmd creates a cobra.Command with CommandContext for runWalletList testing.
+func newWalletListTestCmd(home string, format output.Format) (*cobra.Command, *bytes.Buffer) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: home},
+		Fmt: &mockFormatProvider{format: format},
+	})
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	return cmd, &buf
+}
+
+// createTestWallet creates a real wallet file in the given wallets directory.
+func createTestWallet(t *testing.T, walletsDir, name string) {
+	t.Helper()
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("password")))
+}
+
+func TestRunWalletList_EmptyText(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cmd, buf := newWalletListTestCmd(tmpDir, output.FormatText)
+	err := runWalletList(cmd, nil)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "No wallets found")
+}
+
+func TestRunWalletList_EmptyJSON(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cmd, buf := newWalletListTestCmd(tmpDir, output.FormatJSON)
+	err := runWalletList(cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[]\n", buf.String())
+}
+
+func TestRunWalletList_WithWalletsText(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "alpha")
+	createTestWallet(t, walletsDir, "bravo")
+
+	cmd, buf := newWalletListTestCmd(tmpDir, output.FormatText)
+	err := runWalletList(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Wallets:")
+	assert.Contains(t, result, "alpha")
+	assert.Contains(t, result, "bravo")
+}
+
+func TestRunWalletList_WithWalletsJSON(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "charlie")
+
+	cmd, buf := newWalletListTestCmd(tmpDir, output.FormatJSON)
+	err := runWalletList(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, `"charlie"`)
 }

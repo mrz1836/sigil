@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrz1836/go-sanitize"
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -446,83 +445,46 @@ func resolveToken(symbol string) (address string, decimals int, err error) {
 	}
 }
 
-// SanitizeAmount cleans an amount string by extracting only valid decimal characters.
-// This removes currency symbols, whitespace, and other invalid characters.
+// SanitizeAmount trims whitespace from the amount string without altering content.
+// Amount parsing performs strict validation and rejects non-numeric characters.
 func SanitizeAmount(amount string) string {
-	return sanitize.Decimal(strings.TrimSpace(amount))
+	return strings.TrimSpace(amount)
 }
 
 // parseDecimalAmount parses a decimal string to big.Int with specified decimals.
-//
-//nolint:gocognit,gocyclo // Decimal parsing with precision requires multiple checks
 func parseDecimalAmount(amount string, decimals int) (*big.Int, error) {
-	// Pre-clean the input using sanitization
 	amount = SanitizeAmount(amount)
 	if amount == "" {
 		return nil, sigilerr.ErrAmountRequired
 	}
 
-	// Parse as float and multiply by 10^decimals
-	parts := strings.Split(amount, ".")
-	if len(parts) > 2 {
+	if amount == "." {
 		return nil, sigilerr.WithDetails(
 			sigilerr.ErrInvalidAmount,
 			map[string]string{"amount": amount},
 		)
 	}
 
-	intPart := parts[0]
-	decPart := ""
-	if len(parts) == 2 {
-		decPart = parts[1]
-	}
-
-	// Validate integer part
-	if intPart == "" {
-		intPart = "0"
-	}
-	intVal, ok := new(big.Int).SetString(intPart, 10)
-	if !ok {
-		return nil, sigilerr.WithDetails(
-			sigilerr.ErrInvalidAmount,
-			map[string]string{"amount": amount},
-		)
-	}
-
-	// Scale integer part
-	multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
-	result := new(big.Int).Mul(intVal, multiplier)
-
-	// Handle decimal part
-	if decPart != "" {
-		// Validate decimal characters
-		for _, c := range decPart {
-			if c < '0' || c > '9' {
+	dotSeen := false
+	for _, c := range amount {
+		switch {
+		case c == '.':
+			if dotSeen {
 				return nil, sigilerr.WithDetails(
 					sigilerr.ErrInvalidAmount,
 					map[string]string{"amount": amount},
 				)
 			}
-		}
-
-		// Pad or truncate decimal part
-		for len(decPart) < decimals {
-			decPart += "0"
-		}
-		decPart = decPart[:decimals]
-
-		decVal, ok := new(big.Int).SetString(decPart, 10)
-		if !ok {
+			dotSeen = true
+		case c < '0' || c > '9':
 			return nil, sigilerr.WithDetails(
 				sigilerr.ErrInvalidAmount,
 				map[string]string{"amount": amount},
 			)
 		}
-
-		result = result.Add(result, decVal)
 	}
 
-	return result, nil
+	return chain.ParseDecimalAmount(amount, decimals, sigilerr.ErrInvalidAmount)
 }
 
 // checkETHBalance verifies sufficient balance for the transaction.

@@ -590,3 +590,31 @@ func TestFetchBSVBalances_NoAPIKey_NoCache(t *testing.T) {
 	_, _, err := fetchBSVBalances(ctx, "1BSVNonexistent", balanceCache)
 	require.Error(t, err)
 }
+
+// TestFetchBalancesForAddress_ETH_Direct tests the ETH path through fetchBalancesForAddress.
+func TestFetchBalancesForAddress_ETH_Direct(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	balanceCache := cache.NewBalanceCache()
+	cfg := &mockConfigProvider{ethRPC: ""}
+
+	// ETH with no RPC and no cache should return error
+	entries, stale, err := fetchBalancesForAddress(ctx, wallet.ChainETH, "0xTestAddr", balanceCache, cfg)
+	require.Error(t, err)
+	assert.Empty(t, entries)
+	assert.True(t, stale)
+}
+
+// TestFetchBalancesForAddress_BSV_Direct tests the BSV path through fetchBalancesForAddress.
+func TestFetchBalancesForAddress_BSV_Direct(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	balanceCache := cache.NewBalanceCache()
+	cfg := &mockConfigProvider{}
+
+	// BSV with no API and no cache should return error
+	_, _, err := fetchBalancesForAddress(ctx, wallet.ChainBSV, "1BSVTestAddr", balanceCache, cfg)
+	require.Error(t, err)
+}

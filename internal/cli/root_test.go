@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -436,6 +437,27 @@ func TestInitGlobals_EnvHome(t *testing.T) {
 }
 
 // --- Tests for Execute ---
+
+// TestCleanup_LoggerCloseError verifies cleanup doesn't panic when logger.Close() returns an error.
+func TestCleanup_LoggerCloseError(t *testing.T) {
+	origLogger := logger
+	defer func() { logger = origLogger }()
+
+	// Create a real logger with a temp file
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "test.log")
+	testLogger, err := config.NewLogger(config.ParseLogLevel("debug"), logPath)
+	require.NoError(t, err)
+
+	// Close the underlying file to force an error on the next Close()
+	require.NoError(t, testLogger.Close())
+
+	// Set the already-closed logger as the global
+	logger = testLogger
+
+	// cleanup() should not panic even though Close() will return an error
+	assert.NotPanics(t, func() { cleanup() })
+}
 
 func TestExecute_VersionFlag(t *testing.T) {
 	restore := saveGlobals(t)

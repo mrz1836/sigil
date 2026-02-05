@@ -827,3 +827,70 @@ func TestDisplayBSVTxResult_TextAndJSON(t *testing.T) {
 		assert.Contains(t, buf.String(), `"status": "pending"`)
 	})
 }
+
+func TestParseDecimalAmount_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		decimals int
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "leading decimal .5 with 6 decimals",
+			input:    ".5",
+			decimals: 6,
+			want:     "500000",
+			wantErr:  false,
+		},
+		{
+			name:     "excess decimals truncated",
+			input:    "1.123456789",
+			decimals: 6,
+			want:     "1123456",
+			wantErr:  false,
+		},
+		{
+			name:     "zero decimals",
+			input:    "100",
+			decimals: 0,
+			want:     "100",
+			wantErr:  false,
+		},
+		{
+			name:     "empty after sanitize",
+			input:    "ABC",
+			decimals: 6,
+			wantErr:  true,
+		},
+		{
+			name:     "large integer no decimals",
+			input:    "999999999",
+			decimals: 8,
+			want:     "99999999900000000",
+			wantErr:  false,
+		},
+		{
+			name:     "trailing decimal point",
+			input:    "100.",
+			decimals: 6,
+			want:     "100000000",
+			wantErr:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := parseDecimalAmount(tc.input, tc.decimals)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, result.String())
+			}
+		})
+	}
+}

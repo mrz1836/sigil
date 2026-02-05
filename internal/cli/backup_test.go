@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,19 @@ import (
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
+
+// newBackupListTestCmd creates a cobra.Command with CommandContext for runBackupList testing.
+func newBackupListTestCmd(home string, format output.Format) (*cobra.Command, *bytes.Buffer) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: home},
+		Fmt: &mockFormatProvider{format: format},
+	})
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	return cmd, &buf
+}
 
 // TestRunBackupList_Empty tests listing when no backups exist.
 func TestRunBackupList_Empty(t *testing.T) {
@@ -43,12 +57,7 @@ func TestRunBackupList_Empty(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := new(bytes.Buffer)
-			cmd := &cobra.Command{}
-			cmd.SetOut(buf)
-
-			// Set formatter for this test
-			formatter = output.NewFormatter(tc.format, buf)
+			cmd, buf := newBackupListTestCmd(tmpDir, tc.format)
 
 			err := runBackupList(cmd, nil)
 			require.NoError(t, err)
@@ -106,12 +115,7 @@ func TestRunBackupList_Multiple(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := new(bytes.Buffer)
-			cmd := &cobra.Command{}
-			cmd.SetOut(buf)
-
-			// Set formatter for this test
-			formatter = output.NewFormatter(tc.format, buf)
+			cmd, buf := newBackupListTestCmd(tmpDir, tc.format)
 
 			err := runBackupList(cmd, nil)
 			require.NoError(t, err)

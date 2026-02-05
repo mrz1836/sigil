@@ -222,6 +222,54 @@ func TestProcessSeedInput_Unknown(t *testing.T) {
 	assert.ErrorIs(t, err, sigilerr.ErrInvalidInput)
 }
 
+func TestGetPassphraseIfNeeded_False(t *testing.T) {
+	t.Parallel()
+
+	passphrase, err := getPassphraseIfNeeded(false)
+	require.NoError(t, err)
+	assert.Empty(t, passphrase)
+}
+
+func TestProcessMnemonicInput_ValidNoPassphrase(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	seed, err := processMnemonicInput(mnemonic, false, cmd)
+	require.NoError(t, err)
+	assert.Len(t, seed, 64, "BIP39 seed should be 64 bytes")
+	defer wallet.ZeroBytes(seed)
+}
+
+func TestProcessMnemonicInput_InvalidMnemonic(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+
+	_, err := processMnemonicInput("not a valid mnemonic phrase at all here today", false, cmd)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, wallet.ErrInvalidMnemonic)
+}
+
+func TestProcessSeedInput_Mnemonic(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	seed, err := processSeedInput(mnemonic, false, cmd)
+	require.NoError(t, err)
+	assert.Len(t, seed, 64, "mnemonic should produce 64-byte seed")
+	defer wallet.ZeroBytes(seed)
+}
+
 func TestDisplayAddressVerification(t *testing.T) {
 	// Generate a real wallet with addresses
 	mnemonic, err := wallet.GenerateMnemonic(12)

@@ -2,13 +2,20 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain/bsv"
+	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/utxostore"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // Test error sentinels for display function tests.
@@ -314,4 +321,72 @@ func TestDisplayRefreshResults_SingleError(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "Errors (1):")
 	assert.Contains(t, output, "single error")
+}
+
+// --- Tests for runUTXOBalance ---
+
+// newUTXOBalanceTestCmd creates a cobra.Command with CommandContext for runUTXOBalance testing.
+func newUTXOBalanceTestCmd(home string, format output.Format, walletName string) (*cobra.Command, *bytes.Buffer) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: home},
+		Fmt: &mockFormatProvider{format: format},
+	})
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	// Set the global flag used by runUTXOBalance
+	utxoWallet = walletName
+
+	return cmd, &buf
+}
+
+func TestRunUTXOBalance_WalletNotFound(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	cmd, _ := newUTXOBalanceTestCmd(tmpDir, output.FormatText, "nonexistent")
+	err := runUTXOBalance(cmd, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, wallet.ErrWalletNotFound)
+}
+
+func TestRunUTXOBalance_EmptyStore_Text(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create a real wallet so Exists() returns true
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "testbal")
+
+	// Ensure the UTXO store directory exists (wallet directory, not the .wallet file)
+	utxoDir := filepath.Join(walletsDir, "testbal")
+	require.NoError(t, os.MkdirAll(utxoDir, 0o750))
+
+	cmd, buf := newUTXOBalanceTestCmd(tmpDir, output.FormatText, "testbal")
+	err := runUTXOBalance(cmd, nil)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "No UTXOs stored")
+}
+
+func TestRunUTXOBalance_EmptyStore_JSON(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	// Create a real wallet so Exists() returns true
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "testjson")
+
+	// Ensure the UTXO store directory exists
+	utxoDir := filepath.Join(walletsDir, "testjson")
+	require.NoError(t, os.MkdirAll(utxoDir, 0o750))
+
+	cmd, buf := newUTXOBalanceTestCmd(tmpDir, output.FormatJSON, "testjson")
+	err := runUTXOBalance(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, `"balance": 0`)
+	assert.Contains(t, result, `"utxos": 0`)
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
@@ -138,7 +137,7 @@ func runConfigInit(cmd *cobra.Command, _ []string) error {
 	outln(w, "  - networks.eth.rpc: Your Ethereum RPC endpoint")
 	outln(w, "  - networks.bsv.api_key: Your WhatsOnChain API key (optional)")
 	outln(w, "  - output.default_format: Output format (text/json)")
-	outln(w, "  - logging.level: Log level (debug/info/warn/error)")
+	outln(w, "  - logging.level: Log level (off/error/debug)")
 
 	return nil
 }
@@ -392,7 +391,7 @@ func setOutputValue(c *config.Config, key, value string) error {
 func setLoggingValue(c *config.Config, key, value string) error {
 	switch key {
 	case "level":
-		validLevels := []string{"debug", "info", "warn", "error"}
+		validLevels := []string{"off", "error", "debug"}
 		for _, l := range validLevels {
 			if value == l {
 				c.Logging.Level = value
@@ -401,7 +400,7 @@ func setLoggingValue(c *config.Config, key, value string) error {
 		}
 		return sigilerr.WithDetails(
 			sigilerr.ErrInvalidFormat,
-			map[string]string{"value": value, "valid": "debug, info, warn, or error"},
+			map[string]string{"value": value, "valid": "off, error, or debug"},
 		)
 	case "file":
 		c.Logging.File = value
@@ -492,10 +491,48 @@ func displayConfigJSON(w interface {
 	Write(p []byte) (n int, err error)
 }, c *config.Config,
 ) error {
-	data, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
+	type networkJSON struct {
+		RPC    string `json:"rpc,omitempty"`
+		APIKey string `json:"api_key,omitempty"`
 	}
-	_, err = w.Write(data)
-	return err
+	type configJSON struct {
+		Version int    `json:"version"`
+		Home    string `json:"home"`
+		Output  struct {
+			DefaultFormat string `json:"default_format"`
+			Color         string `json:"color"`
+			Verbose       bool   `json:"verbose"`
+		} `json:"output"`
+		Logging struct {
+			Level string `json:"level"`
+			File  string `json:"file"`
+		} `json:"logging"`
+		Networks struct {
+			ETH networkJSON `json:"eth"`
+			BSV networkJSON `json:"bsv"`
+		} `json:"networks"`
+	}
+
+	maskedKey := "(not configured)"
+	if c.Networks.BSV.APIKey != "" {
+		if len(c.Networks.BSV.APIKey) >= 4 {
+			maskedKey = c.Networks.BSV.APIKey[:4] + "..."
+		} else {
+			maskedKey = "***..."
+		}
+	}
+
+	outCfg := configJSON{
+		Version: c.Version,
+		Home:    c.Home,
+	}
+	outCfg.Output.DefaultFormat = c.Output.DefaultFormat
+	outCfg.Output.Color = c.Output.Color
+	outCfg.Output.Verbose = c.Output.Verbose
+	outCfg.Logging.Level = c.Logging.Level
+	outCfg.Logging.File = c.Logging.File
+	outCfg.Networks.ETH = networkJSON{RPC: c.Networks.ETH.RPC}
+	outCfg.Networks.BSV = networkJSON{APIKey: maskedKey}
+
+	return writeJSON(w, outCfg)
 }

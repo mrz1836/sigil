@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -270,19 +271,11 @@ func TestSetConfigValue(t *testing.T) {
 			},
 		},
 		{
-			name:  "set logging.level info",
+			name:  "set logging.level off",
 			path:  "logging.level",
-			value: "info",
+			value: "off",
 			verify: func(t *testing.T, c *config.Config) {
-				assert.Equal(t, "info", c.Logging.Level)
-			},
-		},
-		{
-			name:  "set logging.level warn",
-			path:  "logging.level",
-			value: "warn",
-			verify: func(t *testing.T, c *config.Config) {
-				assert.Equal(t, "warn", c.Logging.Level)
+				assert.Equal(t, "off", c.Logging.Level)
 			},
 		},
 		{
@@ -293,6 +286,8 @@ func TestSetConfigValue(t *testing.T) {
 				assert.Equal(t, "error", c.Logging.Level)
 			},
 		},
+		{name: "set logging.level info invalid", path: "logging.level", value: "info", wantErr: true},
+		{name: "set logging.level warn invalid", path: "logging.level", value: "warn", wantErr: true},
 		{name: "set logging.level invalid", path: "logging.level", value: "invalid", wantErr: true},
 		{
 			name:  "set logging.file",
@@ -426,7 +421,25 @@ func TestSetLoggingValue(t *testing.T) {
 				assert.Equal(t, "debug", c.Logging.Level)
 			},
 		},
+		{
+			name:  "level off",
+			key:   "level",
+			value: "off",
+			verify: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "off", c.Logging.Level)
+			},
+		},
+		{
+			name:  "level error",
+			key:   "level",
+			value: "error",
+			verify: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "error", c.Logging.Level)
+			},
+		},
 		{name: "level invalid", key: "level", value: "trace", wantErr: true},
+		{name: "level info invalid", key: "level", value: "info", wantErr: true},
+		{name: "level warn invalid", key: "level", value: "warn", wantErr: true},
 		{
 			name:  "file path",
 			key:   "file",
@@ -578,15 +591,22 @@ func TestDisplayConfigText_ShortAPIKey(t *testing.T) {
 func TestDisplayConfigJSON(t *testing.T) {
 	testCfg := config.Defaults()
 	testCfg.Home = "/test/sigil"
+	testCfg.Networks.BSV.APIKey = "abcd1234567890"
 
 	buf := new(bytes.Buffer)
 	err := displayConfigJSON(buf, testCfg)
 	require.NoError(t, err)
 
-	out := buf.String()
-	// YAML output should contain the config values
-	assert.Contains(t, out, "home: /test/sigil")
-	assert.Contains(t, out, "version: 1")
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	assert.Equal(t, "/test/sigil", out["home"])
+	assert.InDelta(t, float64(1), out["version"], 0)
+
+	networks, ok := out["networks"].(map[string]any)
+	require.True(t, ok)
+	bsvNetwork, ok := networks["bsv"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "abcd...", bsvNetwork["api_key"])
 }
 
 // --- Tests for runConfigInit, runConfigShow, runConfigGet, runConfigSet ---
@@ -685,9 +705,10 @@ func TestRunConfigShow_JSONFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	result := buf.String()
-	// JSON format outputs YAML
-	assert.Contains(t, result, "home:")
-	assert.Contains(t, result, "version:")
+	var out map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result), &out))
+	assert.Contains(t, out, "home")
+	assert.Contains(t, out, "version")
 }
 
 func TestRunConfigGet_ValidPath(t *testing.T) {
@@ -767,7 +788,7 @@ func TestRunConfigSet_NoConfigFile(t *testing.T) {
 
 	// Don't create config file — runConfigSet falls back to defaults
 	cmd, buf := newConfigTestCmd()
-	err := runConfigSet(cmd, []string{"logging.level", "warn"})
-	require.NoError(t, err)
-	assert.Contains(t, buf.String(), "Set logging.level = warn")
+	err := runConfigSet(cmd, []string{"logging.level", "info"})
+	require.Error(t, err)
+	assert.Empty(t, buf.String())
 }

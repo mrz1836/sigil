@@ -126,7 +126,7 @@ func scanWalletUTXOs(w *wallet.Wallet, cmd *cobra.Command) error {
 		return fmt.Errorf("loading UTXO store: %w", err)
 	}
 
-	scanCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	scanCtx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
 	outln(cmd.OutOrStdout())

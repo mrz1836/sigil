@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mrz1836/sigil/internal/fileutil"
 	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
@@ -107,8 +108,51 @@ func (s *FileStorage) Save(wallet *Wallet, seed, password []byte) error {
 
 	// Write to file with secure permissions
 	walletPath := s.walletPath(wallet.Name)
-	if err := os.WriteFile(walletPath, data, walletFilePermissions); err != nil {
+	if err := fileutil.WriteAtomic(walletPath, data, walletFilePermissions); err != nil {
 		return fmt.Errorf("writing wallet file: %w", err)
+	}
+
+	return nil
+}
+
+// ErrNilWallet indicates a nil wallet was provided.
+var ErrNilWallet = errors.New("wallet is nil")
+
+// UpdateMetadata updates wallet metadata while preserving encrypted seed.
+func (s *FileStorage) UpdateMetadata(wallet *Wallet) error {
+	if wallet == nil {
+		return ErrNilWallet
+	}
+
+	if err := ValidateWalletName(wallet.Name); err != nil {
+		return err
+	}
+
+	walletPath := s.walletPath(wallet.Name)
+	if _, err := os.Stat(walletPath); os.IsNotExist(err) {
+		return ErrWalletNotFound
+	}
+
+	//nolint:gosec // G304: Path validated by ValidateWalletName + walletPath
+	data, err := os.ReadFile(walletPath)
+	if err != nil {
+		return fmt.Errorf("reading wallet file: %w", err)
+	}
+
+	var wf walletFile
+	if err = json.Unmarshal(data, &wf); err != nil {
+		return fmt.Errorf("parsing wallet file: %w", err)
+	}
+
+	wf.Wallet = wallet
+
+	updatedData, err := json.MarshalIndent(wf, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling wallet: %w", err)
+	}
+
+	if writeErr := fileutil.WriteAtomic(walletPath, updatedData, walletFilePermissions); writeErr != nil {
+		return fmt.Errorf("writing wallet file: %w", writeErr)
 	}
 
 	return nil

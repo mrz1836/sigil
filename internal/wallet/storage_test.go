@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -226,6 +228,70 @@ func TestStorage_SaveOverwritePrevented(t *testing.T) {
 
 	err = storage.Save(wallet2, seed2, []byte("password"))
 	assert.ErrorIs(t, err, ErrWalletExists)
+}
+
+func TestStorage_UpdateMetadata_PersistsDerivedAddresses(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	storage := NewFileStorage(tmpDir)
+	password := []byte("test-password-123")
+
+	w, err := NewWallet("test", []ChainID{ChainBSV})
+	require.NoError(t, err)
+
+	mnemonic, err := GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer ZeroBytes(seed)
+
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, password))
+
+	walletPath := filepath.Join(tmpDir, "test.wallet")
+	initialData, err := os.ReadFile(walletPath) //nolint:gosec // G304: Test path from controlled test input
+	require.NoError(t, err)
+
+	var initialFile walletFile
+	require.NoError(t, json.Unmarshal(initialData, &initialFile))
+	initialCount := len(initialFile.Wallet.Addresses[ChainBSV])
+	initialEncryptedSeed := append([]byte(nil), initialFile.EncryptedSeed...)
+
+	_, err = w.DeriveNextReceiveAddress(seed, ChainBSV)
+	require.NoError(t, err)
+	require.NoError(t, storage.UpdateMetadata(w))
+
+	updatedData, err := os.ReadFile(walletPath) //nolint:gosec // G304: Test path from controlled test input
+	require.NoError(t, err)
+
+	var updatedFile walletFile
+	require.NoError(t, json.Unmarshal(updatedData, &updatedFile))
+	assert.Len(t, updatedFile.Wallet.Addresses[ChainBSV], initialCount+1)
+	assert.True(t, bytes.Equal(initialEncryptedSeed, updatedFile.EncryptedSeed))
+
+	loadedWallet, loadedSeed, err := storage.Load("test", password)
+	require.NoError(t, err)
+	defer ZeroBytes(loadedSeed)
+	assert.Len(t, loadedWallet.Addresses[ChainBSV], initialCount+1)
+}
+
+func TestStorage_UpdateMetadata_WalletNotFound(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	storage := NewFileStorage(tmpDir)
+	w, err := NewWallet("missing", []ChainID{ChainETH})
+	require.NoError(t, err)
+
+	err = storage.UpdateMetadata(w)
+	assert.ErrorIs(t, err, ErrWalletNotFound)
 }
 
 func TestValidateWalletName(t *testing.T) {

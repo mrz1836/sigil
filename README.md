@@ -1,10 +1,10 @@
 # 🔮 Sigil
 
-> Personal multi-chain wallet CLI — unlock your BSV, BTC, and ETH
+> Personal multi-chain wallet CLI — MVP support for ETH and BSV
 
 <br>
 
-Sigil is a secure, terminal-based wallet for power users. Full control over your keys across **BSV, BTC, BCH, ETH, and USDC**.
+Sigil is a secure, terminal-based wallet for power users. Current MVP support includes **ETH, USDC (on Ethereum), and BSV**. **BTC and BCH** are planned for a later phase.
 
 <br>
 

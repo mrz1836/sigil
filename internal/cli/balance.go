@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
+	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -85,7 +89,7 @@ func init() {
 	_ = balanceShowCmd.MarkFlagRequired("wallet")
 }
 
-//nolint:gocognit,gocyclo // CLI entry point has inherent complexity
+//nolint:gocognit,gocyclo,nestif // CLI entry point has inherent complexity
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
 
@@ -103,15 +107,24 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	cacheStorage := cache.NewFileStorage(cachePath)
 	balanceCache, err := cacheStorage.Load()
 	if err != nil {
+		if errors.Is(err, cache.ErrCorruptCache) {
+			if cmdCtx.Log != nil {
+				cmdCtx.Log.Error("balance cache file is corrupted: %v", err)
+			}
+			outln(cmd.ErrOrStderr(), "Warning: balance cache was corrupted and has been reset.")
+		} else if cmdCtx.Log != nil {
+			cmdCtx.Log.Error("failed to load balance cache: %v", err)
+		}
 		balanceCache = cache.NewBalanceCache()
 	}
 
 	// Fetch balances with overall timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
 	response := BalanceShowResponse{
 		Wallet:    balanceWalletName,
+		Balances:  make([]BalanceResult, 0),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -119,19 +132,51 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	// Per-address timeout for individual balance fetches
 	const perAddressTimeout = 30 * time.Second
+	const maxConcurrent = 8
 
-	// Get balances per chain
+	type balanceTask struct {
+		chainID wallet.ChainID
+		address string
+	}
+	tasks := make([]balanceTask, 0)
+
+	// Build a flat list of address fetch tasks.
 	for chainID, addresses := range w.Addresses {
-		// Apply chain filter if specified
 		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
 			continue
 		}
-
 		for _, addr := range addresses {
-			// Create per-address context with its own timeout
+			tasks = append(tasks, balanceTask{
+				chainID: chainID,
+				address: addr.Address,
+			})
+		}
+	}
+
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() {
+				<-sem
+			}()
+
 			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
-			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, chainID, addr.Address, balanceCache, cmdCtx.Cfg)
+			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, task.chainID, task.address, balanceCache, cmdCtx.Cfg)
 			addrCancel()
+
+			mu.Lock()
+			defer mu.Unlock()
 
 			if fetchErr != nil {
 				fetchErrors = append(fetchErrors, fetchErr.Error())
@@ -153,23 +198,42 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 				response.Balances = append(response.Balances, result)
 			}
 
-			// Add placeholder for failed fetches with no cache data
+			// Add placeholder for failed fetches with no cache data.
 			if fetchErr != nil && len(balances) == 0 {
-				result := BalanceResult{
-					Chain:   string(chainID),
-					Address: addr.Address,
+				response.Balances = append(response.Balances, BalanceResult{
+					Chain:   string(task.chainID),
+					Address: task.address,
 					Balance: "N/A",
-					Symbol:  getChainSymbol(chainID),
+					Symbol:  getChainSymbol(task.chainID),
 					Stale:   true,
-				}
-				response.Balances = append(response.Balances, result)
+				})
 			}
-		}
+		}()
 	}
+	wg.Wait()
+
+	// Respect caller cancellation and timeouts.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	sort.Slice(response.Balances, func(i, j int) bool {
+		left := response.Balances[i]
+		right := response.Balances[j]
+		if left.Chain != right.Chain {
+			return left.Chain < right.Chain
+		}
+		if left.Address != right.Address {
+			return left.Address < right.Address
+		}
+		return left.Token < right.Token
+	})
 
 	// Save updated cache
 	if err := cacheStorage.Save(balanceCache); err != nil {
-		cmdCtx.Log.Error("failed to save balance cache: %v", err)
+		if cmdCtx.Log != nil {
+			cmdCtx.Log.Error("failed to save balance cache: %v", err)
+		}
 	}
 
 	// Add warning if any fetches failed and using stale data
@@ -179,7 +243,9 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	// Output results
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
-		outputBalanceJSON(cmd.OutOrStdout(), response)
+		if err := outputBalanceJSON(cmd.OutOrStdout(), response); err != nil {
+			return fmt.Errorf("writing JSON output: %w", err)
+		}
 	} else {
 		outputBalanceText(cmd.OutOrStdout(), response)
 	}
@@ -326,19 +392,25 @@ func getCachedETHBalances(address string, balanceCache *cache.BalanceCache) ([]c
 	// Check for ETH
 	entry, exists, age := balanceCache.Get(chain.ETH, address, "")
 	if exists {
+		metrics.Global.RecordCacheHit()
 		entries = append(entries, *entry)
 		if age > cache.DefaultStaleness {
 			stale = true
 		}
+	} else {
+		metrics.Global.RecordCacheMiss()
 	}
 
 	// Check for USDC
 	usdcEntry, exists, age := balanceCache.Get(chain.ETH, address, eth.USDCMainnet)
 	if exists {
+		metrics.Global.RecordCacheHit()
 		entries = append(entries, *usdcEntry)
 		if age > cache.DefaultStaleness {
 			stale = true
 		}
+	} else {
+		metrics.Global.RecordCacheMiss()
 	}
 
 	if len(entries) == 0 {
@@ -380,8 +452,10 @@ func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.B
 func getCachedBSVBalances(address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
 	entry, exists, age := balanceCache.Get(chain.BSV, address, "")
 	if !exists {
+		metrics.Global.RecordCacheMiss()
 		return nil, true, sigilerr.ErrCacheNotFound
 	}
+	metrics.Global.RecordCacheHit()
 
 	stale := age > cache.DefaultStaleness
 	return []cache.BalanceCacheEntry{*entry}, stale, nil
@@ -417,47 +491,11 @@ func getChainSymbol(chainID wallet.ChainID) string {
 }
 
 // outputBalanceJSON outputs balances in JSON format.
-//
-//nolint:gocognit // JSON formatting has inherent conditional complexity
-func outputBalanceJSON(w io.Writer, response BalanceShowResponse) {
-	out(w, "{\n")
-	out(w, `  "wallet": "%s",`+"\n", response.Wallet)
-	out(w, `  "timestamp": "%s",`+"\n", response.Timestamp)
-
-	if response.Warning != "" {
-		out(w, `  "warning": "%s",`+"\n", response.Warning)
+func outputBalanceJSON(w io.Writer, response BalanceShowResponse) error {
+	if response.Balances == nil {
+		response.Balances = []BalanceResult{}
 	}
-
-	out(w, `  "balances": [`+"\n")
-	for i, bal := range response.Balances {
-		out(w, "    {\n")
-		out(w, `      "chain": "%s",`+"\n", bal.Chain)
-		out(w, `      "address": "%s",`+"\n", bal.Address)
-		out(w, `      "balance": "%s",`+"\n", bal.Balance)
-		out(w, `      "symbol": "%s",`+"\n", bal.Symbol)
-		out(w, `      "decimals": %d`, bal.Decimals)
-
-		if bal.Token != "" {
-			out(w, `,`+"\n")
-			out(w, `      "token": "%s"`, bal.Token)
-		}
-		if bal.Stale {
-			out(w, `,`+"\n")
-			out(w, `      "stale": true`)
-			if bal.CacheAge != "" {
-				out(w, `,`+"\n")
-				out(w, `      "cache_age": "%s"`, bal.CacheAge)
-			}
-		}
-		out(w, "\n    }")
-
-		if i < len(response.Balances)-1 {
-			out(w, ",")
-		}
-		out(w, "\n")
-	}
-	out(w, "  ]\n")
-	out(w, "}\n")
+	return writeJSON(w, response)
 }
 
 // outputBalanceText outputs balances in text table format.

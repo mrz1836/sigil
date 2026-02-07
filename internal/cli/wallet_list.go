@@ -18,7 +18,7 @@ import (
 // formatEmptyWalletList formats empty wallet list based on output format.
 func formatEmptyWalletList(w io.Writer, format output.Format) {
 	if format == output.FormatJSON {
-		outln(w, "[]")
+		_ = writeJSON(w, []string{})
 	} else {
 		outln(w, "No wallets found.")
 		outln(w, "Create one with: sigil wallet create <name>")
@@ -27,14 +27,7 @@ func formatEmptyWalletList(w io.Writer, format output.Format) {
 
 // formatWalletListJSON outputs wallet names as JSON array.
 func formatWalletListJSON(w io.Writer, names []string) {
-	out(w, "[")
-	for i, name := range names {
-		if i > 0 {
-			out(w, ",")
-		}
-		out(w, `"%s"`, name)
-	}
-	outln(w, "]")
+	_ = writeJSON(w, names)
 }
 
 // formatWalletListText outputs wallet names as text list.
@@ -113,32 +106,37 @@ func displayWalletText(wlt *wallet.Wallet, cmd *cobra.Command) {
 
 // displayWalletJSON shows wallet details in JSON format.
 func displayWalletJSON(wlt *wallet.Wallet, cmd *cobra.Command) {
-	w := cmd.OutOrStdout()
-	// Build JSON manually to control format
-	outln(w, "{")
-	out(w, `  "name": "%s",`+"\n", wlt.Name)
-	out(w, `  "created_at": "%s",`+"\n", wlt.CreatedAt.Format("2006-01-02T15:04:05Z"))
-	out(w, `  "version": %d,`+"\n", wlt.Version)
-	outln(w, `  "addresses": {`)
-
-	chainCount := 0
-	for chainID, addresses := range wlt.Addresses {
-		if chainCount > 0 {
-			outln(w, ",")
-		}
-		out(w, `    "%s": [`, chainID)
-		for i, addr := range addresses {
-			if i > 0 {
-				out(w, ",")
-			}
-			out(w, `{"index": %d, "address": "%s", "path": "%s"}`, addr.Index, addr.Address, addr.Path)
-		}
-		out(w, "]")
-		chainCount++
+	type addressJSON struct {
+		Index   uint32 `json:"index"`
+		Address string `json:"address"`
+		Path    string `json:"path"`
 	}
-	outln(w)
-	outln(w, "  }")
-	outln(w, "}")
+	type walletJSON struct {
+		Name      string                   `json:"name"`
+		CreatedAt string                   `json:"created_at"`
+		Version   int                      `json:"version"`
+		Addresses map[string][]addressJSON `json:"addresses"`
+	}
+
+	payload := walletJSON{
+		Name:      wlt.Name,
+		CreatedAt: wlt.CreatedAt.Format(time.RFC3339),
+		Version:   wlt.Version,
+		Addresses: make(map[string][]addressJSON, len(wlt.Addresses)),
+	}
+	for chainID, addresses := range wlt.Addresses {
+		chainAddresses := make([]addressJSON, 0, len(addresses))
+		for _, addr := range addresses {
+			chainAddresses = append(chainAddresses, addressJSON{
+				Index:   addr.Index,
+				Address: addr.Address,
+				Path:    addr.Path,
+			})
+		}
+		payload.Addresses[string(chainID)] = chainAddresses
+	}
+
+	_ = writeJSON(cmd.OutOrStdout(), payload)
 }
 
 // loadWalletWithSession loads a wallet using cached session if available.

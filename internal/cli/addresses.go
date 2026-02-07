@@ -297,31 +297,35 @@ func displayAddressesText(cmd *cobra.Command, addresses []addressInfo) {
 }
 
 func displayAddressesJSON(cmd *cobra.Command, addresses []addressInfo) {
-	w := cmd.OutOrStdout()
-
-	outln(w, "{")
-	out(w, `  "addresses": [`+"\n")
-
-	for i, addr := range addresses {
-		outln(w, "    {")
-		out(w, `      "chain": "%s",`+"\n", addr.ChainID)
-		out(w, `      "type": "%s",`+"\n", addr.Type)
-		out(w, `      "index": %d,`+"\n", addr.Index)
-		out(w, `      "address": "%s",`+"\n", addr.Address)
-		out(w, `      "path": "%s",`+"\n", addr.Path)
-		out(w, `      "label": "%s",`+"\n", addr.Label)
-		out(w, `      "balance": %d,`+"\n", addr.Balance)
-		out(w, `      "used": %t`+"\n", addr.Used)
-
-		if i < len(addresses)-1 {
-			outln(w, "    },")
-		} else {
-			outln(w, "    }")
-		}
+	type addressJSON struct {
+		Chain   string `json:"chain"`
+		Type    string `json:"type"`
+		Index   uint32 `json:"index"`
+		Address string `json:"address"`
+		Path    string `json:"path"`
+		Label   string `json:"label"`
+		Balance uint64 `json:"balance"`
+		Used    bool   `json:"used"`
+	}
+	type responseJSON struct {
+		Addresses []addressJSON `json:"addresses"`
 	}
 
-	outln(w, "  ]")
-	outln(w, "}")
+	resp := responseJSON{Addresses: make([]addressJSON, 0, len(addresses))}
+	for _, addr := range addresses {
+		resp.Addresses = append(resp.Addresses, addressJSON{
+			Chain:   string(addr.ChainID),
+			Type:    addr.Type,
+			Index:   addr.Index,
+			Address: addr.Address,
+			Path:    addr.Path,
+			Label:   addr.Label,
+			Balance: addr.Balance,
+			Used:    addr.Used,
+		})
+	}
+
+	_ = writeJSON(cmd.OutOrStdout(), resp)
 }
 
 // formatSatoshis formats satoshis as a human-readable string.

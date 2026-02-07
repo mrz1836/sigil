@@ -246,11 +246,11 @@ var versionCmd = &cobra.Command{
 			d = "unknown"
 		}
 		if formatter != nil && formatter.Format() == output.FormatJSON {
-			cmd.Println("{")
-			cmd.Printf(`  "version": "%s",`+"\n", v)
-			cmd.Printf(`  "commit": "%s",`+"\n", c)
-			cmd.Printf(`  "date": "%s"`+"\n", d)
-			cmd.Println("}")
+			_ = writeJSON(cmd.OutOrStdout(), map[string]string{
+				"version": v,
+				"commit":  c,
+				"date":    d,
+			})
 		} else {
 			cmd.Printf("sigil version %s\n", v)
 			cmd.Printf("  commit: %s\n", c)

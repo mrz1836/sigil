@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -176,9 +177,9 @@ func TestDisplayUTXOsJSON(t *testing.T) {
 				assert.Contains(t, result, s)
 			}
 
-			// Verify it's valid JSON array structure
-			assert.NotEmpty(t, result)
-			assert.Equal(t, '[', rune(result[0]))
+			var parsed []map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+			require.Len(t, parsed, len(tc.utxos))
 		})
 	}
 }
@@ -196,14 +197,11 @@ func TestDisplayUTXOsJSON_ArrayFormat(t *testing.T) {
 	var buf bytes.Buffer
 	displayUTXOsJSON(&buf, utxos)
 
-	result := buf.String()
-
-	// Should start with [ and end with ]
-	assert.Contains(t, result, "[")
-	assert.Contains(t, result, "]")
-
-	// Check for proper comma placement (no trailing comma on last element)
-	assert.NotContains(t, result, `}]`) // Last element should not have comma before ]
+	var parsed []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed, 3)
+	assert.Equal(t, "tx1", parsed[0]["txid"])
+	assert.Equal(t, "tx3", parsed[2]["txid"])
 }
 
 func TestDisplayRefreshResults(t *testing.T) {
@@ -387,6 +385,8 @@ func TestRunUTXOBalance_EmptyStore_JSON(t *testing.T) {
 	require.NoError(t, err)
 
 	result := buf.String()
-	assert.Contains(t, result, `"balance": 0`)
-	assert.Contains(t, result, `"utxos": 0`)
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result), &parsed))
+	assert.InDelta(t, float64(0), parsed["balance"], 0)
+	assert.InDelta(t, float64(0), parsed["utxos"], 0)
 }

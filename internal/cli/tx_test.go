@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -440,14 +441,15 @@ func TestDisplayBSVTxResultJSON(t *testing.T) {
 
 	var buf bytes.Buffer
 	displayBSVTxResultJSON(&buf, result)
-	out := buf.String()
 
-	assert.Contains(t, out, `"hash": "abc123"`)
-	assert.Contains(t, out, `"from": "1From"`)
-	assert.Contains(t, out, `"to": "1To"`)
-	assert.Contains(t, out, `"amount": "0.5"`)
-	assert.Contains(t, out, `"fee": "0.0001"`)
-	assert.Contains(t, out, `"status": "pending"`)
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, "abc123", parsed["hash"])
+	assert.Equal(t, "1From", parsed["from"])
+	assert.Equal(t, "1To", parsed["to"])
+	assert.Equal(t, "0.5", parsed["amount"])
+	assert.Equal(t, "0.0001", parsed["fee"])
+	assert.Equal(t, "pending", parsed["status"])
 }
 
 func TestDisplayTxDetails(t *testing.T) {
@@ -625,15 +627,54 @@ func TestDisplayTxResultJSON(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
 			displayTxResultJSON(&buf, tc.result)
-			out := buf.String()
-			for _, s := range tc.wantContains {
-				assert.Contains(t, out, s)
-			}
-			for _, s := range tc.wantMissing {
-				assert.NotContains(t, out, s)
+
+			var parsed map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+			assert.Equal(t, tc.result.Hash, parsed["hash"])
+			assert.Equal(t, tc.result.From, parsed["from"])
+			assert.Equal(t, tc.result.To, parsed["to"])
+			assert.Equal(t, tc.result.Amount, parsed["amount"])
+			assert.Equal(t, tc.result.Fee, parsed["fee"])
+			assert.Equal(t, tc.result.GasPrice, parsed["gas_price"])
+
+			gasUsed, ok := parsed["gas_used"].(float64)
+			require.True(t, ok)
+			assert.InDelta(t, float64(tc.result.GasUsed), gasUsed, 0)
+
+			if tc.result.Token == "" {
+				_, hasToken := parsed["token"]
+				assert.False(t, hasToken)
+			} else {
+				assert.Equal(t, tc.result.Token, parsed["token"])
 			}
 		})
 	}
+}
+
+func TestDisplayTxResultJSON_Escaping(t *testing.T) {
+	t.Parallel()
+
+	result := &chain.TransactionResult{
+		Hash:     "0x\"hash",
+		From:     "0xfrom\nline",
+		To:       "0xto\u2713",
+		Amount:   "1.0",
+		Token:    "USDC",
+		Fee:      "0.001",
+		GasUsed:  21000,
+		GasPrice: "20 \"Gwei\"",
+		Status:   "pending",
+	}
+
+	var buf bytes.Buffer
+	displayTxResultJSON(&buf, result)
+
+	var parsed chain.TransactionResult
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, result.Hash, parsed.Hash)
+	assert.Equal(t, result.From, parsed.From)
+	assert.Equal(t, result.To, parsed.To)
+	assert.Equal(t, result.GasPrice, parsed.GasPrice)
 }
 
 // newTestCmdWithContext creates a cobra.Command with a CommandContext set up for testing.

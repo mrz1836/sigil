@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -142,11 +143,14 @@ func TestDisplayWalletJSONMultipleChains(t *testing.T) {
 
 	displayWalletJSON(wlt, cmd)
 
-	result := buf.String()
-	assert.Contains(t, result, `"name": "multi_chain"`)
-	assert.Contains(t, result, `"1BSVaddr1"`)
-	assert.Contains(t, result, `"1BSVaddr2"`)
-	assert.Contains(t, result, `"0xETHaddr1"`)
+	var parsed struct {
+		Name      string                      `json:"name"`
+		Addresses map[string][]map[string]any `json:"addresses"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, "multi_chain", parsed.Name)
+	require.Len(t, parsed.Addresses["bsv"], 2)
+	require.Len(t, parsed.Addresses["eth"], 1)
 }
 
 // --- Tests for runWalletList ---
@@ -229,5 +233,7 @@ func TestRunWalletList_WithWalletsJSON(t *testing.T) {
 	require.NoError(t, err)
 
 	result := buf.String()
-	assert.Contains(t, result, `"charlie"`)
+	var parsed []string
+	require.NoError(t, json.Unmarshal([]byte(result), &parsed))
+	assert.Contains(t, parsed, "charlie")
 }

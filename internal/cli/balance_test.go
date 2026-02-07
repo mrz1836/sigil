@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -126,13 +128,15 @@ func TestOutputBalanceJSON(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	outputBalanceJSON(&buf, response)
+	require.NoError(t, outputBalanceJSON(&buf, response))
 
-	output := buf.String()
-	assert.Contains(t, output, `"wallet": "test"`)
-	assert.Contains(t, output, `"chain": "eth"`)
-	assert.Contains(t, output, `"balance": "1.5"`)
-	assert.Contains(t, output, `"symbol": "ETH"`)
+	var parsed BalanceShowResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed.Balances, 1)
+	assert.Equal(t, "test", parsed.Wallet)
+	assert.Equal(t, "eth", parsed.Balances[0].Chain)
+	assert.Equal(t, "1.5", parsed.Balances[0].Balance)
+	assert.Equal(t, "ETH", parsed.Balances[0].Symbol)
 }
 
 func TestOutputBalanceTextWithStaleData(t *testing.T) {
@@ -210,6 +214,26 @@ func TestGetCachedBalancesNotFound(t *testing.T) {
 
 	_, _, err = getCachedBSVBalances("nonexistent", balanceCache)
 	require.Error(t, err)
+}
+
+func TestGetCachedBalances_RecordMetrics(t *testing.T) {
+	metrics.Global.Reset()
+	defer metrics.Global.Reset()
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0x123",
+		Balance:  "1.5",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+
+	_, _, err := getCachedETHBalances("0x123", balanceCache)
+	require.NoError(t, err)
+
+	snapshot := metrics.Global.Snapshot()
+	assert.Equal(t, int64(1), snapshot.CacheHits)
+	assert.Equal(t, int64(1), snapshot.CacheMisses)
 }
 
 func TestBalanceCacheIntegration(t *testing.T) {
@@ -504,13 +528,43 @@ func TestOutputBalanceJSON_TokenAndStale(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	outputBalanceJSON(&buf, response)
-	out := buf.String()
+	require.NoError(t, outputBalanceJSON(&buf, response))
 
-	assert.Contains(t, out, `"token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"`)
-	assert.Contains(t, out, `"stale": true`)
-	assert.Contains(t, out, `"cache_age": "5m ago"`)
-	assert.Contains(t, out, `"warning":`)
+	var parsed BalanceShowResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed.Balances, 1)
+	assert.Equal(t, "Some balances could not be fetched", parsed.Warning)
+	assert.Equal(t, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", parsed.Balances[0].Token)
+	assert.True(t, parsed.Balances[0].Stale)
+	assert.Equal(t, "5m ago", parsed.Balances[0].CacheAge)
+}
+
+func TestOutputBalanceJSON_Escaping(t *testing.T) {
+	t.Parallel()
+
+	response := BalanceShowResponse{
+		Wallet:    "test\"wallet",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Warning:   "line1\nline2 \"quoted\" \u2713",
+		Balances: []BalanceResult{
+			{
+				Chain:    "eth",
+				Address:  "0xabc\"123",
+				Balance:  "1.0",
+				Symbol:   "ETH",
+				Decimals: 18,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, outputBalanceJSON(&buf, response))
+
+	var parsed BalanceShowResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, response.Wallet, parsed.Wallet)
+	assert.Equal(t, response.Warning, parsed.Warning)
+	assert.Equal(t, response.Balances[0].Address, parsed.Balances[0].Address)
 }
 
 func TestOutputBalanceText_Empty(t *testing.T) {

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/big"
 	"path/filepath"
 	"strings"
@@ -89,7 +90,7 @@ func init() {
 //nolint:gocyclo // CLI flow involves validation and routing
 func runTxSend(cmd *cobra.Command, _ []string) error {
 	cc := GetCmdContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
 	// Validate chain
@@ -255,7 +256,7 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 }
 
 //nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
-func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *wallet.FileStorage, fromAddress string, seed []byte) error {
+func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, storage *wallet.FileStorage, fromAddress string, seed []byte) error {
 	cc := GetCmdContext(cmd)
 
 	// Validate BSV address
@@ -308,12 +309,6 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *
 		)
 	}
 
-	// Derive next change address for BSV (uses internal chain per BIP44)
-	changeAddr, err := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
-	if err != nil {
-		return fmt.Errorf("deriving change address: %w", err)
-	}
-
 	// Display transaction details and confirm
 	if !txConfirm {
 		displayBSVTxDetails(cmd, fromAddress, txTo, txAmount, estimatedFee, feeQuote.StandardRate)
@@ -321,6 +316,15 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
 		}
+	}
+
+	// Derive next change address for BSV (uses internal chain per BIP44).
+	changeAddr, err := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
+	if err != nil {
+		return fmt.Errorf("deriving change address: %w", err)
+	}
+	if updateErr := storage.UpdateMetadata(wlt); updateErr != nil {
+		return fmt.Errorf("persisting wallet metadata: %w", updateErr)
 	}
 
 	// Derive private key from seed for the sending address
@@ -353,10 +357,6 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, _ *
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
 	}
-
-	// The change address is derived on-the-fly. In a future enhancement,
-	// we could persist derived change addresses to the wallet file when we have
-	// a session-aware save mechanism that doesn't require re-prompting for password.
 
 	// Display result
 	displayBSVTxResult(cmd, result)
@@ -417,14 +417,23 @@ func displayBSVTxResultJSON(w interface {
 	Write(p []byte) (n int, err error)
 }, result *chain.TransactionResult,
 ) {
-	outln(w, "{")
-	out(w, `  "hash": "%s",`+"\n", result.Hash)
-	out(w, `  "from": "%s",`+"\n", result.From)
-	out(w, `  "to": "%s",`+"\n", result.To)
-	out(w, `  "amount": "%s",`+"\n", result.Amount)
-	out(w, `  "fee": "%s",`+"\n", result.Fee)
-	out(w, `  "status": "%s"`+"\n", result.Status)
-	outln(w, "}")
+	payload := struct {
+		Hash   string `json:"hash"`
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Amount string `json:"amount"`
+		Fee    string `json:"fee"`
+		Status string `json:"status"`
+	}{
+		Hash:   result.Hash,
+		From:   result.From,
+		To:     result.To,
+		Amount: result.Amount,
+		Fee:    result.Fee,
+		Status: result.Status,
+	}
+
+	_ = writeJSON(w, payload)
 }
 
 // amountToBigInt converts uint64 to *big.Int.
@@ -584,10 +593,7 @@ func displayTxResult(cmd *cobra.Command, result *chain.TransactionResult) {
 }
 
 // displayTxResultText shows transaction result in text format.
-func displayTxResultText(w interface {
-	Write(p []byte) (n int, err error)
-}, result *chain.TransactionResult,
-) {
+func displayTxResultText(w io.Writer, result *chain.TransactionResult) {
 	outln(w, "\nTransaction broadcast successfully!")
 	outln(w)
 	out(w, "  Hash:   %s\n", result.Hash)
@@ -606,21 +612,28 @@ func displayTxResultText(w interface {
 }
 
 // displayTxResultJSON shows transaction result in JSON format.
-func displayTxResultJSON(w interface {
-	Write(p []byte) (n int, err error)
-}, result *chain.TransactionResult,
-) {
-	outln(w, "{")
-	out(w, `  "hash": "%s",`+"\n", result.Hash)
-	out(w, `  "from": "%s",`+"\n", result.From)
-	out(w, `  "to": "%s",`+"\n", result.To)
-	out(w, `  "amount": "%s",`+"\n", result.Amount)
-	if result.Token != "" {
-		out(w, `  "token": "%s",`+"\n", result.Token)
+func displayTxResultJSON(w io.Writer, result *chain.TransactionResult) {
+	payload := struct {
+		Hash     string `json:"hash"`
+		From     string `json:"from"`
+		To       string `json:"to"`
+		Amount   string `json:"amount"`
+		Token    string `json:"token,omitempty"`
+		Fee      string `json:"fee"`
+		GasUsed  uint64 `json:"gas_used"`
+		GasPrice string `json:"gas_price"`
+		Status   string `json:"status"`
+	}{
+		Hash:     result.Hash,
+		From:     result.From,
+		To:       result.To,
+		Amount:   result.Amount,
+		Token:    result.Token,
+		Fee:      result.Fee,
+		GasUsed:  result.GasUsed,
+		GasPrice: result.GasPrice,
+		Status:   result.Status,
 	}
-	out(w, `  "fee": "%s",`+"\n", result.Fee)
-	out(w, `  "gas_used": %d,`+"\n", result.GasUsed)
-	out(w, `  "gas_price": "%s",`+"\n", result.GasPrice)
-	out(w, `  "status": "%s"`+"\n", result.Status)
-	outln(w, "}")
+
+	_ = writeJSON(w, payload)
 }

@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/utxostore"
@@ -327,9 +329,18 @@ func TestDisplayReceiveJSON(t *testing.T) {
 
 			displayReceiveJSON(cmd, tc.addr, tc.chainID, tc.label, tc.isNew)
 
-			result := buf.String()
-			for _, s := range tc.contains {
-				assert.Contains(t, result, s)
+			var parsed map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+			assert.Equal(t, string(tc.chainID), parsed["chain"])
+			assert.Equal(t, tc.addr.Address, parsed["address"])
+			assert.Equal(t, tc.addr.Path, parsed["path"])
+			assert.InDelta(t, float64(tc.addr.Index), parsed["index"], 0)
+			assert.Equal(t, tc.isNew, parsed["is_new"])
+			if tc.label == "" {
+				_, hasLabel := parsed["label"]
+				assert.False(t, hasLabel)
+			} else {
+				assert.Equal(t, tc.label, parsed["label"])
 			}
 		})
 	}
@@ -352,4 +363,25 @@ func TestDisplayReceiveJSON_NoLabel(t *testing.T) {
 
 	result := buf.String()
 	assert.NotContains(t, result, `"label"`)
+}
+
+func TestDisplayReceiveJSON_Escaping(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{
+		Index:   12,
+		Address: "1Addr\"Line",
+		Path:    "m/44'/236'/0'/0/12",
+	}
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	displayReceiveJSON(cmd, addr, chain.BSV, "line1\nline2 \"quoted\" \u2713", true)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, addr.Address, parsed["address"])
+	assert.Equal(t, "line1\nline2 \"quoted\" \u2713", parsed["label"])
 }

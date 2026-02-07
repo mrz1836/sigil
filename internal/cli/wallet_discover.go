@@ -196,7 +196,7 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 
 	// Run discovery
 	outln(cmd.OutOrStderr(), "\nScanning derivation paths...")
-	ctx, cancel := context.WithTimeout(context.Background(), discovery.DefaultTimeout)
+	ctx, cancel := contextWithTimeout(cmd, discovery.DefaultTimeout)
 	defer cancel()
 
 	var result *discovery.Result
@@ -370,76 +370,14 @@ func promptMigrationConfirmation() bool {
 }
 
 // outputDiscoverJSON outputs discovery results in JSON format.
-//
-//nolint:gocognit,gocyclo // JSON output formatting requires conditional logic
 func outputDiscoverJSON(w io.Writer, response DiscoverResponse) {
-	out(w, "{\n")
-	out(w, `  "total_balance": %d,`+"\n", response.TotalBalance)
-	out(w, `  "total_utxos": %d,`+"\n", response.TotalUTXOs)
-	out(w, `  "addresses_scanned": %d,`+"\n", response.AddressesScanned)
-	out(w, `  "duration_ms": %d,`+"\n", response.DurationMs)
-
-	if response.PassphraseUsed {
-		out(w, `  "passphrase_used": true,`+"\n")
+	if response.SchemesScanned == nil {
+		response.SchemesScanned = []string{}
 	}
-
-	out(w, `  "schemes_scanned": [`+"\n")
-	for i, scheme := range response.SchemesScanned {
-		out(w, `    "%s"`, scheme)
-		if i < len(response.SchemesScanned)-1 {
-			out(w, ",")
-		}
-		out(w, "\n")
+	if response.Addresses == nil {
+		response.Addresses = []DiscoverAddressResponse{}
 	}
-	out(w, "  ],\n")
-
-	out(w, `  "addresses": [`+"\n")
-	for i, addr := range response.Addresses {
-		out(w, "    {\n")
-		out(w, `      "scheme": "%s",`+"\n", addr.Scheme)
-		out(w, `      "address": "%s",`+"\n", addr.Address)
-		out(w, `      "path": "%s",`+"\n", addr.Path)
-		out(w, `      "balance": %d,`+"\n", addr.Balance)
-		out(w, `      "utxo_count": %d`, addr.UTXOCount)
-		if addr.IsChange {
-			out(w, `,`+"\n")
-			out(w, `      "is_change": true`)
-		}
-		out(w, "\n    }")
-		if i < len(response.Addresses)-1 {
-			out(w, ",")
-		}
-		out(w, "\n")
-	}
-	out(w, "  ]")
-
-	if len(response.Errors) > 0 {
-		out(w, ",\n")
-		out(w, `  "errors": [`+"\n")
-		for i, e := range response.Errors {
-			out(w, `    "%s"`, e)
-			if i < len(response.Errors)-1 {
-				out(w, ",")
-			}
-			out(w, "\n")
-		}
-		out(w, "  ]")
-	}
-
-	if response.Migration != nil {
-		out(w, ",\n")
-		out(w, `  "migration": {`+"\n")
-		out(w, `    "destination": "%s",`+"\n", response.Migration.Destination)
-		out(w, `    "total_input": %d,`+"\n", response.Migration.TotalInput)
-		out(w, `    "estimated_fee": %d,`+"\n", response.Migration.EstimatedFee)
-		out(w, `    "net_amount": %d`+"\n", response.Migration.NetAmount)
-		if response.Migration.TxID != "" {
-			out(w, `    ,"tx_id": "%s"`+"\n", response.Migration.TxID)
-		}
-		out(w, "  }")
-	}
-
-	out(w, "\n}\n")
+	_ = writeJSON(w, response)
 }
 
 // outputDiscoverText outputs discovery results in text format.

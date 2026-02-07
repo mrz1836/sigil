@@ -370,7 +370,8 @@ func TestFormatWalletListJSON(t *testing.T) {
 
 	formatWalletListJSON(buf, names)
 
-	assert.Equal(t, `["wallet1","wallet2"]`+"\n", buf.String())
+	expected := "[\n  \"wallet1\",\n  \"wallet2\"\n]\n"
+	assert.Equal(t, expected, buf.String())
 }
 
 // TestWalletShowNotFound tests showing a non-existent wallet.

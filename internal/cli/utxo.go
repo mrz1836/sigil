@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"time"
 
@@ -103,10 +104,10 @@ func init() {
 	_ = utxoBalanceCmd.MarkFlagRequired("wallet")
 }
 
-//nolint:gocognit,gocyclo // Display logic for UTXO list is complex
+//nolint:gocognit,gocyclo,nestif // Display logic for UTXO list is complex
 func runUTXOList(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, 30*time.Second)
 	defer cancel()
 
 	// Only BSV is supported for UTXOs
@@ -170,7 +171,9 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 
 	if len(utxos) == 0 {
 		if format == output.FormatJSON {
-			outln(w, "[]")
+			if err := writeJSON(w, []any{}); err != nil {
+				return fmt.Errorf("writing JSON output: %w", err)
+			}
 		} else {
 			out(w, "No UTXOs found for address %s\n", address)
 		}
@@ -209,26 +212,31 @@ func displayUTXOsText(w interface {
 }
 
 // displayUTXOsJSON shows UTXOs in JSON format.
-func displayUTXOsJSON(w interface {
-	Write(p []byte) (n int, err error)
-}, utxos []bsv.UTXO,
-) {
-	outln(w, "[")
-	for i, utxo := range utxos {
-		comma := ","
-		if i == len(utxos)-1 {
-			comma = ""
-		}
-		out(w, `  {"txid": "%s", "vout": %d, "amount": %d, "confirmations": %d}%s`+"\n",
-			utxo.TxID, utxo.Vout, utxo.Amount, utxo.Confirmations, comma)
+func displayUTXOsJSON(w io.Writer, utxos []bsv.UTXO) {
+	type utxoJSON struct {
+		TxID          string `json:"txid"`
+		Vout          uint32 `json:"vout"`
+		Amount        uint64 `json:"amount"`
+		Confirmations uint32 `json:"confirmations"`
 	}
-	outln(w, "]")
+
+	outUTXOs := make([]utxoJSON, 0, len(utxos))
+	for _, utxo := range utxos {
+		outUTXOs = append(outUTXOs, utxoJSON{
+			TxID:          utxo.TxID,
+			Vout:          utxo.Vout,
+			Amount:        utxo.Amount,
+			Confirmations: utxo.Confirmations,
+		})
+	}
+
+	_ = writeJSON(w, outUTXOs)
 }
 
 // runUTXORefresh re-scans addresses and updates stored UTXOs.
 func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
 	// Load wallet
@@ -367,6 +375,8 @@ func displayRefreshResults(w interface {
 }
 
 // runUTXOBalance shows offline balance from stored UTXOs.
+//
+//nolint:gocognit,nestif // CLI display logic with JSON/text formats
 func runUTXOBalance(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
 
@@ -396,7 +406,18 @@ func runUTXOBalance(cmd *cobra.Command, _ []string) error {
 
 	if store.IsEmpty() {
 		if format == output.FormatJSON {
-			outln(w, `{"balance": 0, "utxos": 0, "note": "no UTXOs stored"}`)
+			payload := struct {
+				Balance uint64 `json:"balance"`
+				UTXOs   int    `json:"utxos"`
+				Note    string `json:"note"`
+			}{
+				Balance: 0,
+				UTXOs:   0,
+				Note:    "no UTXOs stored",
+			}
+			if err := writeJSON(w, payload); err != nil {
+				return fmt.Errorf("writing JSON output: %w", err)
+			}
 		} else {
 			out(w, "No UTXOs stored for wallet '%s'.\n", utxoWallet)
 			out(w, "Run 'sigil utxo refresh --wallet %s' to fetch UTXOs from chain.\n", utxoWallet)
@@ -409,8 +430,18 @@ func runUTXOBalance(cmd *cobra.Command, _ []string) error {
 	utxos := store.GetUTXOs(chain.BSV, "")
 
 	if format == output.FormatJSON {
-		out(w, `{"balance": %d, "utxos": %d, "bsv": %.8f}`+"\n",
-			balance, len(utxos), float64(balance)/100000000)
+		payload := struct {
+			Balance uint64  `json:"balance"`
+			UTXOs   int     `json:"utxos"`
+			BSV     float64 `json:"bsv"`
+		}{
+			Balance: balance,
+			UTXOs:   len(utxos),
+			BSV:     float64(balance) / 100000000,
+		}
+		if err := writeJSON(w, payload); err != nil {
+			return fmt.Errorf("writing JSON output: %w", err)
+		}
 	} else {
 		out(w, "Offline Balance for wallet '%s'\n", utxoWallet)
 		outln(w)

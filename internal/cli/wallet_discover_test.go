@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -342,6 +343,8 @@ func TestOutputDiscoverJSON(t *testing.T) {
 			var buf bytes.Buffer
 			outputDiscoverJSON(&buf, tc.response)
 			out := buf.String()
+			var parsed map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
 			for _, s := range tc.wantContains {
 				assert.Contains(t, out, s)
 			}
@@ -350,6 +353,33 @@ func TestOutputDiscoverJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOutputDiscoverJSON_Escaping(t *testing.T) {
+	t.Parallel()
+
+	response := DiscoverResponse{
+		SchemesScanned: []string{"Scheme \"One\""},
+		Errors:         []string{"line1\nline2 \u2713"},
+		Addresses: []DiscoverAddressResponse{
+			{
+				Scheme:    "Scheme \"One\"",
+				Address:   "1Addr\"Test",
+				Path:      "m/44'/236'/0'/0/0",
+				Balance:   1,
+				UTXOCount: 1,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	outputDiscoverJSON(&buf, response)
+
+	var parsed DiscoverResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed.Addresses, 1)
+	assert.Equal(t, response.Addresses[0].Address, parsed.Addresses[0].Address)
+	assert.Equal(t, response.Errors[0], parsed.Errors[0])
 }
 
 func TestOutputDiscoverText(t *testing.T) {

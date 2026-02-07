@@ -116,6 +116,12 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	if isNew {
+		if err := storage.UpdateMetadata(wlt); err != nil {
+			return fmt.Errorf("persisting wallet metadata: %w", err)
+		}
+	}
+
 	// Register the address in UTXO store if new
 	//nolint:nestif // UTXO store operations require conditional nesting
 	if isNew {
@@ -220,16 +226,21 @@ func formatQRData(address string) string {
 
 // displayReceiveJSON shows the receiving address in JSON format.
 func displayReceiveJSON(cmd *cobra.Command, addr *wallet.Address, chainID chain.ID, label string, isNew bool) {
-	w := cmd.OutOrStdout()
-
-	outln(w, "{")
-	out(w, `  "chain": "%s",`+"\n", chainID)
-	out(w, `  "address": "%s",`+"\n", addr.Address)
-	out(w, `  "path": "%s",`+"\n", addr.Path)
-	out(w, `  "index": %d,`+"\n", addr.Index)
-	if label != "" {
-		out(w, `  "label": "%s",`+"\n", label)
+	payload := struct {
+		Chain   string `json:"chain"`
+		Address string `json:"address"`
+		Path    string `json:"path"`
+		Index   uint32 `json:"index"`
+		Label   string `json:"label,omitempty"`
+		IsNew   bool   `json:"is_new"`
+	}{
+		Chain:   string(chainID),
+		Address: addr.Address,
+		Path:    addr.Path,
+		Index:   addr.Index,
+		Label:   label,
+		IsNew:   isNew,
 	}
-	out(w, `  "is_new": %t`+"\n", isNew)
-	outln(w, "}")
+
+	_ = writeJSON(cmd.OutOrStdout(), payload)
 }

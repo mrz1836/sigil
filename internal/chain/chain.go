@@ -203,15 +203,15 @@ type SendRequest struct {
 
 // TransactionResult contains the outcome of a broadcast transaction.
 type TransactionResult struct {
-	Hash     string // Transaction hash
-	From     string // Sender address
-	To       string // Recipient address
-	Amount   string // Transferred amount (human-readable)
-	Token    string // Token symbol if applicable
-	Fee      string // Fee paid (human-readable)
-	GasUsed  uint64 // ETH-specific gas consumption
-	GasPrice string // ETH-specific gas price
-	Status   string // "pending" after broadcast
+	Hash     string `json:"hash"`                // Transaction hash
+	From     string `json:"from"`                // Sender address
+	To       string `json:"to"`                  // Recipient address
+	Amount   string `json:"amount"`              // Transferred amount (human-readable)
+	Token    string `json:"token,omitempty"`     // Token symbol if applicable
+	Fee      string `json:"fee"`                 // Fee paid (human-readable)
+	GasUsed  uint64 `json:"gas_used"`            // ETH-specific gas consumption
+	GasPrice string `json:"gas_price,omitempty"` // ETH-specific gas price
+	Status   string `json:"status"`              // "pending" after broadcast
 }
 
 // UTXO represents an unspent transaction output.

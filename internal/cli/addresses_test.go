@@ -419,6 +419,37 @@ func TestDisplayAddressesJSONStructure(t *testing.T) {
 	assert.True(t, addr.Used)
 }
 
+func TestDisplayAddressesJSON_Escaping(t *testing.T) {
+	addresses := []addressInfo{
+		{
+			Type:    "receive",
+			Index:   1,
+			Address: "1Addr\"Test",
+			Path:    "m/44'/236'/0'/0/1",
+			Label:   "line1\nline2 \"quoted\" \u2713",
+			ChainID: chain.BSV,
+		},
+	}
+
+	buf := new(bytes.Buffer)
+	cmd := &cobra.Command{}
+	cmd.SetOut(buf)
+
+	displayAddressesJSON(cmd, addresses)
+
+	var parsed struct {
+		Addresses []struct {
+			Address string `json:"address"`
+			Label   string `json:"label"`
+		} `json:"addresses"`
+	}
+	err := json.Unmarshal(buf.Bytes(), &parsed)
+	require.NoError(t, err)
+	require.Len(t, parsed.Addresses, 1)
+	assert.Equal(t, addresses[0].Address, parsed.Addresses[0].Address)
+	assert.Equal(t, "line1\nline2 \"quoted\" \u2713", parsed.Addresses[0].Label)
+}
+
 func TestAddressInfoStruct(t *testing.T) {
 	// Test that addressInfo correctly holds all fields
 	info := addressInfo{

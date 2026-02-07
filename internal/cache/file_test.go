@@ -93,6 +93,25 @@ func TestFileStorage(t *testing.T) {
 		_, err = os.Stat(nestedPath)
 		require.NoError(t, err)
 	})
+
+	t.Run("Corrupt cache is renamed and returns ErrCorruptCache", func(t *testing.T) {
+		corruptPath := filepath.Join(tmpDir, "corrupt.json")
+		storage := NewFileStorage(corruptPath)
+
+		require.NoError(t, os.WriteFile(corruptPath, []byte("{invalid json"), 0o640)) //nolint:gosec // G306: Test file needs matching cache perms
+
+		loaded, err := storage.Load()
+		require.ErrorIs(t, err, ErrCorruptCache)
+		assert.NotNil(t, loaded)
+		assert.Equal(t, 0, loaded.Size())
+
+		matches, globErr := filepath.Glob(corruptPath + ".corrupt.*")
+		require.NoError(t, globErr)
+		require.Len(t, matches, 1)
+
+		_, statErr := os.Stat(corruptPath)
+		assert.True(t, os.IsNotExist(statErr))
+	})
 }
 
 func TestBalanceCache(t *testing.T) {

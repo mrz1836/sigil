@@ -2,9 +2,11 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -14,6 +16,9 @@ const (
 	// cacheDirPermissions is the permission mode for cache directories.
 	cacheDirPermissions = 0o750
 )
+
+// ErrCorruptCache indicates the cache file is malformed JSON.
+var ErrCorruptCache = errors.New("cache file is corrupted")
 
 // FileStorage implements cache persistence using the filesystem.
 type FileStorage struct {
@@ -64,8 +69,11 @@ func (s *FileStorage) Load() (*BalanceCache, error) {
 	// Unmarshal JSON
 	var cache BalanceCache
 	if err := json.Unmarshal(data, &cache); err != nil {
-		// If JSON is corrupted, return empty cache (intentionally ignoring parse error)
-		return NewBalanceCache(), nil //nolint:nilerr // intentionally ignoring corrupted cache
+		corruptPath := fmt.Sprintf("%s.corrupt.%d", s.path, time.Now().UTC().UnixNano())
+		if renameErr := os.Rename(s.path, corruptPath); renameErr != nil {
+			return NewBalanceCache(), fmt.Errorf("%w: %w (also failed to move file: %w)", ErrCorruptCache, err, renameErr)
+		}
+		return NewBalanceCache(), fmt.Errorf("%w: %w (moved to %s)", ErrCorruptCache, err, corruptPath)
 	}
 
 	// Ensure map is initialized

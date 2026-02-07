@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mrz1836/sigil/internal/fileutil"
 	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
@@ -137,7 +138,7 @@ func (m *FileManager) StartSession(wallet string, seed []byte, ttl time.Duration
 	}
 
 	sessionPath := m.sessionPath(wallet)
-	if writeErr := os.WriteFile(sessionPath, data, sessionFilePermissions); writeErr != nil {
+	if writeErr := fileutil.WriteAtomic(sessionPath, data, sessionFilePermissions); writeErr != nil {
 		_ = m.keyring.Delete(ServiceName, keyringKey)
 		return fmt.Errorf("writing session file: %w", writeErr)
 	}

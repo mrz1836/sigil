@@ -231,6 +231,28 @@ func TestManager_StartSession(t *testing.T) {
 			t.Errorf("Session TTL = %v, expected > 0 and <= %v (clamped)", ttl, MaxTTL)
 		}
 	})
+
+	t.Run("atomic write failure cleans keyring entry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mock := NewMockKeyring()
+		m := NewManager(tmpDir, mock)
+
+		if chmodErr := os.Chmod(tmpDir, 0o500); chmodErr != nil { //nolint:gosec // G302: Test uses intentionally restrictive perms
+			t.Fatalf("Failed to chmod test directory: %v", chmodErr)
+		}
+		defer func() {
+			_ = os.Chmod(tmpDir, 0o700) //nolint:gosec // G302: Restoring perms in test cleanup
+		}()
+
+		seed := []byte("test-seed-data-32-bytes-long!!!!")
+		err := m.StartSession("main", seed, 15*time.Minute)
+		if err == nil {
+			t.Fatal("expected StartSession() to fail when session file cannot be written")
+		}
+		if mock.delCt < 1 {
+			t.Error("expected keyring delete cleanup on session write failure")
+		}
+	})
 }
 
 //nolint:gocognit,gocyclo // Test functions with multiple subtests are inherently complex

@@ -257,6 +257,24 @@ func TestService_Create_StorageLoadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "loading wallet")
 }
 
+func TestService_Create_WriteFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	w, seed := testWallet(t)
+	storage := &mockStorage{wallet: w, seed: seed}
+	svc := backup.NewService(tmpDir, storage)
+
+	require.NoError(t, os.Chmod(tmpDir, 0o500)) //nolint:gosec // G302: Test uses intentionally restrictive perms
+	defer func() {
+		_ = os.Chmod(tmpDir, 0o700) //nolint:gosec // G302: Restoring perms in test cleanup
+	}()
+
+	_, _, err := svc.Create("testwallet", []byte("test-password-123")) // gitleaks:allow
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writing backup")
+}
+
 func TestService_Verify(t *testing.T) {
 	t.Parallel()
 

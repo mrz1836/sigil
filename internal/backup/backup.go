@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mrz1836/sigil/internal/fileutil"
 	"github.com/mrz1836/sigil/internal/sigilcrypto"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -223,7 +224,7 @@ func (s *Service) writeBackup(backup *Backup) (string, error) {
 	}
 
 	// Write file
-	if err := os.WriteFile(backupPath, data, BackupFilePermissions); err != nil {
+	if err := fileutil.WriteAtomic(backupPath, data, BackupFilePermissions); err != nil {
 		return "", fmt.Errorf("writing backup file: %w", err)
 	}
 

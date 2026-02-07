@@ -129,12 +129,13 @@ func TestQuickstartWorkflow(t *testing.T) {
 	})
 
 	// Step 3: Config show
+	// In non-TTY (piped stdout), auto-format outputs JSON.
 	t.Run("config show", func(t *testing.T) {
 		stdout, _, exitCode := runSigil(t, "config", "show")
 		if exitCode != 0 {
 			t.Fatalf("config show failed with exit code %d", exitCode)
 		}
-		if !strings.Contains(stdout, "version:") {
+		if !strings.Contains(stdout, `"version"`) {
 			t.Errorf("expected config output with version, got: %s", stdout)
 		}
 	})
@@ -260,14 +261,14 @@ func TestJSONOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("config show as yaml", func(t *testing.T) {
+	t.Run("config show json", func(t *testing.T) {
 		stdout, _, exitCode := runSigil(t, "config", "show")
 		if exitCode != 0 {
 			t.Fatalf("config show failed with exit code %d", exitCode)
 		}
-		// Config show outputs YAML by default
-		if !strings.Contains(stdout, "version:") || !strings.Contains(stdout, "networks:") {
-			t.Errorf("config show should contain YAML config, got: %s", stdout)
+		// In non-TTY (piped stdout), auto-format outputs JSON.
+		if !strings.Contains(stdout, `"version"`) || !strings.Contains(stdout, `"networks"`) {
+			t.Errorf("config show should contain config fields, got: %s", stdout)
 		}
 	})
 }

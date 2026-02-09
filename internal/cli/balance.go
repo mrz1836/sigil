@@ -30,6 +30,8 @@ var (
 	balanceWalletName string
 	// balanceChainFilter filters by chain (eth, bsv).
 	balanceChainFilter string
+	// balanceRefresh forces a fresh fetch, ignoring the cache.
+	balanceRefresh bool
 )
 
 // balanceCmd is the parent command for balance operations.
@@ -51,24 +53,27 @@ var balanceShowCmd = &cobra.Command{
 
 Displays ETH, USDC (on Ethereum), and BSV balances for all addresses.
 Supports filtering by chain with the --chain flag.
+Use --refresh to bypass the cache and force a fresh fetch from the network.
 
 Example:
   sigil balance show --wallet main
   sigil balance show --wallet main --chain eth
+  sigil balance show --wallet main --refresh
   sigil balance show --wallet main -o json`,
 	RunE: runBalanceShow,
 }
 
 // BalanceResult represents a single balance entry.
 type BalanceResult struct {
-	Chain    string `json:"chain"`
-	Address  string `json:"address"`
-	Balance  string `json:"balance"`
-	Symbol   string `json:"symbol"`
-	Token    string `json:"token,omitempty"`
-	Decimals int    `json:"decimals"`
-	Stale    bool   `json:"stale,omitempty"`
-	CacheAge string `json:"cache_age,omitempty"`
+	Chain       string `json:"chain"`
+	Address     string `json:"address"`
+	Balance     string `json:"balance"`
+	Unconfirmed string `json:"unconfirmed,omitempty"`
+	Symbol      string `json:"symbol"`
+	Token       string `json:"token,omitempty"`
+	Decimals    int    `json:"decimals"`
+	Stale       bool   `json:"stale,omitempty"`
+	CacheAge    string `json:"cache_age,omitempty"`
 }
 
 // BalanceShowResponse is the full response for balance show command.
@@ -86,6 +91,7 @@ func init() {
 
 	balanceShowCmd.Flags().StringVar(&balanceWalletName, "wallet", "", "wallet name (required)")
 	balanceShowCmd.Flags().StringVar(&balanceChainFilter, "chain", "", "filter by chain (eth, bsv)")
+	balanceShowCmd.Flags().BoolVar(&balanceRefresh, "refresh", false, "force fresh fetch, ignore cache")
 
 	_ = balanceShowCmd.MarkFlagRequired("wallet")
 }
@@ -106,17 +112,23 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	// Load or create cache
 	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
 	cacheStorage := cache.NewFileStorage(cachePath)
-	balanceCache, err := cacheStorage.Load()
-	if err != nil {
-		if errors.Is(err, cache.ErrCorruptCache) {
-			if cmdCtx.Log != nil {
-				cmdCtx.Log.Error("balance cache file is corrupted: %v", err)
-			}
-			outln(cmd.ErrOrStderr(), "Warning: balance cache was corrupted and has been reset.")
-		} else if cmdCtx.Log != nil {
-			cmdCtx.Log.Error("failed to load balance cache: %v", err)
-		}
+	var balanceCache *cache.BalanceCache
+	if balanceRefresh {
+		// --refresh: start with a clean cache so every address hits the network.
 		balanceCache = cache.NewBalanceCache()
+	} else {
+		balanceCache, err = cacheStorage.Load()
+		if err != nil {
+			if errors.Is(err, cache.ErrCorruptCache) {
+				if cmdCtx.Log != nil {
+					cmdCtx.Log.Error("balance cache file is corrupted: %v", err)
+				}
+				outln(cmd.ErrOrStderr(), "Warning: balance cache was corrupted and has been reset.")
+			} else if cmdCtx.Log != nil {
+				cmdCtx.Log.Error("failed to load balance cache: %v", err)
+			}
+			balanceCache = cache.NewBalanceCache()
+		}
 	}
 
 	// Fetch balances with overall timeout
@@ -185,13 +197,14 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 			for _, bal := range balances {
 				result := BalanceResult{
-					Chain:    string(bal.Chain),
-					Address:  bal.Address,
-					Balance:  bal.Balance,
-					Symbol:   bal.Symbol,
-					Token:    bal.Token,
-					Decimals: bal.Decimals,
-					Stale:    stale,
+					Chain:       string(bal.Chain),
+					Address:     bal.Address,
+					Balance:     bal.Balance,
+					Unconfirmed: bal.Unconfirmed,
+					Symbol:      bal.Symbol,
+					Token:       bal.Token,
+					Decimals:    bal.Decimals,
+					Stale:       stale,
 				}
 				if stale {
 					result.CacheAge = formatCacheAge(bal.UpdatedAt)
@@ -375,6 +388,11 @@ func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.B
 
 // fetchETHBalancesViaEtherscan fetches ETH and USDC balances using the Etherscan API.
 func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCache *cache.BalanceCache, apiKey string) ([]cache.BalanceCacheEntry, bool, error) {
+	// Trust very fresh cache entries (set by a recent tx send).
+	if _, exists, age := balanceCache.Get(chain.ETH, address, ""); exists && age < postSendCacheTrust {
+		return getCachedETHBalances(address, balanceCache)
+	}
+
 	var entries []cache.BalanceCacheEntry
 
 	client, err := etherscan.NewClient(apiKey, nil)
@@ -418,6 +436,11 @@ func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCa
 
 // fetchETHBalancesViaRPC fetches ETH and USDC balances using JSON-RPC.
 func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
+	// Trust very fresh cache entries (set by a recent tx send).
+	if _, exists, age := balanceCache.Get(chain.ETH, address, ""); exists && age < postSendCacheTrust {
+		return getCachedETHBalances(address, balanceCache)
+	}
+
 	var entries []cache.BalanceCacheEntry
 	var stale bool
 
@@ -442,13 +465,20 @@ func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *c
 		return nil, true, err
 	}
 
+	// Format unconfirmed (only set if non-zero)
+	var ethUnconfirmedStr string
+	if ethBalance.Unconfirmed != nil && ethBalance.Unconfirmed.Sign() != 0 {
+		ethUnconfirmedStr = eth.FormatSignedBalanceAmount(ethBalance.Unconfirmed, ethBalance.Decimals)
+	}
+
 	// Store in cache
 	ethEntry := cache.BalanceCacheEntry{
-		Chain:    chain.ETH,
-		Address:  address,
-		Balance:  eth.FormatBalanceAmount(ethBalance.Amount, ethBalance.Decimals),
-		Symbol:   ethBalance.Symbol,
-		Decimals: ethBalance.Decimals,
+		Chain:       chain.ETH,
+		Address:     address,
+		Balance:     eth.FormatBalanceAmount(ethBalance.Amount, ethBalance.Decimals),
+		Unconfirmed: ethUnconfirmedStr,
+		Symbol:      ethBalance.Symbol,
+		Decimals:    ethBalance.Decimals,
 	}
 	balanceCache.Set(ethEntry)
 	entries = append(entries, ethEntry)
@@ -507,8 +537,19 @@ func getCachedETHBalances(address string, balanceCache *cache.BalanceCache) ([]c
 	return entries, stale, nil
 }
 
+// postSendCacheTrust is the duration after a send during which locally-computed
+// cached balances are trusted over network queries. This covers the window
+// where the blockchain indexer may not yet reflect the broadcast transaction.
+const postSendCacheTrust = 30 * time.Second
+
 // fetchBSVBalances fetches BSV balances.
 func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
+	// Trust very fresh cache entries (set by a recent tx send) over the
+	// network, which may not have indexed the transaction yet.
+	if entry, exists, age := balanceCache.Get(chain.BSV, address, ""); exists && age < postSendCacheTrust {
+		return []cache.BalanceCacheEntry{*entry}, false, nil
+	}
+
 	entries := make([]cache.BalanceCacheEntry, 0, 1)
 	var stale bool
 
@@ -521,13 +562,20 @@ func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.B
 		return getCachedBSVBalances(address, balanceCache)
 	}
 
+	// Format unconfirmed (only set if non-zero)
+	var unconfirmedStr string
+	if bsvBalance.Unconfirmed != nil && bsvBalance.Unconfirmed.Sign() != 0 {
+		unconfirmedStr = bsv.FormatSignedBalanceAmount(bsvBalance.Unconfirmed, bsvBalance.Decimals)
+	}
+
 	// Store in cache
 	entry := cache.BalanceCacheEntry{
-		Chain:    chain.BSV,
-		Address:  address,
-		Balance:  bsv.FormatBalanceAmount(bsvBalance.Amount, bsvBalance.Decimals),
-		Symbol:   bsvBalance.Symbol,
-		Decimals: bsvBalance.Decimals,
+		Chain:       chain.BSV,
+		Address:     address,
+		Balance:     bsv.FormatBalanceAmount(bsvBalance.Amount, bsvBalance.Decimals),
+		Unconfirmed: unconfirmedStr,
+		Symbol:      bsvBalance.Symbol,
+		Decimals:    bsvBalance.Decimals,
 	}
 	balanceCache.Set(entry)
 	entries = append(entries, entry)
@@ -585,6 +633,16 @@ func outputBalanceJSON(w io.Writer, response BalanceShowResponse) error {
 	return writeJSON(w, response)
 }
 
+// hasUnconfirmedData returns true if any balance entry has non-zero unconfirmed data.
+func hasUnconfirmedData(balances []BalanceResult) bool {
+	for _, bal := range balances {
+		if bal.Unconfirmed != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // outputBalanceText outputs balances in text table format.
 func outputBalanceText(w io.Writer, response BalanceShowResponse) {
 	outln(w, fmt.Sprintf("Balances for wallet: %s", response.Wallet))
@@ -600,19 +658,32 @@ func outputBalanceText(w io.Writer, response BalanceShowResponse) {
 		return
 	}
 
-	// Print table header
+	showUnconfirmed := hasUnconfirmedData(response.Balances)
+
+	if showUnconfirmed {
+		outputBalanceTableWide(w, response.Balances)
+	} else {
+		outputBalanceTableNarrow(w, response.Balances)
+	}
+
+	// Show staleness legend if any data is stale
+	for _, bal := range response.Balances {
+		if bal.Stale {
+			outln(w)
+			outln(w, "* Cached data (network unavailable)")
+			break
+		}
+	}
+}
+
+// outputBalanceTableNarrow renders the 4-column table (no unconfirmed data).
+func outputBalanceTableNarrow(w io.Writer, balances []BalanceResult) {
 	outln(w, "┌────────┬────────────────────────────────────────────┬──────────────────┬────────┐")
 	outln(w, "│ Chain  │ Address                                    │ Balance          │ Symbol │")
 	outln(w, "├────────┼────────────────────────────────────────────┼──────────────────┼────────┤")
 
-	for _, bal := range response.Balances {
-		// Truncate address if too long
-		addr := bal.Address
-		if len(addr) > 42 {
-			addr = addr[:20] + "..." + addr[len(addr)-17:]
-		}
-
-		// Format balance with staleness indicator
+	for _, bal := range balances {
+		addr := truncateAddress(bal.Address)
 		balanceStr := bal.Balance
 		if bal.Stale {
 			balanceStr += " *"
@@ -627,13 +698,42 @@ func outputBalanceText(w io.Writer, response BalanceShowResponse) {
 	}
 
 	outln(w, "└────────┴────────────────────────────────────────────┴──────────────────┴────────┘")
+}
 
-	// Show staleness legend if any data is stale
-	for _, bal := range response.Balances {
+// outputBalanceTableWide renders the 5-column table with unconfirmed data.
+func outputBalanceTableWide(w io.Writer, balances []BalanceResult) {
+	outln(w, "┌────────┬────────────────────────────────────────────┬──────────────────┬──────────────────┬────────┐")
+	outln(w, "│ Chain  │ Address                                    │ Confirmed        │ Unconfirmed      │ Symbol │")
+	outln(w, "├────────┼────────────────────────────────────────────┼──────────────────┼──────────────────┼────────┤")
+
+	for _, bal := range balances {
+		addr := truncateAddress(bal.Address)
+		balanceStr := bal.Balance
 		if bal.Stale {
-			outln(w)
-			outln(w, "* Cached data (network unavailable)")
-			break
+			balanceStr += " *"
 		}
+
+		unconfStr := "-"
+		if bal.Unconfirmed != "" {
+			unconfStr = bal.Unconfirmed
+		}
+
+		out(w, "│ %-6s │ %-42s │ %16s │ %16s │ %-6s │\n",
+			strings.ToUpper(bal.Chain),
+			addr,
+			balanceStr,
+			unconfStr,
+			bal.Symbol,
+		)
 	}
+
+	outln(w, "└────────┴────────────────────────────────────────────┴──────────────────┴──────────────────┴────────┘")
+}
+
+// truncateAddress shortens an address for table display.
+func truncateAddress(addr string) string {
+	if len(addr) > 42 {
+		return addr[:20] + "..." + addr[len(addr)-17:]
+	}
+	return addr
 }

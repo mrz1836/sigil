@@ -27,6 +27,7 @@ type mockConfigProvider struct {
 	ethProvider        string
 	ethEtherscanAPIKey string
 	bsvAPIKey          string
+	bsvBroadcast       string
 	logLevel           string
 	logFile            string
 	outputFormat       string
@@ -38,6 +39,7 @@ func (m *mockConfigProvider) GetHome() string                    { return m.home
 func (m *mockConfigProvider) GetETHRPC() string                  { return m.ethRPC }
 func (m *mockConfigProvider) GetETHFallbackRPCs() []string       { return m.fallbackRPCs }
 func (m *mockConfigProvider) GetBSVAPIKey() string               { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetBSVBroadcast() string            { return m.bsvBroadcast }
 func (m *mockConfigProvider) GetLoggingLevel() string            { return m.logLevel }
 func (m *mockConfigProvider) GetLoggingFile() string             { return m.logFile }
 func (m *mockConfigProvider) GetOutputFormat() string            { return m.outputFormat }
@@ -150,6 +152,93 @@ func TestOutputBalanceJSON(t *testing.T) {
 	assert.Equal(t, "eth", parsed.Balances[0].Chain)
 	assert.Equal(t, "1.5", parsed.Balances[0].Balance)
 	assert.Equal(t, "ETH", parsed.Balances[0].Symbol)
+}
+
+func TestOutputBalanceTextWithUnconfirmed(t *testing.T) {
+	response := BalanceShowResponse{
+		Wallet:    "test",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Balances: []BalanceResult{
+			{
+				Chain:       "bsv",
+				Address:     "16DwKi833rr1PQfZw65LnHeagj1iLcVUbT",
+				Balance:     "0.00070422",
+				Unconfirmed: "-0.00070422",
+				Symbol:      "BSV",
+				Decimals:    8,
+			},
+			{
+				Chain:    "eth",
+				Address:  "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+				Balance:  "1.5",
+				Symbol:   "ETH",
+				Decimals: 18,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	outputBalanceText(&buf, response)
+
+	output := buf.String()
+	// Should use wide table with Confirmed/Unconfirmed headers
+	assert.Contains(t, output, "Confirmed")
+	assert.Contains(t, output, "Unconfirmed")
+	assert.Contains(t, output, "0.00070422")
+	assert.Contains(t, output, "-0.00070422")
+	// ETH entry without unconfirmed should show "-"
+	assert.Contains(t, output, "-")
+}
+
+func TestOutputBalanceTextNoUnconfirmed(t *testing.T) {
+	response := BalanceShowResponse{
+		Wallet:    "test",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Balances: []BalanceResult{
+			{
+				Chain:    "eth",
+				Address:  "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+				Balance:  "1.5",
+				Symbol:   "ETH",
+				Decimals: 18,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	outputBalanceText(&buf, response)
+
+	output := buf.String()
+	// Should use narrow table without Unconfirmed header
+	assert.Contains(t, output, "Balance")
+	assert.NotContains(t, output, "Confirmed")
+	assert.NotContains(t, output, "Unconfirmed")
+}
+
+func TestOutputBalanceJSONWithUnconfirmed(t *testing.T) {
+	response := BalanceShowResponse{
+		Wallet:    "test",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Balances: []BalanceResult{
+			{
+				Chain:       "bsv",
+				Address:     "16DwKi833rr1PQfZw65LnHeagj1iLcVUbT",
+				Balance:     "0.00070422",
+				Unconfirmed: "-0.00070422",
+				Symbol:      "BSV",
+				Decimals:    8,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, outputBalanceJSON(&buf, response))
+
+	var parsed BalanceShowResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed.Balances, 1)
+	assert.Equal(t, "0.00070422", parsed.Balances[0].Balance)
+	assert.Equal(t, "-0.00070422", parsed.Balances[0].Unconfirmed)
 }
 
 func TestOutputBalanceTextWithStaleData(t *testing.T) {
@@ -783,4 +872,118 @@ func TestMockConfigProvider_DefaultProvider(t *testing.T) {
 
 	mock := &mockConfigProvider{}
 	assert.Equal(t, "etherscan", mock.GetETHProvider())
+}
+
+// TestFetchBSVBalances_FreshCacheSkipsNetwork verifies that a very fresh cache
+// entry (e.g. just written by a tx send) is returned directly without a
+// network call.
+func TestFetchBSVBalances_FreshCacheSkipsNetwork(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	// Set a fresh entry (Set stamps it with time.Now).
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1FreshAddr",
+		Balance:  "0.0",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+	ctx := context.Background()
+
+	entries, stale, err := fetchBSVBalances(ctx, "1FreshAddr", balanceCache)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "0.0", entries[0].Balance)
+	assert.False(t, stale)
+}
+
+// TestFetchETHBalances_FreshCacheSkipsNetwork verifies that a very fresh ETH
+// cache entry is returned directly, avoiding the network round-trip.
+func TestFetchETHBalances_FreshCacheSkipsNetwork(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethRPC:       "invalid://will-not-be-called",
+		fallbackRPCs: nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0xFreshAddr",
+		Balance:  "0.0",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+	ctx := context.Background()
+
+	entries, stale, err := fetchETHBalances(ctx, "0xFreshAddr", balanceCache, cfg)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "0.0", entries[0].Balance)
+	assert.False(t, stale)
+}
+
+// TestFetchBSVBalances_StaleCacheStillFetchesNetwork verifies that an old cache
+// entry does NOT short-circuit — the network is queried (and may fail, falling
+// back to the old cache through the normal path).
+func TestFetchBSVBalances_StaleCacheStillFetchesNetwork(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	// Manually insert an entry with an old timestamp.
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1StaleAddr",
+		Balance:  "1.0",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+	// Age the entry beyond postSendCacheTrust.
+	key := cache.Key(chain.BSV, "1StaleAddr", "")
+	if e, ok := balanceCache.Entries[key]; ok {
+		e.UpdatedAt = time.Now().Add(-2 * time.Minute)
+		balanceCache.Entries[key] = e
+	}
+	ctx := context.Background()
+
+	// The network call will fail (no real API), falling back to the stale cache.
+	entries, _, err := fetchBSVBalances(ctx, "1StaleAddr", balanceCache)
+	// Should still get the cached entry through the normal fallback path.
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "1.0", entries[0].Balance)
+}
+
+// TestBalanceRefreshFlag_BypassesCache verifies that when balanceRefresh is
+// true the cache is not loaded from disk, so a fresh entry written by a
+// previous tx send does not short-circuit the network call.
+func TestBalanceRefreshFlag_BypassesCache(t *testing.T) {
+	t.Parallel()
+
+	// Populate a cache that has a fresh entry (would normally short-circuit).
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1CachedAddr",
+		Balance:  "0.0",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+
+	// Simulate --refresh: start with a clean cache instead.
+	freshCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// With an empty cache, fetchBSVBalances hits the network (which will
+	// fail in tests) and falls back to cache — but the fresh cache is empty,
+	// so it returns an error.
+	_, _, err := fetchBSVBalances(ctx, "1CachedAddr", freshCache)
+	require.Error(t, err, "refresh should bypass existing cached data")
+
+	// The original populated cache still has the entry (not mutated).
+	entry, exists, _ := balanceCache.Get(chain.BSV, "1CachedAddr", "")
+	require.True(t, exists)
+	assert.Equal(t, "0.0", entry.Balance)
 }

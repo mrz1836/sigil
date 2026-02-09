@@ -191,15 +191,20 @@ type UTXOChain interface {
 
 // SendRequest contains parameters for sending a transaction.
 type SendRequest struct {
-	From          string   // Sender address
+	From          string   // Sender address (primary/display for multi-address sends)
 	To            string   // Recipient address
 	Amount        *big.Int // Value in smallest units
-	PrivateKey    []byte   // Signing key (will be zeroed after use)
+	PrivateKey    []byte   // Signing key for single-address sends (will be zeroed after use)
 	Token         string   // ERC-20 token address (ETH only, empty for native)
 	GasLimit      uint64   // Optional gas limit override (ETH only)
 	FeeRate       uint64   // Optional fee rate override (satoshis per byte)
 	ChangeAddress string   // Optional change address (BSV only, defaults to From)
 	SweepAll      bool     // When true, send maximum amount minus fees (no change output)
+
+	// Multi-address fields (BSV only). When UTXOs is non-nil, Client.Send
+	// uses these pre-fetched UTXOs instead of fetching for a single address.
+	UTXOs       []UTXO            // Pre-fetched UTXOs from multiple addresses
+	PrivateKeys map[string][]byte // Address → private key map for per-input signing
 }
 
 // TransactionResult contains the outcome of a broadcast transaction.

@@ -812,3 +812,387 @@ func TestSend_ContextCancellation(t *testing.T) {
 	require.Error(t, err)
 	// Should fail during UTXO fetch due to canceled context
 }
+
+// TestBuildRawTransactionMultiKey tests transaction building with per-input signing keys.
+//
+//nolint:gocognit // Test function with multiple subtests
+func TestBuildRawTransactionMultiKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("signs inputs from two different addresses", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		utxos := makeUTXOsMultiAddr(
+			[]testKeyPair{kp1, kp2},
+			[][]uint64{{50000}, {60000}},
+		)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		require.NoError(t, builder.AddOutput(validAddress2(), 100000))
+
+		keyMap := map[string][]byte{
+			kp1.Address: kp1.PrivateKey,
+			kp2.Address: kp2.PrivateKey,
+		}
+
+		rawTx, err := BuildRawTransactionMultiKey(builder, keyMap)
+		require.NoError(t, err)
+		assert.NotEmpty(t, rawTx)
+	})
+
+	t.Run("single address in keyMap works fine", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 30000, 40000)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		require.NoError(t, builder.AddOutput(validAddress2(), 50000))
+
+		keyMap := map[string][]byte{
+			kp.Address: kp.PrivateKey,
+		}
+
+		rawTx, err := BuildRawTransactionMultiKey(builder, keyMap)
+		require.NoError(t, err)
+		assert.NotEmpty(t, rawTx)
+	})
+
+	t.Run("missing key for address returns error", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		// Create UTXOs from both addresses but only provide key for kp1
+		utxos := makeUTXOsMultiAddr(
+			[]testKeyPair{kp1, kp2},
+			[][]uint64{{50000}, {60000}},
+		)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		require.NoError(t, builder.AddOutput(validAddress2(), 100000))
+
+		keyMap := map[string][]byte{
+			kp1.Address: kp1.PrivateKey, // Missing kp2 key
+		}
+
+		_, err := BuildRawTransactionMultiKey(builder, keyMap)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no private key for address")
+	})
+
+	t.Run("empty keyMap returns error", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 50000)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		require.NoError(t, builder.AddOutput(validAddress2(), 40000))
+
+		_, err := BuildRawTransactionMultiKey(builder, map[string][]byte{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no private keys provided")
+	})
+
+	t.Run("nil builder returns error", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		keyMap := map[string][]byte{kp.Address: kp.PrivateKey}
+
+		_, err := BuildRawTransactionMultiKey(nil, keyMap)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrNoInputs)
+	})
+
+	t.Run("no outputs returns error", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 50000)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		// No outputs added
+
+		keyMap := map[string][]byte{kp.Address: kp.PrivateKey}
+
+		_, err := BuildRawTransactionMultiKey(builder, keyMap)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrNoOutputs)
+	})
+
+	t.Run("invalid key length returns error", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 50000)
+
+		builder := NewTxBuilder()
+		for _, u := range utxos {
+			require.NoError(t, builder.AddInput(u))
+		}
+		require.NoError(t, builder.AddOutput(validAddress2(), 40000))
+
+		keyMap := map[string][]byte{
+			kp.Address: make([]byte, 16), // Wrong length
+		}
+
+		_, err := BuildRawTransactionMultiKey(builder, keyMap)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expected 32 bytes")
+	})
+}
+
+// TestSend_MultiAddressUTXOs tests that Client.Send uses pre-fetched UTXOs from multiple addresses.
+func TestSend_MultiAddressUTXOs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sweep with pre-fetched UTXOs from two addresses", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		// Server only needed for broadcast (UTXOs are pre-fetched)
+		server := mockMultiRouteServer(mockServerConfig{
+			BroadcastTxHash: "multi_addr_sweep_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		// Pre-fetch UTXOs from both addresses
+		preUTXOs := []chain.UTXO{
+			{TxID: testTxID(1), Vout: 0, Amount: 50000, Address: kp1.Address},
+			{TxID: testTxID(2), Vout: 0, Amount: 70000, Address: kp2.Address},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:     kp1.Address,
+			To:       validAddress2(),
+			SweepAll: true,
+			PrivateKeys: map[string][]byte{
+				kp1.Address: kp1.PrivateKey,
+				kp2.Address: kp2.PrivateKey,
+			},
+			UTXOs: preUTXOs,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "multi_addr_sweep_tx", result.Hash)
+
+		// Verify the full 120k (minus fee) was swept
+		totalInput := uint64(120000)
+		expectedFee := EstimateFeeForTx(2, 1, DefaultFeeRate)
+		expectedAmount := totalInput - expectedFee
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+	})
+
+	t.Run("normal send with pre-fetched UTXOs from multiple addresses", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		server := mockMultiRouteServer(mockServerConfig{
+			BroadcastTxHash: "multi_addr_normal_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		// Pre-fetch UTXOs: first address has 30k, second has 40k
+		preUTXOs := []chain.UTXO{
+			{TxID: testTxID(1), Vout: 0, Amount: 30000, Address: kp1.Address},
+			{TxID: testTxID(2), Vout: 0, Amount: 40000, Address: kp2.Address},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:   kp1.Address,
+			To:     validAddress2(),
+			Amount: big.NewInt(50000), // Needs UTXOs from both addresses
+			PrivateKeys: map[string][]byte{
+				kp1.Address: kp1.PrivateKey,
+				kp2.Address: kp2.PrivateKey,
+			},
+			UTXOs: preUTXOs,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "multi_addr_normal_tx", result.Hash)
+	})
+
+	t.Run("pre-fetched UTXOs with no matching key fails", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		server := mockMultiRouteServer(mockServerConfig{
+			BroadcastTxHash: "should_not_reach",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		// UTXOs from kp2 but only kp1 key provided
+		preUTXOs := []chain.UTXO{
+			{TxID: testTxID(1), Vout: 0, Amount: 50000, Address: kp2.Address},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:     kp1.Address,
+			To:       validAddress2(),
+			SweepAll: true,
+			PrivateKeys: map[string][]byte{
+				kp1.Address: kp1.PrivateKey, // Missing kp2's key
+			},
+			UTXOs: preUTXOs,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no private key for address")
+	})
+
+	t.Run("private keys are zeroed after successful multi-address send", func(t *testing.T) {
+		t.Parallel()
+
+		kp1 := getTestKeyPair()
+		kp2 := getTestKeyPair2()
+
+		server := mockMultiRouteServer(mockServerConfig{
+			BroadcastTxHash: "zero_test_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		preUTXOs := []chain.UTXO{
+			{TxID: testTxID(1), Vout: 0, Amount: 50000, Address: kp1.Address},
+			{TxID: testTxID(2), Vout: 0, Amount: 50000, Address: kp2.Address},
+		}
+
+		keys := map[string][]byte{
+			kp1.Address: kp1.PrivateKey,
+			kp2.Address: kp2.PrivateKey,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:        kp1.Address,
+			To:          validAddress2(),
+			SweepAll:    true,
+			PrivateKeys: keys,
+			UTXOs:       preUTXOs,
+		})
+
+		require.NoError(t, err)
+
+		// Both keys should be zeroed
+		for addr, key := range keys {
+			allZero := true
+			for _, b := range key {
+				if b != 0 {
+					allZero = false
+					break
+				}
+			}
+			assert.True(t, allZero, "key for %s should be zeroed after send", addr)
+		}
+	})
+}
+
+// TestConvertChainUTXOs tests the chain.UTXO to bsv.UTXO conversion.
+func TestConvertChainUTXOs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("converts all fields correctly", func(t *testing.T) {
+		t.Parallel()
+
+		input := []chain.UTXO{
+			{
+				TxID:          "abc123",
+				Vout:          1,
+				Amount:        50000,
+				ScriptPubKey:  "76a914...",
+				Address:       "1Addr1",
+				Confirmations: 10,
+			},
+			{
+				TxID:          "def456",
+				Vout:          0,
+				Amount:        30000,
+				ScriptPubKey:  "76a914...",
+				Address:       "1Addr2",
+				Confirmations: 5,
+			},
+		}
+
+		result := convertChainUTXOs(input)
+
+		require.Len(t, result, 2)
+		assert.Equal(t, "abc123", result[0].TxID)
+		assert.Equal(t, uint32(1), result[0].Vout)
+		assert.Equal(t, uint64(50000), result[0].Amount)
+		assert.Equal(t, "1Addr1", result[0].Address)
+		assert.Equal(t, uint32(10), result[0].Confirmations)
+
+		assert.Equal(t, "def456", result[1].TxID)
+		assert.Equal(t, "1Addr2", result[1].Address)
+	})
+
+	t.Run("empty input returns empty slice", func(t *testing.T) {
+		t.Parallel()
+
+		result := convertChainUTXOs([]chain.UTXO{})
+		assert.Empty(t, result)
+	})
+
+	t.Run("nil input returns empty slice", func(t *testing.T) {
+		t.Parallel()
+
+		result := convertChainUTXOs(nil)
+		assert.Empty(t, result)
+	})
+}

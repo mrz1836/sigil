@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
@@ -136,39 +137,19 @@ func mockMultiRouteServer(cfg mockServerConfig) *httptest.Server {
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte(cfg.BroadcastTxHash))
 
-		case strings.Contains(r.URL.Path, "/feeQuote"):
+		case strings.Contains(r.URL.Path, "/miner/fees"):
 			feeRate := cfg.FeeRate
 			if feeRate == 0 {
 				feeRate = DefaultFeeRate
 			}
-			payload := TAALPayload{
-				Fees: []struct {
-					FeeType   string `json:"feeType"`
-					MiningFee struct {
-						Satoshis int64 `json:"satoshis"`
-						Bytes    int64 `json:"bytes"`
-					} `json:"miningFee"`
-					RelayFee struct {
-						Satoshis int64 `json:"satoshis"`
-						Bytes    int64 `json:"bytes"`
-					} `json:"relayFee"`
-				}{
-					{
-						FeeType: "standard",
-						MiningFee: struct {
-							Satoshis int64 `json:"satoshis"`
-							Bytes    int64 `json:"bytes"`
-						}{
-							//nolint:gosec // Test code - safe conversion for test fee rates
-							Satoshis: int64(feeRate),
-							Bytes:    1000,
-						},
-					},
+			entries := []wocMinerFeeEntry{
+				{
+					Timestamp: time.Now().Unix(),
+					Name:      "test_miner",
+					FeeRate:   float64(feeRate),
 				},
 			}
-			payloadBytes, _ := json.Marshal(payload)
-			resp := TAALFeeQuoteResponse{Payload: string(payloadBytes)}
-			_ = json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(entries)
 
 		default:
 			http.Error(w, "not found", http.StatusNotFound)

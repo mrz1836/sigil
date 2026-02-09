@@ -18,51 +18,17 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("successful API response", func(t *testing.T) {
 		t.Parallel()
 
-		payload := TAALPayload{
-			Fees: []struct {
-				FeeType   string `json:"feeType"`
-				MiningFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"miningFee"`
-				RelayFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"relayFee"`
-			}{
-				{
-					FeeType: "standard",
-					MiningFee: struct {
-						Satoshis int64 `json:"satoshis"`
-						Bytes    int64 `json:"bytes"`
-					}{
-						Satoshis: 500,
-						Bytes:    1000,
-					},
-				},
-			},
-		}
-		payloadBytes, err := json.Marshal(payload)
-		require.NoError(t, err)
-
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := TAALFeeQuoteResponse{
-				Payload: string(payloadBytes),
+			entries := []wocMinerFeeEntry{
+				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 400},
+				{Timestamp: time.Now().Unix(), Name: "MinerB", FeeRate: 600},
 			}
-			encErr := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, encErr)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(entries)
 		}))
 		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
-		// Override the TAAL URL for testing by creating a custom HTTP client
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -70,15 +36,62 @@ func TestGetFeeQuote(t *testing.T) {
 		quote, err := client.GetFeeQuote(ctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, "taal", quote.Source)
-		// 500 satoshis * 1000 / 1000 bytes = 500 sat/KB
+		assert.Equal(t, "whatsonchain", quote.Source)
+		// Average of 400 and 600 = 500 sat/KB
 		assert.Equal(t, uint64(500), quote.StandardRate)
+	})
+
+	t.Run("single miner response", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			entries := []wocMinerFeeEntry{
+				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 236},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(entries)
+		}))
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+
+		assert.Equal(t, "whatsonchain", quote.Source)
+		assert.Equal(t, uint64(236), quote.StandardRate)
+	})
+
+	t.Run("fractional fee rate rounds up", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			entries := []wocMinerFeeEntry{
+				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 10.5},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(entries)
+		}))
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+
+		// 10.5 rounds up to 11, but 11 < MinFeeRate (50), so clamped to 50
+		assert.Equal(t, uint64(MinFeeRate), quote.StandardRate)
 	})
 
 	t.Run("network error returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a client with a transport that always fails
 		client := NewClient(nil)
 		client.httpClient = &http.Client{
 			Transport: &failingTransport{},
@@ -102,12 +115,7 @@ func TestGetFeeQuote(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -126,12 +134,7 @@ func TestGetFeeQuote(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -142,24 +145,16 @@ func TestGetFeeQuote(t *testing.T) {
 		assert.Equal(t, "default", quote.Source)
 	})
 
-	t.Run("invalid payload JSON returns default fee quote", func(t *testing.T) {
+	t.Run("empty array returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := TAALFeeQuoteResponse{
-				Payload: "not valid json payload",
-			}
-			encErr := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, encErr)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
 		}))
 		defer server.Close()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -170,51 +165,19 @@ func TestGetFeeQuote(t *testing.T) {
 		assert.Equal(t, "default", quote.Source)
 	})
 
-	t.Run("fee rate of zero uses minimum", func(t *testing.T) {
+	t.Run("fee rate below minimum uses minimum", func(t *testing.T) {
 		t.Parallel()
 
-		payload := TAALPayload{
-			Fees: []struct {
-				FeeType   string `json:"feeType"`
-				MiningFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"miningFee"`
-				RelayFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"relayFee"`
-			}{
-				{
-					FeeType: "standard",
-					MiningFee: struct {
-						Satoshis int64 `json:"satoshis"`
-						Bytes    int64 `json:"bytes"`
-					}{
-						Satoshis: 0,
-						Bytes:    1000,
-					},
-				},
-			},
-		}
-		payloadBytes, err := json.Marshal(payload)
-		require.NoError(t, err)
-
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := TAALFeeQuoteResponse{
-				Payload: string(payloadBytes),
+			entries := []wocMinerFeeEntry{
+				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 1.0},
 			}
-			encErr := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, encErr)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(entries)
 		}))
 		defer server.Close()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -224,18 +187,6 @@ func TestGetFeeQuote(t *testing.T) {
 
 		assert.Equal(t, uint64(MinFeeRate), quote.StandardRate)
 	})
-}
-
-// feeTestTransport redirects all requests to the test server.
-type feeTestTransport struct {
-	server *httptest.Server
-}
-
-func (t *feeTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Redirect to test server
-	req.URL.Scheme = "http"
-	req.URL.Host = t.server.Listener.Addr().String()
-	return http.DefaultTransport.RoundTrip(req)
 }
 
 // failingTransport always returns an error.
@@ -379,13 +330,13 @@ func TestEstimateFeeForTx(t *testing.T) {
 			expected:   1044, // (522*2000+999)/1000 = 1044
 		},
 
-		// Minimum fee (10 sat/KB - BSV standard)
+		// Minimum fee (50 sat/KB)
 		{
 			name:       "minimum fee rate",
 			numInputs:  1,
 			numOutputs: 1,
 			feeRate:    MinFeeRate,
-			expected:   2, // (192*10+999)/1000 = 2919/1000 = 2
+			expected:   10, // (192*50+999)/1000 = 10599/1000 = 10
 		},
 
 		// Maximum reasonable fee rate
@@ -470,48 +421,16 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("returns fee based on quote", func(t *testing.T) {
 		t.Parallel()
 
-		payload := TAALPayload{
-			Fees: []struct {
-				FeeType   string `json:"feeType"`
-				MiningFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"miningFee"`
-				RelayFee struct {
-					Satoshis int64 `json:"satoshis"`
-					Bytes    int64 `json:"bytes"`
-				} `json:"relayFee"`
-			}{
-				{
-					FeeType: "standard",
-					MiningFee: struct {
-						Satoshis int64 `json:"satoshis"`
-						Bytes    int64 `json:"bytes"`
-					}{
-						Satoshis: 2,
-						Bytes:    1,
-					},
-				},
-			},
-		}
-		payloadBytes, err := json.Marshal(payload)
-		require.NoError(t, err)
-
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := TAALFeeQuoteResponse{
-				Payload: string(payloadBytes),
+			entries := []wocMinerFeeEntry{
+				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 2000},
 			}
-			encErr := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, encErr)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(entries)
 		}))
 		defer server.Close()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &feeTestTransport{
-				server: server,
-			},
-		}
+		client := NewClient(&ClientOptions{BaseURL: server.URL})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -519,7 +438,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 100000000) // 1 BSV
 		require.NoError(t, err)
 
-		// Fee should be tx size (1 input, 2 outputs) * fee rate 2000 sat/KB (2 sat/byte)
+		// Fee should be tx size (1 input, 2 outputs) * fee rate 2000 sat/KB
 		expectedSize := uint64(TxOverhead + P2PKHInputSize + 2*P2PKHOutputSize) // 226
 		expectedFee := (expectedSize*2000 + 999) / 1000                         // 452
 		assert.Equal(t, expectedFee, fee)
@@ -539,9 +458,9 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 100000000) // 1 BSV
 		require.NoError(t, err)
 
-		// Default fee rate is 50 sat/KB (0.05 sat/byte)
+		// Default fee rate is 250 sat/KB (0.25 sat/byte)
 		expectedSize := uint64(TxOverhead + P2PKHInputSize + 2*P2PKHOutputSize) // 226
-		expectedFee := (expectedSize*DefaultFeeRate + 999) / 1000               // 12
+		expectedFee := (expectedSize*DefaultFeeRate + 999) / 1000               // 57
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -644,7 +563,7 @@ func TestValidateFeeRate(t *testing.T) {
 		{"way above maximum returns maximum", 1000000, MaxFeeRate},
 		{"within range returns same value", 100, 100},
 		{"mid-range value", 25000, 25000},
-		{"typical BSV rate - 50 sat/KB (0.05 sat/byte)", 50, 50},
+		{"minimum rate - 50 sat/KB (0.05 sat/byte)", 50, 50},
 		{"standard rate - 1000 sat/KB (1 sat/byte)", 1000, 1000},
 		{"high rate - 10000 sat/KB (10 sat/byte)", 10000, 10000},
 	}
@@ -740,8 +659,8 @@ func TestFeeRateBoundaries(t *testing.T) {
 	}{
 		{"zero clamps to minimum", 0, MinFeeRate},
 		{"5 clamps to minimum", 5, MinFeeRate},
-		{"10 stays at 10 (minimum)", 10, 10},
-		{"50 stays at 50 (default)", 50, 50},
+		{"10 clamps to minimum", 10, MinFeeRate},
+		{"50 stays at 50 (minimum)", 50, 50},
 		{"1000 stays at 1000", 1000, 1000},
 		{"25000 stays at 25000", 25000, 25000},
 		{"50000 stays at 50000 (maximum)", 50000, 50000},

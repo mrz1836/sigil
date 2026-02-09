@@ -379,18 +379,18 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 		{
 			name: "exact balance (input = output + fee)",
 			setupFunc: func(b *TxBuilder) {
-				// 1 input, 1 output: size = 10 + 148 + 34 = 192 bytes, fee = 10 satoshis (at 50 sat/KB)
+				// 1 input, 1 output: size = 10 + 148 + 34 = 192 bytes, fee = 48 satoshis (at 250 sat/KB)
 				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
-				_ = b.AddOutput(validAddress(), 100000-10) // Exactly covers fee
+				_ = b.AddOutput(validAddress(), 100000-48) // Exactly covers fee
 			},
 			wantErr: false,
 		},
 		{
 			name: "one satoshi short of covering fee",
 			setupFunc: func(b *TxBuilder) {
-				// Need 10 for fee (at 50 sat/KB), but only have 9 spare
+				// Need 48 for fee (at 250 sat/KB), but only have 47 spare
 				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
-				_ = b.AddOutput(validAddress(), 100000-9) // One satoshi short
+				_ = b.AddOutput(validAddress(), 100000-47) // One satoshi short
 			},
 			wantErr:    true,
 			errContain: "insufficient",
@@ -399,14 +399,14 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			name: "large tx with 100 inputs",
 			setupFunc: func(b *TxBuilder) {
 				// 100 inputs, 1 output: size = 10 + (100*148) + 34 = 14844 bytes
-				// Fee at 50 sat/KB = (14844*50+999)/1000 = 743 satoshis
+				// Fee at 250 sat/KB = (14844*250+999)/1000 = 3711 satoshis
 				for i := 0; i < 100; i++ {
 					_ = b.AddInput(makeUTXO(testTxID(i), 1000))
 				}
 				// Total input: 100 * 1000 = 100000
-				// Fee: 743
-				// Available for output: 100000 - 743 = 99257
-				_ = b.AddOutput(validAddress(), 99257)
+				// Fee: 3711
+				// Available for output: 100000 - 3711 = 96289
+				_ = b.AddOutput(validAddress(), 96289)
 			},
 			wantErr: false,
 		},
@@ -414,7 +414,7 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			name: "large tx with 100 outputs",
 			setupFunc: func(b *TxBuilder) {
 				// 1 input, 100 outputs: size = 10 + 148 + (100*34) = 3558 bytes
-				// Fee at 50 sat/KB = (3558*50+999)/1000 = 178 satoshis
+				// Fee at 250 sat/KB = (3558*250+999)/1000 = 890 satoshis
 				_ = b.AddInput(makeUTXO(testTxID(1), 5000000)) // 5M satoshis
 				dustLimit := chain.BSV.DustLimit()             // 1 satoshi for BSV
 				for i := 0; i < 100; i++ {
@@ -422,8 +422,8 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 					_ = b.AddOutput(validAddress(), dustLimit)
 				}
 				// Total output: 100 * 1 = 100 (BSV dust limit is 1 sat)
-				// Fee: 3558
-				// Needed: 100 + 3558 = 3658
+				// Fee: 890
+				// Needed: 100 + 890 = 990
 				// Have: 5000000 - plenty of room
 			},
 			wantErr: false,

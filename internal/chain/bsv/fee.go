@@ -4,23 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 )
 
 const (
 	// DefaultFeeRate is the default fee rate in satoshis per kilobyte (1000 bytes).
-	// 50 sat/KB = 0.05 sat/byte, matching the current BSV network status quo.
-	DefaultFeeRate = 50
+	// 250 sat/KB = 0.25 sat/byte, based on current BSV network fee environment.
+	DefaultFeeRate = 250
 
 	// MinFeeRate is the minimum fee rate in satoshis per kilobyte.
-	MinFeeRate = 10
+	MinFeeRate = 50
 
 	// MaxFeeRate is the maximum reasonable fee rate in satoshis per kilobyte.
 	MaxFeeRate = 50000
 
-	// TAALMerchantAPIURL is the URL for TAAL's Merchant API.
-	TAALMerchantAPIURL = "https://merchantapi.taal.com/mapi/feeQuote"
+	// feeWindowSeconds is the lookback window for miner fee stats (24 hours).
+	feeWindowSeconds = 86400
 
 	// P2PKHInputSize is the size of a P2PKH input in bytes.
 	P2PKHInputSize = 148
@@ -40,45 +41,37 @@ type FeeQuote struct {
 	// Data fee rate in satoshis per kilobyte.
 	DataRate uint64 `json:"data_rate"`
 
-	// Source of the fee quote (e.g., "taal", "gorillapool").
+	// Source of the fee quote (e.g., "whatsonchain", "default").
 	Source string `json:"source"`
 
 	// Timestamp when the quote was fetched.
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// TAALFeeQuoteResponse represents the TAAL Merchant API fee quote response.
-type TAALFeeQuoteResponse struct {
-	Payload string `json:"payload"`
+// wocMinerFeeEntry represents a single entry from the WhatsOnChain miner fees API.
+type wocMinerFeeEntry struct {
+	Timestamp int64   `json:"timestamp"`
+	Name      string  `json:"name"`
+	FeeRate   float64 `json:"fee_rate"` // sat/KB
 }
 
-// TAALPayload is the parsed payload from TAAL's response.
-type TAALPayload struct {
-	Fees []struct {
-		FeeType   string `json:"feeType"`
-		MiningFee struct {
-			Satoshis int64 `json:"satoshis"`
-			Bytes    int64 `json:"bytes"`
-		} `json:"miningFee"`
-		RelayFee struct {
-			Satoshis int64 `json:"satoshis"`
-			Bytes    int64 `json:"bytes"`
-		} `json:"relayFee"`
-	} `json:"fees"`
-}
-
-// GetFeeQuote fetches the current fee quote from TAAL Merchant API.
-//
-//nolint:gocognit,gocyclo // API response parsing is necessarily complex
+// GetFeeQuote fetches the current fee quote from WhatsOnChain's miner fees API.
+// Falls back to the default fee rate on any error.
 func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TAALMerchantAPIURL, nil)
+	now := time.Now().Unix()
+	from := now - feeWindowSeconds
+	url := fmt.Sprintf("%s/miner/fees?from=%d&to=%d", c.baseURL, from, now)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Fallback to default fee rate on network error
 		c.debug("fee API request failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
@@ -89,41 +82,36 @@ func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		// Fallback to default fee rate on error
 		c.debug("fee API returned status %d, using default rate", resp.StatusCode)
 		return defaultFeeQuote(), nil
 	}
 
-	var taalResp TAALFeeQuoteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&taalResp); err != nil {
+	var entries []wocMinerFeeEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
 		c.debug("fee API response decode failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
 
-	// Parse the payload
-	var payload TAALPayload
-	if err := json.Unmarshal([]byte(taalResp.Payload), &payload); err != nil {
-		c.debug("fee API payload parse failed, using default rate: %v", err)
+	if len(entries) == 0 {
+		c.debug("fee API returned no entries, using default rate")
 		return defaultFeeQuote(), nil
 	}
 
-	// Extract standard fee rate in sat/KB
-	var standardRate uint64 = DefaultFeeRate
-	for _, fee := range payload.Fees {
-		if fee.FeeType == "standard" && fee.MiningFee.Bytes > 0 {
-			//nolint:gosec // Safe: satoshis and bytes are always positive from API
-			standardRate = uint64(fee.MiningFee.Satoshis) * 1000 / uint64(fee.MiningFee.Bytes)
-			if standardRate < MinFeeRate {
-				standardRate = MinFeeRate
-			}
-			break
-		}
+	// Calculate average fee rate across all miners
+	var total float64
+	for _, entry := range entries {
+		total += entry.FeeRate
+	}
+	avgRate := uint64(math.Ceil(total / float64(len(entries))))
+
+	if avgRate < MinFeeRate {
+		avgRate = MinFeeRate
 	}
 
 	return &FeeQuote{
-		StandardRate: standardRate,
-		DataRate:     standardRate, // Same for now
-		Source:       "taal",
+		StandardRate: avgRate,
+		DataRate:     avgRate,
+		Source:       "whatsonchain",
 		Timestamp:    time.Now(),
 	}, nil
 }

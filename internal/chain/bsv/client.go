@@ -319,7 +319,7 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 
 // EstimateFee estimates the fee for a transaction.
 func (c *Client) EstimateFee(_ context.Context, _, _ string, _ *big.Int) (*big.Int, error) {
-	// Default fee rate: 50 sat/KB (0.05 sat/byte)
+	// Default fee rate: 250 sat/KB (0.25 sat/byte)
 	feeRate := int64(DefaultFeeRate)
 
 	// Estimated transaction size: ~225 bytes for P2PKH

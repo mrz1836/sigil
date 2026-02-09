@@ -137,9 +137,9 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "zero fee rate uses minimum",
 			totalInputs: 10000,
 			numInputs:   1,
-			feeRate:     0, // Should be clamped to MinFeeRate (10)
-			// Fee: (192*10+999)/1000 = 2 satoshis
-			expectedAmount: 9998,
+			feeRate:     0, // Should be clamped to MinFeeRate (50)
+			// Fee: (192*50+999)/1000 = 10 satoshis
+			expectedAmount: 9990,
 			expectError:    false,
 		},
 		{

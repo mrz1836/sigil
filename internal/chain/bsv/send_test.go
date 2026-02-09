@@ -660,7 +660,7 @@ func TestSend_SweepAll(t *testing.T) {
 		kp := getTestKeyPair()
 		utxoAmount := uint64(100000)
 		utxos := makeUTXOsWithKey(kp, utxoAmount)
-		feeRate := uint64(10)
+		feeRate := uint64(500) // Custom rate above MinFeeRate
 
 		server := mockMultiRouteServer(mockServerConfig{
 			UTXOs:           utxos,
@@ -687,7 +687,7 @@ func TestSend_SweepAll(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Fee for 1 input, 1 output at 10 sat/byte
+		// Fee for 1 input, 1 output at 500 sat/KB
 		expectedFee := EstimateFeeForTx(1, 1, feeRate)
 		expectedAmount := utxoAmount - expectedFee
 		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)

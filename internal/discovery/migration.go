@@ -34,8 +34,8 @@ var (
 // Fee calculation constants.
 const (
 	// DefaultFeeRate is the default fee rate in satoshis per kilobyte.
-	// 50 sat/KB = 0.05 sat/byte, matching the current BSV network status quo.
-	DefaultFeeRate uint64 = 50
+	// 250 sat/KB = 0.25 sat/byte, based on current BSV network fee environment.
+	DefaultFeeRate uint64 = 250
 
 	// InputSize is the estimated size of a P2PKH input in bytes.
 	InputSize uint64 = 148

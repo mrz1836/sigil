@@ -539,8 +539,8 @@ func TestFeeCalculationConstants(t *testing.T) {
 		t.Errorf("OverheadSize = %d, expected ~10 bytes", OverheadSize)
 	}
 
-	if DefaultFeeRate < 10 {
-		t.Errorf("DefaultFeeRate = %d, expected >= 10 sat/KB", DefaultFeeRate)
+	if DefaultFeeRate < 50 {
+		t.Errorf("DefaultFeeRate = %d, expected >= 50 sat/KB", DefaultFeeRate)
 	}
 }
 

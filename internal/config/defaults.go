@@ -41,7 +41,7 @@ func Defaults() *Config {
 			BSV: BSVNetworkConfig{
 				Enabled:   true,
 				API:       "whatsonchain",
-				Broadcast: "taal",
+				Broadcast: "whatsonchain",
 				APIKey:    "",
 			},
 			BTC: BTCNetworkConfig{

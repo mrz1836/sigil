@@ -33,6 +33,9 @@ type ConfigProvider interface {
 	// GetBSVAPIKey returns the BSV API key.
 	GetBSVAPIKey() string
 
+	// GetBSVBroadcast returns the BSV broadcast provider or custom URL.
+	GetBSVBroadcast() string
+
 	// GetLoggingLevel returns the configured logging level.
 	GetLoggingLevel() string
 

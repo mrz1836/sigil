@@ -53,7 +53,7 @@ func TestDefaults(t *testing.T) {
 	assert.False(t, cfg.Networks.BTC.Enabled)
 	assert.False(t, cfg.Networks.BCH.Enabled)
 	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.API)
-	assert.Equal(t, "taal", cfg.Networks.BSV.Broadcast)
+	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.Broadcast)
 	assert.Equal(t, 20, cfg.Derivation.AddressGap)
 	assert.True(t, cfg.Security.MemoryLock)
 	assert.True(t, cfg.Security.SessionEnabled)

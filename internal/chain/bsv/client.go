@@ -76,7 +76,8 @@ type ClientOptions struct {
 	// BaseURL overrides the default WhatsOnChain API URL.
 	BaseURL string
 
-	// BroadcastURL overrides the default TAAL Merchant API URL for transaction broadcast.
+	// BroadcastURL overrides the default broadcast URL.
+	// When set, a single WhatsOnChain-format broadcaster is used with this URL as base.
 	BroadcastURL string
 
 	// APIKey is the optional WhatsOnChain API key for higher rate limits.
@@ -95,19 +96,18 @@ var _ chain.Chain = (*Client)(nil)
 // Client provides Bitcoin SV blockchain operations.
 type Client struct {
 	baseURL      string
-	broadcastURL string
 	apiKey       string
 	network      Network
 	httpClient   *http.Client
 	logger       DebugLogger
+	broadcasters []Broadcaster
 }
 
 // NewClient creates a new BSV client.
 func NewClient(opts *ClientOptions) *Client {
 	c := &Client{
-		baseURL:      "https://api.whatsonchain.com/v1/bsv/main",
-		broadcastURL: "https://merchantapi.taal.com/mapi/tx",
-		network:      NetworkMainnet,
+		baseURL: "https://api.whatsonchain.com/v1/bsv/main",
+		network: NetworkMainnet,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -115,6 +115,14 @@ func NewClient(opts *ClientOptions) *Client {
 
 	if opts != nil {
 		c.applyOptions(opts)
+	}
+
+	// Default broadcasters: WhatsOnChain (primary) + GorillaPool ARC (fallback).
+	if len(c.broadcasters) == 0 {
+		c.broadcasters = []Broadcaster{
+			&WhatsOnChainBroadcaster{BaseURL: c.baseURL, APIKey: c.apiKey},
+			&GorillaPoolARCBroadcaster{BaseURL: GorillaPoolARCURL},
+		}
 	}
 
 	return c
@@ -157,10 +165,21 @@ func (c *Client) GetBalance(ctx context.Context, address string) (*big.Int, erro
 	return result, err
 }
 
-// doGetBalance performs the actual balance lookup.
+// doGetBalance performs the actual balance lookup, returning only the confirmed balance.
 //
 //nolint:funcorder // Helper method grouped with its public caller
 func (c *Client) doGetBalance(ctx context.Context, address string) (*big.Int, error) {
+	resp, err := c.doGetFullBalance(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+	return big.NewInt(resp.Confirmed), nil
+}
+
+// doGetFullBalance performs the actual balance lookup, returning the full API response.
+//
+//nolint:funcorder // Helper method grouped with its public caller
+func (c *Client) doGetFullBalance(ctx context.Context, address string) (*BalanceResponse, error) {
 	if err := c.ValidateAddress(address); err != nil {
 		return nil, err
 	}
@@ -195,8 +214,7 @@ func (c *Client) doGetBalance(ctx context.Context, address string) (*big.Int, er
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	// Return confirmed balance in satoshis
-	return big.NewInt(balance.Confirmed), nil
+	return &balance, nil
 }
 
 // GetTokenBalance is not supported for BSV.
@@ -351,14 +369,18 @@ func (c *Client) ParseAmount(amount string) (*big.Int, error) {
 func (c *Client) applyOptions(opts *ClientOptions) {
 	if opts.BaseURL != "" {
 		c.baseURL = opts.BaseURL
-		// When BaseURL is set (e.g., for testing), also use it as broadcast URL base
-		// unless BroadcastURL is explicitly set
+		// When BaseURL is set (e.g., for testing), use a single WoC broadcaster
+		// pointing at the same server, unless BroadcastURL is explicitly set.
 		if opts.BroadcastURL == "" {
-			c.broadcastURL = opts.BaseURL + "/mapi/tx"
+			c.broadcasters = []Broadcaster{
+				&WhatsOnChainBroadcaster{BaseURL: opts.BaseURL, APIKey: opts.APIKey},
+			}
 		}
 	}
 	if opts.BroadcastURL != "" {
-		c.broadcastURL = opts.BroadcastURL
+		c.broadcasters = []Broadcaster{
+			&WhatsOnChainBroadcaster{BaseURL: opts.BroadcastURL, APIKey: opts.APIKey},
+		}
 	}
 	if opts.APIKey != "" {
 		c.apiKey = opts.APIKey

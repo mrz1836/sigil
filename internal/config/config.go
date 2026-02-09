@@ -168,6 +168,11 @@ func (c *Config) GetBSVAPIKey() string {
 	return c.Networks.BSV.APIKey
 }
 
+// GetBSVBroadcast returns the BSV broadcast provider or custom URL.
+func (c *Config) GetBSVBroadcast() string {
+	return c.Networks.BSV.Broadcast
+}
+
 // GetLoggingLevel returns the configured logging level.
 func (c *Config) GetLoggingLevel() string {
 	return c.Logging.Level

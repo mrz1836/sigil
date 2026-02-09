@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // TestIsAmountAll tests the isAmountAll helper function.
@@ -1057,5 +1058,137 @@ func TestInvalidateBalanceCache_InvalidHome(t *testing.T) {
 	// Should not panic even when the cache directory cannot be created.
 	assert.NotPanics(t, func() {
 		invalidateBalanceCache(cc, chain.BSV, "1abc", "", "0.0")
+	})
+}
+
+// TestDeriveKeysForUTXOs tests that private keys are derived only for addresses with UTXOs.
+func TestDeriveKeysForUTXOs(t *testing.T) {
+	t.Parallel()
+
+	// Create a real seed for derivation
+	seed, err := wallet.MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	require.NoError(t, err)
+
+	// Derive three addresses so we know their expected indices
+	a0, err := wallet.DeriveAddress(seed, wallet.ChainBSV, 0, 0)
+	require.NoError(t, err)
+	a1, err := wallet.DeriveAddress(seed, wallet.ChainBSV, 0, 1)
+	require.NoError(t, err)
+	a2, err := wallet.DeriveAddress(seed, wallet.ChainBSV, 0, 2)
+	require.NoError(t, err)
+
+	addresses := []wallet.Address{
+		{Address: a0.Address, Index: 0},
+		{Address: a1.Address, Index: 1},
+		{Address: a2.Address, Index: 2},
+	}
+
+	t.Run("derives keys only for addresses with UTXOs", func(t *testing.T) {
+		t.Parallel()
+
+		// UTXOs only on address 0 and 2
+		utxos := []chain.UTXO{
+			{TxID: "aa", Amount: 50000, Address: a0.Address},
+			{TxID: "bb", Amount: 30000, Address: a2.Address},
+		}
+
+		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		require.NoError(t, err)
+		defer func() {
+			for _, k := range keys {
+				wallet.ZeroBytes(k)
+			}
+		}()
+
+		// Should have keys for a0 and a2 but NOT a1
+		assert.Len(t, keys, 2)
+		assert.Contains(t, keys, a0.Address)
+		assert.Contains(t, keys, a2.Address)
+		assert.NotContains(t, keys, a1.Address)
+
+		// Keys should be 32 bytes
+		assert.Len(t, keys[a0.Address], 32)
+		assert.Len(t, keys[a2.Address], 32)
+	})
+
+	t.Run("single address with multiple UTXOs derives one key", func(t *testing.T) {
+		t.Parallel()
+
+		utxos := []chain.UTXO{
+			{TxID: "cc", Amount: 10000, Address: a1.Address},
+			{TxID: "dd", Amount: 20000, Address: a1.Address},
+			{TxID: "ee", Amount: 30000, Address: a1.Address},
+		}
+
+		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		require.NoError(t, err)
+		defer func() {
+			for _, k := range keys {
+				wallet.ZeroBytes(k)
+			}
+		}()
+
+		assert.Len(t, keys, 1)
+		assert.Contains(t, keys, a1.Address)
+	})
+
+	t.Run("unknown address returns error and zeros keys", func(t *testing.T) {
+		t.Parallel()
+
+		utxos := []chain.UTXO{
+			{TxID: "ff", Amount: 50000, Address: a0.Address},
+			{TxID: "gg", Amount: 30000, Address: "1UnknownAddressNotInWallet"},
+		}
+
+		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		require.Error(t, err)
+		assert.Nil(t, keys)
+		assert.Contains(t, err.Error(), "not found in wallet")
+	})
+
+	t.Run("empty UTXOs returns empty key map", func(t *testing.T) {
+		t.Parallel()
+
+		keys, err := deriveKeysForUTXOs([]chain.UTXO{}, addresses, seed)
+		require.NoError(t, err)
+		assert.Empty(t, keys)
+	})
+}
+
+// TestUniqueUTXOAddrs tests the unique address extraction from UTXOs.
+func TestUniqueUTXOAddrs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deduplicates addresses", func(t *testing.T) {
+		t.Parallel()
+
+		utxos := []chain.UTXO{
+			{Address: "addr1"},
+			{Address: "addr2"},
+			{Address: "addr1"}, // duplicate
+			{Address: "addr3"},
+			{Address: "addr2"}, // duplicate
+		}
+
+		result := uniqueUTXOAddrs(utxos)
+		assert.Len(t, result, 3)
+		assert.Contains(t, result, "addr1")
+		assert.Contains(t, result, "addr2")
+		assert.Contains(t, result, "addr3")
+	})
+
+	t.Run("empty input returns empty map", func(t *testing.T) {
+		t.Parallel()
+
+		result := uniqueUTXOAddrs([]chain.UTXO{})
+		assert.Empty(t, result)
+	})
+
+	t.Run("single UTXO returns single address", func(t *testing.T) {
+		t.Parallel()
+
+		result := uniqueUTXOAddrs([]chain.UTXO{{Address: "only_one"}})
+		assert.Len(t, result, 1)
+		assert.Contains(t, result, "only_one")
 	})
 }

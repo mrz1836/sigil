@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -127,7 +128,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
-	// Get the address for this chain
+	// Get the addresses for this chain
 	addresses, ok := wlt.Addresses[chainID]
 	if !ok || len(addresses) == 0 {
 		return sigilerr.WithSuggestion(
@@ -135,14 +136,13 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 			fmt.Sprintf("wallet '%s' has no addresses for chain %s", txWallet, chainID),
 		)
 	}
-	fromAddress := addresses[0].Address
 
 	// Execute chain-specific send
 	switch chainID {
 	case chain.ETH:
-		return runETHSend(ctx, cmd, fromAddress, seed)
+		return runETHSend(ctx, cmd, addresses[0].Address, seed)
 	case chain.BSV:
-		return runBSVSend(ctx, cmd, wlt, storage, fromAddress, seed)
+		return runBSVSend(ctx, cmd, wlt, storage, addresses, seed)
 	case chain.BTC, chain.BCH:
 		return sigilerr.ErrNotImplemented
 	default:
@@ -358,8 +358,9 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 }
 
 //nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
-func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, storage *wallet.FileStorage, fromAddress string, seed []byte) error {
+func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, storage *wallet.FileStorage, addresses []wallet.Address, seed []byte) error {
 	cc := GetCmdContext(cmd)
+	primaryAddress := addresses[0].Address
 
 	// Validate BSV address
 	if err := bsv.ValidateBase58CheckAddress(txTo); err != nil {
@@ -401,26 +402,29 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
 	}
 
+	// Aggregate UTXOs from ALL wallet addresses for this chain
+	allUTXOs, utxoErr := aggregateBSVUTXOs(ctx, client, addresses)
+	if utxoErr != nil {
+		return fmt.Errorf("listing UTXOs: %w", utxoErr)
+	}
+
 	var displayAmount string
 	var estimatedFee uint64
+	var sendUTXOs []chain.UTXO // UTXOs that will be used in the transaction
 
 	//nolint:nestif // Sweep vs normal send have distinct balance check and fee estimation paths
 	if sweepAll {
-		// Sweep: calculate max send amount from UTXOs
-		utxos, utxoErr := client.ListUTXOs(ctx, fromAddress)
-		if utxoErr != nil {
-			return fmt.Errorf("listing UTXOs: %w", utxoErr)
-		}
-		if len(utxos) == 0 {
-			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found for address")
+		// Sweep: use ALL UTXOs from all addresses
+		if len(allUTXOs) == 0 {
+			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found across any wallet address")
 		}
 
 		var totalInputs uint64
-		for _, u := range utxos {
+		for _, u := range allUTXOs {
 			totalInputs += u.Amount
 		}
 
-		sweepAmount, sweepErr := bsv.CalculateSweepAmount(totalInputs, len(utxos), feeQuote.StandardRate)
+		sweepAmount, sweepErr := bsv.CalculateSweepAmount(totalInputs, len(allUTXOs), feeQuote.StandardRate)
 		if sweepErr != nil {
 			return sweepErr
 		}
@@ -428,32 +432,51 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		amount = amountToBigInt(sweepAmount)
 		estimatedFee = totalInputs - sweepAmount
 		displayAmount = client.FormatAmount(amount) + " (sweep all)"
+		sendUTXOs = allUTXOs
 	} else {
-		// Normal: check balance covers amount + fee
-		estimatedFee = bsv.EstimateFeeForTx(1, 2, feeQuote.StandardRate)
-
-		balance, balErr := client.GetBalance(ctx, fromAddress)
-		if balErr != nil {
-			return fmt.Errorf("getting balance: %w", balErr)
+		// Normal send: select UTXOs across all addresses to cover amount + fee
+		if len(allUTXOs) == 0 {
+			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found across any wallet address")
 		}
 
-		totalRequired := amount.Uint64() + estimatedFee
-		if balance.Uint64() < totalRequired {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  client.FormatAmount(amountToBigInt(totalRequired)),
-					"available": client.FormatAmount(balance),
-					"symbol":    "BSV",
-				},
-			)
+		// Convert to bsv.UTXO for SelectUTXOs, preserving address info
+		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
+		for i, u := range allUTXOs {
+			bsvUTXOs[i] = bsv.UTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				ScriptPubKey:  u.ScriptPubKey,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+			}
 		}
+
+		selected, _, selErr := client.SelectUTXOs(bsvUTXOs, amount.Uint64(), feeQuote.StandardRate)
+		if selErr != nil {
+			return selErr
+		}
+
+		// Convert selected back to chain.UTXO
+		sendUTXOs = make([]chain.UTXO, len(selected))
+		for i, u := range selected {
+			sendUTXOs[i] = chain.UTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				ScriptPubKey:  u.ScriptPubKey,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+			}
+		}
+
+		estimatedFee = bsv.EstimateFeeForTx(len(selected), 2, feeQuote.StandardRate)
 		displayAmount = txAmount
 	}
 
 	// Display transaction details and confirm
 	if !txConfirm {
-		displayBSVTxDetails(cmd, fromAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
+		displayBSVTxDetails(cmd, primaryAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
 		if !promptConfirmation() {
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
@@ -473,27 +496,24 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		changeAddress = changeAddr.Address
 	}
 
-	// Derive private key from seed for the sending address
-	// Find the index of the from address
-	fromIndex := uint32(0)
-	for _, addr := range wlt.Addresses[wallet.ChainBSV] {
-		if addr.Address == fromAddress {
-			fromIndex = addr.Index
-			break
+	// Derive private keys for all addresses that have UTXOs being spent
+	privateKeys, keyErr := deriveKeysForUTXOs(sendUTXOs, addresses, seed)
+	if keyErr != nil {
+		return fmt.Errorf("deriving private keys: %w", keyErr)
+	}
+	defer func() {
+		for _, k := range privateKeys {
+			wallet.ZeroBytes(k)
 		}
-	}
-	privateKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, fromIndex)
-	if err != nil {
-		return fmt.Errorf("deriving private key: %w", err)
-	}
-	defer wallet.ZeroBytes(privateKey)
+	}()
 
-	// Build send request
+	// Build send request with multi-address support
 	req := chain.SendRequest{
-		From:          fromAddress,
+		From:          primaryAddress,
 		To:            txTo,
 		Amount:        amount,
-		PrivateKey:    privateKey,
+		UTXOs:         sendUTXOs,
+		PrivateKeys:   privateKeys,
 		FeeRate:       feeQuote.StandardRate,
 		ChangeAddress: changeAddress,
 		SweepAll:      sweepAll,
@@ -505,11 +525,18 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		return fmt.Errorf("sending transaction: %w", err)
 	}
 
-	// Invalidate balance cache so next "balance show" reflects the send.
+	// Invalidate balance cache for all addresses that contributed UTXOs
+	involvedAddrs := uniqueUTXOAddrs(sendUTXOs)
 	if sweepAll {
-		invalidateBalanceCache(cc, chain.BSV, fromAddress, "", "0.0")
+		// Sweep: all addresses are now empty
+		for _, addr := range addresses {
+			invalidateBalanceCache(cc, chain.BSV, addr.Address, "", "0.0")
+		}
 	} else {
-		invalidateBalanceCache(cc, chain.BSV, fromAddress, "", "")
+		// Partial send: invalidate addresses that contributed inputs
+		for addr := range involvedAddrs {
+			invalidateBalanceCache(cc, chain.BSV, addr, "", "")
+		}
 	}
 
 	// Display result
@@ -850,4 +877,84 @@ func logCacheError(cc *CommandContext, format string, args ...any) {
 	if cc.Log != nil {
 		cc.Log.Error(format, args...)
 	}
+}
+
+// aggregateBSVUTXOs fetches UTXOs from all wallet addresses and merges them into a single slice.
+func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+	var allUTXOs []chain.UTXO
+	for _, addr := range addresses {
+		utxos, err := client.ListUTXOs(ctx, addr.Address)
+		if err != nil {
+			return nil, fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)
+		}
+		for _, u := range utxos {
+			allUTXOs = append(allUTXOs, chain.UTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				ScriptPubKey:  u.ScriptPubKey,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+			})
+		}
+	}
+	return allUTXOs, nil
+}
+
+// errAddressNotInWallet indicates a UTXO references an address not found in the wallet.
+var errAddressNotInWallet = errors.New("address not found in wallet")
+
+// deriveKeysForUTXOs derives private keys for each unique address that appears in the UTXO set.
+// Returns a map of address → private key. The caller must zero all keys after use.
+func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
+	// Build address → index lookup
+	addrIndex := make(map[string]uint32, len(addresses))
+	for _, addr := range addresses {
+		addrIndex[addr.Address] = addr.Index
+	}
+
+	// Collect unique addresses from UTXOs
+	needed := uniqueUTXOAddrs(utxos)
+
+	// Derive private key for each unique address
+	keys := make(map[string][]byte, len(needed))
+	for addr := range needed {
+		key, err := deriveKeyForAddress(addr, addrIndex, seed)
+		if err != nil {
+			zeroKeyMap(keys)
+			return nil, err
+		}
+		keys[addr] = key
+	}
+
+	return keys, nil
+}
+
+// deriveKeyForAddress derives a private key for a single address using the index lookup.
+func deriveKeyForAddress(addr string, addrIndex map[string]uint32, seed []byte) ([]byte, error) {
+	index, ok := addrIndex[addr]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errAddressNotInWallet, addr)
+	}
+	privKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, index)
+	if err != nil {
+		return nil, fmt.Errorf("deriving key for address %s (index %d): %w", addr, index, err)
+	}
+	return privKey, nil
+}
+
+// zeroKeyMap zeros all private keys in the map.
+func zeroKeyMap(keys map[string][]byte) {
+	for _, k := range keys {
+		wallet.ZeroBytes(k)
+	}
+}
+
+// uniqueUTXOAddrs returns the unique set of addresses that appear in a UTXO slice.
+func uniqueUTXOAddrs(utxos []chain.UTXO) map[string]struct{} {
+	addrs := make(map[string]struct{})
+	for _, u := range utxos {
+		addrs[u.Address] = struct{}{}
+	}
+	return addrs
 }

@@ -2,7 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,9 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 func TestFormatSatoshis(t *testing.T) {
@@ -794,4 +799,225 @@ func TestFormatHelpers(t *testing.T) {
 	// formatStatus
 	assert.Equal(t, "used", formatStatus(true))
 	assert.Equal(t, "unused", formatStatus(false))
+}
+
+// mockLogWriter implements LogWriter for testing.
+type mockLogWriter struct {
+	errorCalls []string
+	debugCalls []string
+}
+
+func (m *mockLogWriter) Debug(format string, _ ...any) {
+	m.debugCalls = append(m.debugCalls, format)
+}
+
+func (m *mockLogWriter) Error(format string, _ ...any) {
+	m.errorCalls = append(m.errorCalls, format)
+}
+
+func (m *mockLogWriter) Close() error { return nil }
+
+func TestLoadOrCreateBalanceCache(t *testing.T) {
+	t.Parallel()
+
+	t.Run("refresh=true returns fresh cache ignoring disk", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		cachePath := filepath.Join(tmpDir, "balances.json")
+		storage := cache.NewFileStorage(cachePath)
+
+		// Pre-populate cache on disk
+		bc := cache.NewBalanceCache()
+		bc.Set(cache.BalanceCacheEntry{
+			Chain: chain.BSV, Address: "1abc", Balance: "5.0", Symbol: "BSV", Decimals: 8,
+		})
+		require.NoError(t, storage.Save(bc))
+
+		cmd := &cobra.Command{}
+		var errBuf bytes.Buffer
+		cmd.SetErr(&errBuf)
+
+		result := loadOrCreateBalanceCache(storage, true, cmd, nil)
+		require.NotNil(t, result)
+		assert.Equal(t, 0, result.Size(), "refresh should return empty cache")
+	})
+
+	t.Run("valid cache file loads from disk", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		cachePath := filepath.Join(tmpDir, "balances.json")
+		storage := cache.NewFileStorage(cachePath)
+
+		bc := cache.NewBalanceCache()
+		bc.Set(cache.BalanceCacheEntry{
+			Chain: chain.ETH, Address: "0x123", Balance: "2.0", Symbol: "ETH", Decimals: 18,
+		})
+		require.NoError(t, storage.Save(bc))
+
+		cmd := &cobra.Command{}
+
+		result := loadOrCreateBalanceCache(storage, false, cmd, nil)
+		require.NotNil(t, result)
+		assert.Equal(t, 1, result.Size())
+		entry, exists, _ := result.Get(chain.ETH, "0x123", "")
+		require.True(t, exists)
+		assert.Equal(t, "2.0", entry.Balance)
+	})
+
+	t.Run("corrupt cache file with logger returns fresh cache and warns", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		cachePath := filepath.Join(tmpDir, "balances.json")
+
+		// Write invalid JSON
+		require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0o750))
+		require.NoError(t, os.WriteFile(cachePath, []byte("{invalid json!"), 0o600))
+
+		storage := cache.NewFileStorage(cachePath)
+		cmd := &cobra.Command{}
+		var errBuf bytes.Buffer
+		cmd.SetErr(&errBuf)
+
+		logger := &mockLogWriter{}
+
+		result := loadOrCreateBalanceCache(storage, false, cmd, logger)
+		require.NotNil(t, result)
+		assert.Equal(t, 0, result.Size(), "corrupt cache should return fresh cache")
+		assert.Contains(t, errBuf.String(), "Warning")
+		assert.NotEmpty(t, logger.errorCalls, "should log error for corrupt cache")
+	})
+
+	t.Run("corrupt cache file nil logger does not panic", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		cachePath := filepath.Join(tmpDir, "balances.json")
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0o750))
+		require.NoError(t, os.WriteFile(cachePath, []byte("{bad json"), 0o600))
+
+		storage := cache.NewFileStorage(cachePath)
+		cmd := &cobra.Command{}
+		var errBuf bytes.Buffer
+		cmd.SetErr(&errBuf)
+
+		assert.NotPanics(t, func() {
+			result := loadOrCreateBalanceCache(storage, false, cmd, nil)
+			require.NotNil(t, result)
+			assert.Equal(t, 0, result.Size())
+		})
+		assert.Contains(t, errBuf.String(), "Warning")
+	})
+
+	t.Run("missing cache file returns fresh cache", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		cachePath := filepath.Join(tmpDir, "nonexistent", "balances.json")
+		storage := cache.NewFileStorage(cachePath)
+
+		cmd := &cobra.Command{}
+		logger := &mockLogWriter{}
+
+		result := loadOrCreateBalanceCache(storage, false, cmd, logger)
+		require.NotNil(t, result)
+		assert.Equal(t, 0, result.Size())
+	})
+}
+
+func TestRunAddressesLabel(t *testing.T) {
+	// Tests modify the global addressesWallet variable so cannot be parallel at top level.
+	origWallet := addressesWallet
+	defer func() { addressesWallet = origWallet }()
+
+	t.Run("set label", func(t *testing.T) {
+		testHome := t.TempDir()
+		walletName := "testwallet"
+		walletDir := filepath.Join(testHome, "wallets", walletName)
+		require.NoError(t, os.MkdirAll(walletDir, 0o750))
+
+		// Create UTXO store with an address
+		store := utxostore.New(walletDir)
+		store.AddAddress(&utxostore.AddressMetadata{
+			Address: "1TestLabelAddr",
+			ChainID: chain.BSV,
+		})
+		require.NoError(t, store.Save())
+
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		SetCmdContext(cmd, &CommandContext{
+			Cfg: &mockConfigProvider{home: testHome},
+		})
+		addressesWallet = walletName
+
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+
+		err := runAddressesLabel(cmd, []string{"1TestLabelAddr", "MyLabel"})
+		require.NoError(t, err)
+		assert.Contains(t, buf.String(), `Label set to "MyLabel"`)
+		assert.Contains(t, buf.String(), "1TestLabelAddr")
+
+		// Verify label was persisted
+		store2 := utxostore.New(walletDir)
+		require.NoError(t, store2.Load())
+		meta := store2.GetAddress(chain.BSV, "1TestLabelAddr")
+		require.NotNil(t, meta)
+		assert.Equal(t, "MyLabel", meta.Label)
+	})
+
+	t.Run("clear label", func(t *testing.T) {
+		testHome := t.TempDir()
+		walletName := "testwallet2"
+		walletDir := filepath.Join(testHome, "wallets", walletName)
+		require.NoError(t, os.MkdirAll(walletDir, 0o750))
+
+		store := utxostore.New(walletDir)
+		store.AddAddress(&utxostore.AddressMetadata{
+			Address: "1ClearLabelAddr",
+			ChainID: chain.BSV,
+			Label:   "OldLabel",
+		})
+		require.NoError(t, store.Save())
+
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		SetCmdContext(cmd, &CommandContext{
+			Cfg: &mockConfigProvider{home: testHome},
+		})
+		addressesWallet = walletName
+
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+
+		err := runAddressesLabel(cmd, []string{"1ClearLabelAddr", ""})
+		require.NoError(t, err)
+		assert.Contains(t, buf.String(), "Label cleared")
+	})
+
+	t.Run("address not found", func(t *testing.T) {
+		testHome := t.TempDir()
+		walletName := "testwallet3"
+		walletDir := filepath.Join(testHome, "wallets", walletName)
+		require.NoError(t, os.MkdirAll(walletDir, 0o750))
+
+		// Create an empty store (no addresses)
+		store := utxostore.New(walletDir)
+		require.NoError(t, store.Save())
+
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		SetCmdContext(cmd, &CommandContext{
+			Cfg: &mockConfigProvider{home: testHome},
+		})
+		addressesWallet = walletName
+
+		err := runAddressesLabel(cmd, []string{"1NonExistent", "Label"})
+		require.Error(t, err)
+		require.ErrorIs(t, err, sigilerr.ErrInvalidInput)
+	})
 }

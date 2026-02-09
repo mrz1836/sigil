@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/discovery"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 func TestTruncateString(t *testing.T) {
@@ -523,4 +524,55 @@ func TestCreateProgressCallback(t *testing.T) {
 		SchemeName: "Bitcoin Legacy",
 	})
 	assert.Contains(t, buf.String(), "Bitcoin Legacy")
+}
+
+func TestWalletKeyDeriver_DeriveAddress(t *testing.T) {
+	t.Parallel()
+
+	seed, err := wallet.MnemonicToSeed(
+		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		"",
+	)
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	deriver := &walletKeyDeriver{}
+
+	// BSV Standard coin type = 236
+	addr, path, err := deriver.DeriveAddress(seed, 236, 0, 0, 0)
+	require.NoError(t, err)
+	assert.NotEmpty(t, addr)
+	assert.Contains(t, path, "m/44'/236'/0'/0/0")
+
+	// Derive a second address at index 1
+	addr2, path2, err := deriver.DeriveAddress(seed, 236, 0, 0, 1)
+	require.NoError(t, err)
+	assert.NotEmpty(t, addr2)
+	assert.NotEqual(t, addr, addr2, "different indices should produce different addresses")
+	assert.Contains(t, path2, "m/44'/236'/0'/0/1")
+}
+
+func TestWalletKeyDeriver_DeriveLegacyAddress(t *testing.T) {
+	t.Parallel()
+
+	seed, err := wallet.MnemonicToSeed(
+		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		"",
+	)
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	deriver := &walletKeyDeriver{}
+
+	addr, path, err := deriver.DeriveLegacyAddress(seed, 0)
+	require.NoError(t, err)
+	assert.NotEmpty(t, addr)
+	assert.NotEmpty(t, path)
+
+	// Derive at index 1 should be different
+	addr2, path2, err := deriver.DeriveLegacyAddress(seed, 1)
+	require.NoError(t, err)
+	assert.NotEmpty(t, addr2)
+	assert.NotEqual(t, addr, addr2, "different indices should produce different addresses")
+	assert.NotEqual(t, path, path2)
 }

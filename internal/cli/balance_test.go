@@ -987,3 +987,147 @@ func TestBalanceRefreshFlag_BypassesCache(t *testing.T) {
 	require.True(t, exists)
 	assert.Equal(t, "0.0", entry.Balance)
 }
+
+func TestTruncateAddress(t *testing.T) {
+	t.Parallel()
+
+	t.Run("exactly 42 chars returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		// 42 characters exactly
+		addr := "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+		assert.Len(t, addr, 42)
+		assert.Equal(t, addr, truncateAddress(addr))
+	})
+
+	t.Run("longer than 42 chars truncated", func(t *testing.T) {
+		t.Parallel()
+		addr := "0x742d35Cc6634C0532925a3b844Bc454e4438f44eABCDEF"
+		assert.Greater(t, len(addr), 42)
+		result := truncateAddress(addr)
+		assert.Equal(t, addr[:20], result[:20])
+		assert.Contains(t, result, "...")
+		assert.Equal(t, addr[len(addr)-17:], result[len(result)-17:])
+		assert.Less(t, len(result), len(addr))
+	})
+
+	t.Run("short address returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		addr := "1abc"
+		assert.Equal(t, addr, truncateAddress(addr))
+	})
+}
+
+func TestOutputBalanceJSON_NilBalancesSlice(t *testing.T) {
+	t.Parallel()
+
+	response := BalanceShowResponse{
+		Wallet:    "test",
+		Timestamp: "2026-01-31T12:00:00Z",
+		Balances:  nil, // nil slice
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, outputBalanceJSON(&buf, response))
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	// Verify balances is [] (empty array) not null
+	balances, ok := parsed["balances"].([]any)
+	require.True(t, ok, "balances should be an array, not null")
+	assert.Empty(t, balances)
+}
+
+func TestGetCachedETHBalances_BothCached(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xTest", Balance: "1.5", Symbol: "ETH", Decimals: 18,
+	})
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xTest", Token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+		Balance: "100.0", Symbol: "USDC", Decimals: 6,
+	})
+
+	entries, stale, err := getCachedETHBalances("0xTest", balanceCache)
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
+	assert.False(t, stale)
+}
+
+func TestGetCachedETHBalances_StaleETHEntry(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xStale", Balance: "1.0", Symbol: "ETH", Decimals: 18,
+	})
+
+	// Age the entry beyond DefaultStaleness
+	key := cache.Key(chain.ETH, "0xStale", "")
+	if e, ok := balanceCache.Entries[key]; ok {
+		e.UpdatedAt = time.Now().Add(-10 * time.Minute)
+		balanceCache.Entries[key] = e
+	}
+
+	entries, stale, err := getCachedETHBalances("0xStale", balanceCache)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.True(t, stale)
+}
+
+func TestGetCachedETHBalances_StaleUSDCEntry(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	// Fresh ETH entry
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xMixed", Balance: "1.0", Symbol: "ETH", Decimals: 18,
+	})
+	// USDC entry
+	usdcToken := "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" //nolint:gosec // USDC contract address, not credentials
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xMixed", Token: usdcToken,
+		Balance: "50.0", Symbol: "USDC", Decimals: 6,
+	})
+
+	// Age only the USDC entry
+	key := cache.Key(chain.ETH, "0xMixed", usdcToken)
+	if e, ok := balanceCache.Entries[key]; ok {
+		e.UpdatedAt = time.Now().Add(-10 * time.Minute)
+		balanceCache.Entries[key] = e
+	}
+
+	entries, stale, err := getCachedETHBalances("0xMixed", balanceCache)
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
+	assert.True(t, stale, "should be stale because USDC entry is old")
+}
+
+func TestGetCachedETHBalances_OnlyUSDCCached(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xOnlyUSDC", Token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+		Balance: "200.0", Symbol: "USDC", Decimals: 6,
+	})
+
+	entries, stale, err := getCachedETHBalances("0xOnlyUSDC", balanceCache)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "USDC", entries[0].Symbol)
+	assert.False(t, stale)
+}
+
+func TestGetCachedETHBalances_NothingCached(t *testing.T) {
+	t.Parallel()
+
+	balanceCache := cache.NewBalanceCache()
+
+	entries, stale, err := getCachedETHBalances("0xNone", balanceCache)
+	require.Error(t, err)
+	assert.Nil(t, entries)
+	assert.True(t, stale)
+}

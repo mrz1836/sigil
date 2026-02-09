@@ -872,6 +872,43 @@ func TestParseDecimalAmount_EdgeCases(t *testing.T) {
 	}
 }
 
+// TestLogCacheError tests the logCacheError helper with nil and non-nil loggers.
+func TestLogCacheError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil logger does not panic", func(t *testing.T) {
+		t.Parallel()
+
+		cc := &CommandContext{Log: nil}
+		assert.NotPanics(t, func() {
+			logCacheError(cc, "test error: %v", "some detail")
+		})
+	})
+
+	t.Run("non-nil logger records error", func(t *testing.T) {
+		t.Parallel()
+
+		logger := &txTestLogWriter{}
+		cc := &CommandContext{Log: logger}
+
+		logCacheError(cc, "failed to load cache: %v", "disk full")
+
+		require.Len(t, logger.errorCalls, 1)
+		assert.Equal(t, "failed to load cache: %v", logger.errorCalls[0])
+	})
+}
+
+// txTestLogWriter implements LogWriter for tx_test.go.
+type txTestLogWriter struct {
+	errorCalls []string
+}
+
+func (m *txTestLogWriter) Debug(_ string, _ ...any) {}
+func (m *txTestLogWriter) Error(format string, _ ...any) {
+	m.errorCalls = append(m.errorCalls, format)
+}
+func (m *txTestLogWriter) Close() error { return nil }
+
 // TestInvalidateBalanceCache_SweepAll verifies that after a sweep-all send the
 // cached balance is set to "0.0" and the entry is preserved on disk.
 func TestInvalidateBalanceCache_SweepAll(t *testing.T) {

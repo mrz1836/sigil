@@ -236,6 +236,25 @@ func TestDisplayReceiveText(t *testing.T) {
 	}
 }
 
+func TestDisplayReceiveText_WithNonEmptyLabel(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{
+		Index:   2,
+		Address: "1LabelTestAddr",
+		Path:    "m/44'/236'/0'/0/2",
+	}
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	displayReceiveText(cmd, addr, chain.BSV, "MyLabel", false)
+
+	result := buf.String()
+	assert.Contains(t, result, "Label:   MyLabel")
+}
+
 func TestDisplayReceiveText_NoLabelExcluded(t *testing.T) {
 	t.Parallel()
 
@@ -923,4 +942,43 @@ func TestDisplayReceiveCheckAllETHJSON(t *testing.T) {
 	second, ok := addrs[1].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "network timeout", second["error"])
+}
+
+func TestFormatUTXOCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		count    int
+		expected string
+	}{
+		{
+			name:     "zero UTXOs",
+			count:    0,
+			expected: "-",
+		},
+		{
+			name:     "one UTXO singular",
+			count:    1,
+			expected: "(1 UTXO)",
+		},
+		{
+			name:     "five UTXOs plural",
+			count:    5,
+			expected: "(5 UTXOs)",
+		},
+		{
+			name:     "large count",
+			count:    100,
+			expected: "(100 UTXOs)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := formatUTXOCount(tc.count)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }

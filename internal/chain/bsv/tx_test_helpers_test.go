@@ -1,16 +1,30 @@
 package bsv
 
 import (
+	"context"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
+)
+
+// Static test errors for err113 compliance.
+// Capitalized strings match real API error messages from WhatsOnChain/ARC.
+var (
+	errTestBroadcast           = errors.New("broadcast error")
+	errTestServerError         = errors.New("server error")
+	errTestNetworkServerError  = errors.New("network: server error")
+	errTestConnRefused         = errors.New("connection refused")
+	errTestServiceUnavailable  = errors.New("service unavailable")
+	errTestInvalidJSON         = errors.New("invalid character 'n' looking for beginning of value")
+	errTestMissingInputs       = errors.New("Missing inputs")                     //nolint:staticcheck // matches real API error
+	errTestAlreadyInMempool    = errors.New("Transaction already in mempool")     //nolint:staticcheck // matches real API error
+	errTestAlreadyInTheMempool = errors.New("Transaction already in the mempool") //nolint:staticcheck // matches real API error
+	errTestTxnAlreadyKnown     = errors.New("txn-already-known")
 )
 
 // Test addresses - these are well-known Bitcoin addresses with valid checksums.
@@ -67,33 +81,7 @@ func testTxID(n int) string {
 	return fmt.Sprintf("%064x", n)
 }
 
-// mockUTXOServer creates a test server that returns the specified UTXOs.
-func mockUTXOServer(utxos []UTXO) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Convert UTXOs to WhatsOnChain format
-		resp := make([]UTXOResponse, len(utxos))
-		for i, u := range utxos {
-			resp[i] = UTXOResponse{
-				TxID:   u.TxID,
-				Vout:   u.Vout,
-				Value:  u.Amount,
-				Height: 100,
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-}
-
-// mockErrorServer creates a test server that returns the specified status code and error.
-func mockErrorServer(statusCode int, errorMsg string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(statusCode)
-		_, _ = w.Write([]byte(errorMsg))
-	}))
-}
-
-// mockMultiRouteServer creates a test server with configurable responses for different endpoints.
+// mockServerConfig holds configuration for mock WOC and ARC test servers.
 type mockServerConfig struct {
 	UTXOs           []UTXO
 	Balance         int64
@@ -102,59 +90,59 @@ type mockServerConfig struct {
 	FeeRate         uint64
 }
 
-//nolint:gocognit // Multi-route server needs to handle multiple endpoints
-func mockMultiRouteServer(cfg mockServerConfig) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		switch {
-		case strings.Contains(r.URL.Path, "/balance"):
-			resp := BalanceResponse{
+// newMockWOCFromConfig creates a mockWOCClient from a mockServerConfig.
+func newMockWOCFromConfig(cfg mockServerConfig) *mockWOCClient {
+	return &mockWOCClient{
+		balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+			return &whatsonchain.AddressBalance{
 				Confirmed:   cfg.Balance,
 				Unconfirmed: 0,
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-
-		case strings.Contains(r.URL.Path, "/unspent"):
-			resp := make([]UTXOResponse, len(cfg.UTXOs))
-			for i, u := range cfg.UTXOs {
-				resp[i] = UTXOResponse{
-					TxID:   u.TxID,
-					Vout:   u.Vout,
-					Value:  u.Amount,
-					Height: 100,
-				}
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-
-		case strings.Contains(r.URL.Path, "/tx/raw"):
-			if cfg.BroadcastFail {
-				w.Header().Set("Content-Type", "text/plain")
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte("broadcast error"))
-				return
-			}
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte(cfg.BroadcastTxHash))
-
-		case strings.Contains(r.URL.Path, "/miner/fees"):
+			}, nil
+		},
+		utxoFunc: func(_ context.Context, _ string) (whatsonchain.AddressHistory, error) {
+			return toHistoryRecords(cfg.UTXOs), nil
+		},
+		feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 			feeRate := cfg.FeeRate
 			if feeRate == 0 {
 				feeRate = DefaultFeeRate
 			}
-			entries := []wocMinerFeeEntry{
+			return []*whatsonchain.MinerFeeStats{
 				{
 					Timestamp: time.Now().Unix(),
 					Name:      "test_miner",
 					FeeRate:   float64(feeRate),
 				},
+			}, nil
+		},
+		broadcastFunc: func(_ context.Context, _ string) (string, error) {
+			if cfg.BroadcastFail {
+				return "", errTestBroadcast
 			}
-			_ = json.NewEncoder(w).Encode(entries)
+			return cfg.BroadcastTxHash, nil
+		},
+	}
+}
 
-		default:
-			http.Error(w, "not found", http.StatusNotFound)
-		}
-	}))
+// mockUTXOClient creates a mockWOCClient that returns the specified UTXOs.
+func mockUTXOClient(utxos []UTXO) *mockWOCClient {
+	return &mockWOCClient{
+		utxoFunc: func(_ context.Context, _ string) (whatsonchain.AddressHistory, error) {
+			return toHistoryRecords(utxos), nil
+		},
+	}
+}
+
+// mockErrorClient creates a mockWOCClient that returns errors.
+func mockErrorClient() *mockWOCClient {
+	return &mockWOCClient{
+		utxoFunc: func(_ context.Context, _ string) (whatsonchain.AddressHistory, error) {
+			return nil, errTestNetworkServerError
+		},
+		balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+			return nil, errTestNetworkServerError
+		},
+	}
 }
 
 // testKeyPair holds a valid private key and its corresponding address for testing.
@@ -243,8 +231,5 @@ func makeUTXOsMultiAddr(pairs []testKeyPair, amountsPerPair [][]uint64) []UTXO {
 	return utxos
 }
 
-// Ensure mockServerConfig and mockMultiRouteServer are used (for godot linter).
-var (
-	_ = mockServerConfig{}
-	_ = mockMultiRouteServer
-)
+// Ensure mockServerConfig is used.
+var _ = mockServerConfig{}

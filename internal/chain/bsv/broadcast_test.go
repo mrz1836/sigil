@@ -14,176 +14,103 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- WhatsOnChain Broadcaster Tests ---
+// --- WhatsOnChain SDK Broadcaster Tests ---
 
-func TestWoCBroadcaster_Success(t *testing.T) {
+func TestWoCSDKBroadcaster_Success(t *testing.T) {
 	t.Parallel()
 
 	expectedTxID := "abc123def456"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte(expectedTxID))
-	}))
-	defer server.Close()
+	mock := &mockWOCClient{
+		broadcastFunc: func(_ context.Context, _ string) (string, error) {
+			return expectedTxID, nil
+		},
+	}
 
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
+	b := &WOCSDKBroadcaster{woc: mock}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	txid, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	txid, err := b.Broadcast(ctx, "deadbeef")
 	require.NoError(t, err)
 	assert.Equal(t, expectedTxID, txid)
 }
 
-func TestWoCBroadcaster_RequestFormat(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request format matches live WoC API.
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-		assert.Contains(t, r.URL.Path, "/tx/raw")
-
-		body, _ := io.ReadAll(r.Body)
-		var payload map[string]string
-		assert.NoError(t, json.Unmarshal(body, &payload))
-		assert.Equal(t, "deadbeef", payload["txhex"])
-
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("txid_result"))
-	}))
-	defer server.Close()
-
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
-	require.NoError(t, err)
-}
-
-func TestWoCBroadcaster_APIKeyHeader(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer test-api-key", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("txid_result"))
-	}))
-	defer server.Close()
-
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL, APIKey: "test-api-key"}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
-	require.NoError(t, err)
-}
-
-func TestWoCBroadcaster_NoAPIKey(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Empty(t, r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("txid_result"))
-	}))
-	defer server.Close()
-
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
-	require.NoError(t, err)
-}
-
-func TestWoCBroadcaster_AlreadyInMempool(t *testing.T) {
+func TestWoCSDKBroadcaster_AlreadyInMempool(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		response string
+		name string
+		err  error
 	}{
-		{"already in mempool", "Transaction already in mempool"},
-		{"already in the mempool", "Transaction already in the mempool"},
-		{"txn-already-known", "txn-already-known"},
+		{"already in mempool", errTestAlreadyInMempool},
+		{"already in the mempool", errTestAlreadyInTheMempool},
+		{"txn-already-known", errTestTxnAlreadyKnown},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "text/plain")
-				w.WriteHeader(http.StatusConflict)
-				_, _ = w.Write([]byte(tt.response))
-			}))
-			defer server.Close()
+			testErr := tt.err
+			mock := &mockWOCClient{
+				broadcastFunc: func(_ context.Context, _ string) (string, error) {
+					return "", testErr
+				},
+			}
 
-			b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
+			b := &WOCSDKBroadcaster{woc: mock}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			// Should treat as success, not error.
-			txid, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+			txid, err := b.Broadcast(ctx, "deadbeef")
 			require.NoError(t, err)
 			assert.NotEmpty(t, txid)
 		})
 	}
 }
 
-func TestWoCBroadcaster_HTTPError(t *testing.T) {
+func TestWoCSDKBroadcaster_Error(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("Missing inputs"))
-	}))
-	defer server.Close()
+	mock := &mockWOCClient{
+		broadcastFunc: func(_ context.Context, _ string) (string, error) {
+			return "", errTestMissingInputs
+		},
+	}
 
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
+	b := &WOCSDKBroadcaster{woc: mock}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "400")
 	assert.Contains(t, err.Error(), "Missing inputs")
 }
 
-func TestWoCBroadcaster_NetworkError(t *testing.T) {
+func TestWoCSDKBroadcaster_EmptyResponse(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
-	server.Close() // Immediately close to simulate network error.
+	mock := &mockWOCClient{
+		broadcastFunc: func(_ context.Context, _ string) (string, error) {
+			return "", nil
+		},
+	}
 
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
+	b := &WOCSDKBroadcaster{woc: mock}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, &http.Client{Timeout: time.Second}, "deadbeef")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "network")
-}
-
-func TestWoCBroadcaster_EmptyResponse(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	b := &WhatsOnChainBroadcaster{BaseURL: server.URL}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty txid")
+}
+
+func TestWoCSDKBroadcaster_Name(t *testing.T) {
+	t.Parallel()
+
+	b := &WOCSDKBroadcaster{}
+	assert.Equal(t, "whatsonchain", b.Name())
 }
 
 // --- GorillaPool ARC Broadcaster Tests ---
@@ -203,11 +130,11 @@ func TestARCBroadcaster_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	txid, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	txid, err := b.Broadcast(ctx, "deadbeef")
 	require.NoError(t, err)
 	assert.Equal(t, expectedTxID, txid)
 }
@@ -230,11 +157,11 @@ func TestARCBroadcaster_RequestFormat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.NoError(t, err)
 }
 
@@ -253,11 +180,11 @@ func TestARCBroadcaster_ErrorWithDetail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Transaction output 0 satoshis is invalid")
 }
@@ -277,11 +204,11 @@ func TestARCBroadcaster_FeeTooLow(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fee too low")
 }
@@ -301,11 +228,11 @@ func TestARCBroadcaster_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unauthorized")
 }
@@ -316,11 +243,11 @@ func TestARCBroadcaster_NetworkError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: &http.Client{Timeout: time.Second}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, &http.Client{Timeout: time.Second}, "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "network")
 }
@@ -338,11 +265,11 @@ func TestARCBroadcaster_EmptyTxID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL}
+	b := &GorillaPoolARCBroadcaster{BaseURL: server.URL, httpClient: server.Client()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := b.Broadcast(ctx, server.Client(), "deadbeef")
+	_, err := b.Broadcast(ctx, "deadbeef")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty txid")
 }
@@ -359,7 +286,7 @@ type mockBroadcaster struct {
 
 func (m *mockBroadcaster) Name() string { return m.name }
 
-func (m *mockBroadcaster) Broadcast(_ context.Context, _ *http.Client, _ string) (string, error) {
+func (m *mockBroadcaster) Broadcast(_ context.Context, _ string) (string, error) {
 	m.called.Add(1)
 	return m.txid, m.err
 }
@@ -372,7 +299,6 @@ func TestBroadcastFallback_PrimarySucceeds(t *testing.T) {
 
 	client := &Client{
 		broadcasters: []Broadcaster{primary, secondary},
-		httpClient:   &http.Client{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -393,7 +319,6 @@ func TestBroadcastFallback_PrimaryFailsSecondarySucceeds(t *testing.T) {
 
 	client := &Client{
 		broadcasters: []Broadcaster{primary, secondary},
-		httpClient:   &http.Client{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -414,7 +339,6 @@ func TestBroadcastFallback_AllFail(t *testing.T) {
 
 	client := &Client{
 		broadcasters: []Broadcaster{primary, secondary},
-		httpClient:   &http.Client{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -430,7 +354,6 @@ func TestBroadcastFallback_NoBroadcasters(t *testing.T) {
 
 	client := &Client{
 		broadcasters: []Broadcaster{},
-		httpClient:   &http.Client{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -444,22 +367,20 @@ func TestBroadcastFallback_NoBroadcasters(t *testing.T) {
 func TestBroadcastFallback_AlreadyKnownNoFallback(t *testing.T) {
 	t.Parallel()
 
-	// WoC "already in mempool" returns success, so no fallback should be tried.
-	wocServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte("Transaction already in mempool"))
-	}))
-	defer wocServer.Close()
+	// WoC SDK "already in mempool" returns success, so no fallback should be tried.
+	mock := &mockWOCClient{
+		broadcastFunc: func(_ context.Context, _ string) (string, error) {
+			return "", errTestAlreadyInMempool
+		},
+	}
 
 	secondary := &mockBroadcaster{name: "secondary", txid: "should_not_be_called"}
 
 	client := &Client{
 		broadcasters: []Broadcaster{
-			&WhatsOnChainBroadcaster{BaseURL: wocServer.URL},
+			&WOCSDKBroadcaster{woc: mock},
 			secondary,
 		},
-		httpClient: &http.Client{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -1,6 +1,7 @@
 package bsv
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,7 +26,7 @@ func TestSelectUTXOs_MultipleAddresses(t *testing.T) {
 		{TxID: testTxID(2), Vout: 0, Amount: 3000, Address: testAddress3},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select enough for 4000 sats (needs 2-3 UTXOs)
 	selected, _, err := client.SelectUTXOs(utxos, 4000, DefaultFeeRate)
@@ -57,7 +58,7 @@ func TestSelectUTXOs_PreferFewerInputs(t *testing.T) {
 	// Mix them together
 	allUTXOs := append([]UTXO{largeUTXO}, smallUTXOs...)
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select 50000 sats - should prefer the large UTXO
 	selected, _, err := client.SelectUTXOs(allUTXOs, 50000, DefaultFeeRate)
@@ -79,7 +80,7 @@ func TestSelectUTXOs_ExactAmountAcross3(t *testing.T) {
 		{TxID: testTxID(2), Vout: 0, Amount: 200, Address: testAddress3},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	fee := estimateFee(3, 2, DefaultFeeRate)
 	target := uint64(50)
@@ -108,7 +109,7 @@ func TestSelectUTXOs_DustScattered(t *testing.T) {
 		}
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Try to select 50000 sats
 	// Total available: 100 * 600 = 60000 sats
@@ -150,7 +151,7 @@ func TestSelectUTXOs_SingleSatoshis(t *testing.T) {
 		}
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	selected, change, err := client.SelectUTXOs(utxos, 100, DefaultFeeRate)
 	require.NoError(t, err)
@@ -176,7 +177,7 @@ func TestSelectUTXOs_MixedAmounts(t *testing.T) {
 		{TxID: testTxID(4), Vout: 0, Amount: 25000, Address: testAddress2}, // Medium
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name      string
@@ -221,7 +222,7 @@ func TestSelectUTXOs_AllSameAmount(t *testing.T) {
 		}
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select 5000 sats - needs at least 6 UTXOs once fee grows with inputs
 	selected, change, err := client.SelectUTXOs(utxos, 5000, DefaultFeeRate)
@@ -247,7 +248,7 @@ func TestSelectUTXOs_SortOrder(t *testing.T) {
 		{TxID: testTxID(4), Vout: 0, Amount: 200, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select amount that needs 2 UTXOs after fee growth
 	// The two largest (500 + 400 = 900) should be enough
@@ -264,7 +265,7 @@ func TestSelectUTXOs_SortOrder(t *testing.T) {
 func TestSelectUTXOs_EmptyList(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	_, _, err := client.SelectUTXOs([]UTXO{}, 1000, DefaultFeeRate)
 	require.Error(t, err)
@@ -279,7 +280,7 @@ func TestSelectUTXOs_ZeroAmount(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: 1000, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Zero amount still needs fee coverage
 	selected, change, err := client.SelectUTXOs(utxos, 0, DefaultFeeRate)
@@ -302,7 +303,7 @@ func TestSelectUTXOs_VariousFeeRates(t *testing.T) {
 		{TxID: testTxID(1), Vout: 0, Amount: 5000, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name    string
@@ -348,7 +349,7 @@ func TestSelectUTXOs_ConsolidationScenario(t *testing.T) {
 		}
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Try to consolidate most - select total minus enough headroom for dynamic fees
 	totalAvailable := numUTXOs * amountEach // 100000 sats

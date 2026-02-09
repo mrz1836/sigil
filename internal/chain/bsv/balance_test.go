@@ -2,13 +2,11 @@ package bsv
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,19 +17,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns Balance struct for valid address", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   100000000, // 1 BSV
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   100000000, // 1 BSV
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -49,19 +44,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns negative unconfirmed balance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   70422,  // 0.00070422 BSV
-				Unconfirmed: -70422, // spending the full amount
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   70422,  // 0.00070422 BSV
+					Unconfirmed: -70422, // spending the full amount
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -76,19 +68,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns positive unconfirmed balance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   50000000, // 0.5 BSV
-				Unconfirmed: 100000,   // receiving 0.001 BSV
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   50000000, // 0.5 BSV
+					Unconfirmed: 100000,   // receiving 0.001 BSV
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -103,14 +92,13 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("propagates error from GetBalance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return nil, errTestServerError
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -122,7 +110,7 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns error for invalid address", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
+		client := NewClient(context.Background(), nil)
 		ctx := context.Background()
 
 		_, err := client.GetNativeBalance(ctx, "invalid")
@@ -133,19 +121,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns 1 satoshi balance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   1, // 1 satoshi
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   1, // 1 satoshi
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -159,19 +144,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns exact satoshi amount - 123 satoshis", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   123,
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   123,
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -185,19 +167,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns zero balance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   0,
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   0,
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -211,19 +190,16 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("returns large balance - 21 million BSV", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   2100000000000000, // 21 million BSV in satoshis
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   2100000000000000, // 21 million BSV in satoshis
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -241,19 +217,16 @@ func TestGetAllBalances(t *testing.T) {
 	t.Run("returns slice with single balance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			resp := BalanceResponse{
-				Confirmed:   50000000, // 0.5 BSV
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   50000000, // 0.5 BSV
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -269,14 +242,13 @@ func TestGetAllBalances(t *testing.T) {
 	t.Run("propagates error from GetNativeBalance", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return nil, errTestServiceUnavailable
+			},
+		}
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

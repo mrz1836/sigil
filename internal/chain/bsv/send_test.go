@@ -3,7 +3,6 @@ package bsv
 import (
 	"context"
 	"math/big"
-	"net/http"
 	"testing"
 	"time"
 
@@ -89,7 +88,7 @@ func TestSend_InputValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := NewClient(nil)
+			client := NewClient(context.Background(), nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -113,11 +112,10 @@ func TestSend_UTXOFlow(t *testing.T) {
 	t.Run("no UTXOs returns insufficient funds", func(t *testing.T) {
 		t.Parallel()
 
-		server := mockUTXOServer([]UTXO{}) // Empty UTXOs
-		defer server.Close()
+		mock := mockUTXOClient([]UTXO{}) // Empty UTXOs
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -142,16 +140,15 @@ func TestSend_UTXOFlow(t *testing.T) {
 		fee := EstimateTxSize(1, 2) * DefaultFeeRate
 		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
-		// Create a multi-route server that handles both UTXO listing and broadcast
-		server := mockMultiRouteServer(mockServerConfig{
+		// Create a mock that handles both UTXO listing and broadcast
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "broadcast_tx_hash_here",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -175,15 +172,14 @@ func TestSend_UTXOFlow(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 40000, 40000, 40000) // 120k total
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         120000,
 			BroadcastTxHash: "multi_input_tx_hash",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -202,11 +198,10 @@ func TestSend_UTXOFlow(t *testing.T) {
 	t.Run("network error during UTXO fetch", func(t *testing.T) {
 		t.Parallel()
 
-		server := mockErrorServer(http.StatusInternalServerError, "server error")
-		defer server.Close()
+		mock := mockErrorClient()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -232,15 +227,14 @@ func TestSend_TransactionBuilding(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 100000) // 100k satoshis
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         100000,
 			BroadcastTxHash: "tx_change_hash",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -261,15 +255,14 @@ func TestSend_TransactionBuilding(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 50400)
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         50400,
 			BroadcastTxHash: "tx_small_change_hash",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -294,15 +287,14 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		fee := EstimateTxSize(1, 2) * DefaultFeeRate
 		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "tx_exact_match_hash",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -327,11 +319,10 @@ func TestSend_PrivateKeyZeroing(t *testing.T) {
 	t.Parallel()
 
 	utxos := makeUTXOs(100000)
-	server := mockUTXOServer(utxos)
-	defer server.Close()
+	mock := mockUTXOClient(utxos)
 
-	client := NewClient(&ClientOptions{
-		BaseURL: server.URL,
+	client := NewClient(context.Background(), &ClientOptions{
+		WOCClient: mock,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -366,11 +357,10 @@ func TestSend_AmountBoundaries(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 100000)
-		server := mockUTXOServer(utxos)
-		defer server.Close()
+		mock := mockUTXOClient(utxos)
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -419,15 +409,14 @@ func TestSend_AmountBoundaries(t *testing.T) {
 			utxoAmount := uint64(tt.amount) + fee //nolint:gosec // Test values are small and safe
 			utxos := makeUTXOsWithKey(kp, utxoAmount)
 
-			server := mockMultiRouteServer(mockServerConfig{
+			mock := newMockWOCFromConfig(mockServerConfig{
 				UTXOs:           utxos,
 				Balance:         int64(utxoAmount), //nolint:gosec // Safe: test values are small
 				BroadcastTxHash: "broadcast_success",
 			})
-			defer server.Close()
 
-			client := NewClient(&ClientOptions{
-				BaseURL: server.URL,
+			client := NewClient(context.Background(), &ClientOptions{
+				WOCClient: mock,
 			})
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -461,15 +450,14 @@ func TestSend_P2SHAddresses(t *testing.T) {
 		fee := EstimateTxSize(1, 2) * DefaultFeeRate
 		utxos := makeUTXOsWithKey(kp, 50000+fee)
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "p2sh_output_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -500,15 +488,14 @@ func TestSend_SweepAll(t *testing.T) {
 		utxoAmount := uint64(100000)
 		utxos := makeUTXOsWithKey(kp, utxoAmount)
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
 			BroadcastTxHash: "sweep_single_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -537,15 +524,14 @@ func TestSend_SweepAll(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 30000, 40000, 50000) // 120k total
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         120000,
 			BroadcastTxHash: "sweep_multi_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -571,11 +557,10 @@ func TestSend_SweepAll(t *testing.T) {
 	t.Run("sweep with no UTXOs returns error", func(t *testing.T) {
 		t.Parallel()
 
-		server := mockUTXOServer([]UTXO{})
-		defer server.Close()
+		mock := mockUTXOClient([]UTXO{})
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -597,14 +582,13 @@ func TestSend_SweepAll(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 5) // 5 satoshis, fee at 50 sat/KB is 10
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:   utxos,
 			Balance: 5,
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -626,15 +610,14 @@ func TestSend_SweepAll(t *testing.T) {
 
 		kp := getTestKeyPair()
 		utxos := makeUTXOsWithKey(kp, 50000)
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         50000,
 			BroadcastTxHash: "sweep_no_amount_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -662,15 +645,14 @@ func TestSend_SweepAll(t *testing.T) {
 		utxos := makeUTXOsWithKey(kp, utxoAmount)
 		feeRate := uint64(500) // Custom rate above MinFeeRate
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
 			BroadcastTxHash: "sweep_custom_fee_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -702,15 +684,14 @@ func TestSend_SweepAll(t *testing.T) {
 		utxoAmount := fee + 1 // exactly 1 satoshi remaining
 		utxos := makeUTXOsWithKey(kp, utxoAmount)
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount), //nolint:gosec // Test fixture with known safe values
 			BroadcastTxHash: "sweep_min_viable_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -736,15 +717,14 @@ func TestSend_SweepAll(t *testing.T) {
 		utxoAmount := uint64(50000)
 		utxos := makeUTXOsWithKey(kp, utxoAmount)
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
 			BroadcastTxHash: "sweep_ignore_amount_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -771,7 +751,7 @@ func TestSend_SweepAll(t *testing.T) {
 	t.Run("sweep with invalid to address", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
+		client := NewClient(context.Background(), nil)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -791,11 +771,10 @@ func TestSend_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	utxos := makeUTXOs(100000)
-	server := mockUTXOServer(utxos)
-	defer server.Close()
+	mock := mockUTXOClient(utxos)
 
-	client := NewClient(&ClientOptions{
-		BaseURL: server.URL,
+	client := NewClient(context.Background(), &ClientOptions{
+		WOCClient: mock,
 	})
 
 	// Create already-canceled context
@@ -973,14 +952,13 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp1 := getTestKeyPair()
 		kp2 := getTestKeyPair2()
 
-		// Server only needed for broadcast (UTXOs are pre-fetched)
-		server := mockMultiRouteServer(mockServerConfig{
+		// Mock only needed for broadcast (UTXOs are pre-fetched)
+		mock := newMockWOCFromConfig(mockServerConfig{
 			BroadcastTxHash: "multi_addr_sweep_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		// Pre-fetch UTXOs from both addresses
@@ -1020,13 +998,12 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp1 := getTestKeyPair()
 		kp2 := getTestKeyPair2()
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			BroadcastTxHash: "multi_addr_normal_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		// Pre-fetch UTXOs: first address has 30k, second has 40k
@@ -1060,13 +1037,12 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp1 := getTestKeyPair()
 		kp2 := getTestKeyPair2()
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			BroadcastTxHash: "should_not_reach",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		// UTXOs from kp2 but only kp1 key provided
@@ -1097,13 +1073,12 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp1 := getTestKeyPair()
 		kp2 := getTestKeyPair2()
 
-		server := mockMultiRouteServer(mockServerConfig{
+		mock := newMockWOCFromConfig(mockServerConfig{
 			BroadcastTxHash: "zero_test_tx",
 		})
-		defer server.Close()
 
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient: mock,
 		})
 
 		preUTXOs := []chain.UTXO{

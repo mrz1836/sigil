@@ -2,12 +2,10 @@ package bsv
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,17 +16,16 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("successful API response", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entries := []wocMinerFeeEntry{
-				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 400},
-				{Timestamp: time.Now().Unix(), Name: "MinerB", FeeRate: 600},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(entries)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 400},
+					{Timestamp: time.Now().Unix(), Name: "MinerB", FeeRate: 600},
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -44,16 +41,15 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("single miner response", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entries := []wocMinerFeeEntry{
-				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 236},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(entries)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 236},
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -68,16 +64,15 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("fractional fee rate rounds up", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entries := []wocMinerFeeEntry{
-				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 10.5},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(entries)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 10.5},
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -92,10 +87,13 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("network error returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -110,12 +108,13 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("non-200 status returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestServiceUnavailable
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -126,15 +125,16 @@ func TestGetFeeQuote(t *testing.T) {
 		assert.Equal(t, "default", quote.Source)
 	})
 
-	t.Run("invalid JSON returns default fee quote", func(t *testing.T) {
+	t.Run("invalid response returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("not valid json"))
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestInvalidJSON
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -148,13 +148,13 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("empty array returns default fee quote", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("[]"))
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -168,16 +168,15 @@ func TestGetFeeQuote(t *testing.T) {
 	t.Run("fee rate below minimum uses minimum", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entries := []wocMinerFeeEntry{
-				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 1.0},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(entries)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 1.0},
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -187,13 +186,6 @@ func TestGetFeeQuote(t *testing.T) {
 
 		assert.Equal(t, uint64(MinFeeRate), quote.StandardRate)
 	})
-}
-
-// failingTransport always returns an error.
-type failingTransport struct{}
-
-func (t *failingTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
-	return nil, assert.AnError
 }
 
 func TestEstimateTxSize(t *testing.T) {
@@ -421,16 +413,15 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("returns fee based on quote", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			entries := []wocMinerFeeEntry{
-				{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 2000},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(entries)
-		}))
-		defer server.Close()
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 2000},
+				}, nil
+			},
+		}
 
-		client := NewClient(&ClientOptions{BaseURL: server.URL})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -447,10 +438,13 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("uses default quote on error", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -468,10 +462,13 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("fee for sending 1 satoshi", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -491,10 +488,13 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("fee for sending 100 satoshis", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -509,10 +509,13 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("fee for sending 1000 satoshis", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -527,10 +530,13 @@ func TestEstimateFeeForAmount(t *testing.T) {
 	t.Run("fee for max supply", func(t *testing.T) {
 		t.Parallel()
 
-		client := NewClient(nil)
-		client.httpClient = &http.Client{
-			Transport: &failingTransport{},
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
 		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

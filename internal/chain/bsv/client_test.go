@@ -2,13 +2,11 @@ package bsv
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,13 +16,13 @@ func TestNewClient(t *testing.T) {
 	t.Parallel()
 	t.Run("creates client with defaults", func(t *testing.T) {
 		t.Parallel()
-		client := NewClient(nil)
+		client := NewClient(context.Background(), nil)
 		assert.NotNil(t, client)
 	})
 
 	t.Run("creates client with custom options", func(t *testing.T) {
 		t.Parallel()
-		client := NewClient(&ClientOptions{
+		client := NewClient(context.Background(), &ClientOptions{
 			APIKey:  "test-key",
 			Network: NetworkMainnet,
 		})
@@ -37,24 +35,16 @@ func TestGetBalance(t *testing.T) {
 	t.Parallel()
 	t.Run("returns balance for valid address", func(t *testing.T) {
 		t.Parallel()
-		// Mock WhatsOnChain API
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Contains(t, r.URL.Path, "/address/")
-			assert.Contains(t, r.URL.Path, "/balance")
+		mock := &mockWOCClient{
+			balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+				return &whatsonchain.AddressBalance{
+					Confirmed:   123456789,
+					Unconfirmed: 0,
+				}, nil
+			},
+		}
 
-			// Return balance in satoshis
-			resp := BalanceResponse{
-				Confirmed:   123456789,
-				Unconfirmed: 0,
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
-
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -68,7 +58,7 @@ func TestGetBalance(t *testing.T) {
 
 	t.Run("returns error for invalid address", func(t *testing.T) {
 		t.Parallel()
-		client := NewClient(nil)
+		client := NewClient(context.Background(), nil)
 
 		ctx := context.Background()
 		_, err := client.GetBalance(ctx, "invalid")
@@ -80,7 +70,7 @@ func TestGetBalance(t *testing.T) {
 // TestGetTokenBalance tests token balance (not supported for BSV).
 func TestGetTokenBalance(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	ctx := context.Background()
 	_, err := client.GetTokenBalance(ctx, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", "token")
@@ -93,33 +83,26 @@ func TestListUTXOs(t *testing.T) {
 	t.Parallel()
 	t.Run("returns UTXOs for address", func(t *testing.T) {
 		t.Parallel()
-		// Mock WhatsOnChain API
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Contains(t, r.URL.Path, "/address/")
-			assert.Contains(t, r.URL.Path, "/unspent")
+		mock := &mockWOCClient{
+			utxoFunc: func(_ context.Context, _ string) (whatsonchain.AddressHistory, error) {
+				return whatsonchain.AddressHistory{
+					{
+						TxHash: "abc123def456",
+						TxPos:  0,
+						Value:  50000000,
+						Height: 100,
+					},
+					{
+						TxHash: "def456abc789",
+						TxPos:  1,
+						Value:  25000000,
+						Height: 101,
+					},
+				}, nil
+			},
+		}
 
-			resp := []UTXOResponse{
-				{
-					TxID:   "abc123def456",
-					Vout:   0,
-					Value:  50000000,
-					Height: 100,
-				},
-				{
-					TxID:   "def456abc789",
-					Vout:   1,
-					Value:  25000000,
-					Height: 101,
-				},
-			}
-			err := json.NewEncoder(w).Encode(resp)
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
-
-		client := NewClient(&ClientOptions{
-			BaseURL: server.URL,
-		})
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -184,7 +167,7 @@ func TestValidateAddress(t *testing.T) {
 		},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -201,7 +184,7 @@ func TestValidateAddress(t *testing.T) {
 // TestFormatAmount tests amount formatting.
 func TestFormatAmount(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name     string
@@ -242,7 +225,7 @@ func TestFormatAmount(t *testing.T) {
 // TestParseAmount tests amount parsing.
 func TestParseAmount(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name     string
@@ -297,7 +280,7 @@ func TestParseAmount(t *testing.T) {
 // TestSelectUTXOs tests UTXO selection.
 func TestSelectUTXOs(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	utxos := []UTXO{
 		{TxID: "tx1", Vout: 0, Amount: 50000000},  // 0.5 BSV
@@ -337,7 +320,7 @@ func TestSelectUTXOs(t *testing.T) {
 // TestSelectUTXOs_Algorithm tests the UTXO selection algorithm in detail.
 func TestSelectUTXOs_Algorithm(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name            string
@@ -440,7 +423,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 // TestSelectUTXOs_ChangeHandling tests change output edge cases.
 func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name           string
@@ -508,7 +491,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 // TestSelectUTXOs_FeeRateImpact tests how fee rate affects UTXO selection.
 func TestSelectUTXOs_FeeRateImpact(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	tests := []struct {
 		name           string
@@ -573,7 +556,7 @@ func TestSelectUTXOs_FeeRateImpact(t *testing.T) {
 // TestSelectUTXOs_SortingOrder tests that UTXOs are sorted largest-first.
 func TestSelectUTXOs_SortingOrder(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Provide UTXOs in random order
 	utxos := []UTXO{
@@ -593,7 +576,7 @@ func TestSelectUTXOs_SortingOrder(t *testing.T) {
 // TestSelectUTXOs_LargeNumber tests selection with many UTXOs.
 func TestSelectUTXOs_LargeNumber(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Create 100 UTXOs of 1000 satoshis each = 100,000 total
 	var utxos []UTXO
@@ -612,7 +595,7 @@ func TestSelectUTXOs_LargeNumber(t *testing.T) {
 // TestSelectUTXOs_SingleUTXOExact tests when single UTXO exactly matches.
 func TestSelectUTXOs_SingleUTXOExact(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// UTXO exactly covers amount + default estimated fee
 	utxos := makeUTXOs(10000 + EstimateTxSize(1, 2)) // 10000 + fee
@@ -626,7 +609,7 @@ func TestSelectUTXOs_SingleUTXOExact(t *testing.T) {
 // TestSelectUTXOs_DoesNotMutateInput tests that original slice isn't modified.
 func TestSelectUTXOs_DoesNotMutateInput(t *testing.T) {
 	t.Parallel()
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	utxos := []UTXO{
 		testMakeUTXO(testTxID(1), 0, 10000),
@@ -656,4 +639,21 @@ func testMakeUTXO(txid string, vout uint32, amount uint64) UTXO {
 		Amount:  amount,
 		Address: testAddress,
 	}
+}
+
+// TestGetBalance_NetworkError tests that network errors from the SDK are properly wrapped.
+func TestGetBalance_NetworkError(t *testing.T) {
+	t.Parallel()
+	mock := &mockWOCClient{
+		balanceFunc: func(_ context.Context, _ string) (*whatsonchain.AddressBalance, error) {
+			return nil, errTestConnRefused
+		},
+	}
+
+	client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+	ctx := context.Background()
+
+	_, err := client.GetBalance(ctx, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network")
 }

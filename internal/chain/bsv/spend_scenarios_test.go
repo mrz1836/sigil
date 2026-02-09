@@ -1,6 +1,7 @@
 package bsv
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,7 @@ func TestSpend_SingleAddressWithChange(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: 100000, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select 50k sats - should have change
 	selected, change, err := client.SelectUTXOs(utxos, 50000, DefaultFeeRate)
@@ -53,7 +54,7 @@ func TestSpend_Consolidate5AddressesTo1(t *testing.T) {
 	}
 
 	// Total: 100k sats
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Consolidate almost all (leaving room for fee)
 	// Fee for 5 inputs, 1 output: 10 + (5*148) + 34 = 784 bytes
@@ -91,7 +92,7 @@ func TestSpend_ExactAmount_NoChange(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: exactUTXO, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	selected, change, err := client.SelectUTXOs(utxos, targetAmount, DefaultFeeRate)
 	require.NoError(t, err)
@@ -119,7 +120,7 @@ func TestSpend_ChangeBelowDust_BTC(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	_, change, err := client.SelectUTXOs(utxos, targetAmount, DefaultFeeRate)
 	require.NoError(t, err)
@@ -147,7 +148,7 @@ func TestSpend_ChangeBelowDust_BSV(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	_, change, err := client.SelectUTXOs(utxos, targetAmount, DefaultFeeRate)
 	require.NoError(t, err)
@@ -168,7 +169,7 @@ func TestSpend_SequentialDepletion(t *testing.T) {
 		{TxID: testTxID(2), Vout: 0, Amount: 10000, Address: testAddress3},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Spend 1: Uses largest UTXO
 	selected1, change1, err := client.SelectUTXOs(initialUTXOs, 5000, DefaultFeeRate)
@@ -219,7 +220,7 @@ func TestSpend_MultiInputTransaction(t *testing.T) {
 		{TxID: testTxID(2), Vout: 0, Amount: 5000, Address: testAddress3},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Select amount that requires all 3 UTXOs
 	// 15000 total, need > 10000 to require 3
@@ -295,7 +296,7 @@ func TestSpend_LargeTransaction(t *testing.T) {
 	}
 
 	// Total: 100k sats
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Try to consolidate 80k sats
 	selected, change, err := client.SelectUTXOs(utxos, 80000, DefaultFeeRate)
@@ -325,7 +326,7 @@ func TestSpend_MaxOutput(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	// Try to send max (UTXO - fee)
 	feeEstimate := (EstimateTxSize(1, 2)*DefaultFeeRate + 999) / 1000
@@ -368,7 +369,7 @@ func TestSpend_InsufficientFunds(t *testing.T) {
 		},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -390,7 +391,7 @@ func TestSpend_ChangeAddressSelection(t *testing.T) {
 		{TxID: testTxID(0), Vout: 0, Amount: 100000, Address: testAddress},
 	}
 
-	client := NewClient(nil)
+	client := NewClient(context.Background(), nil)
 
 	selected, change, err := client.SelectUTXOs(utxos, 50000, DefaultFeeRate)
 	require.NoError(t, err)

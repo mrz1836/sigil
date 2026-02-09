@@ -1,6 +1,7 @@
 package bsv
 
 import (
+	"context"
 	"testing"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -218,7 +219,7 @@ func FuzzSelectUTXOs(f *testing.F) {
 	f.Add(uint8(0), uint64(10000), uint64(5000), uint64(1)) // Empty UTXO list
 
 	f.Fuzz(func(t *testing.T, numUTXOs uint8, utxoAmount, targetAmount, feeRate uint64) {
-		client := NewClient(nil)
+		client := NewClient(context.Background(), nil)
 
 		// Limit to reasonable values
 		if numUTXOs > 50 {

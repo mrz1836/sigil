@@ -220,6 +220,48 @@ func makeUTXOsWithKey(kp testKeyPair, amounts ...uint64) []UTXO {
 	return utxos
 }
 
+// generateTestKeyPair2 creates a second deterministic key pair for multi-address testing.
+func generateTestKeyPair2() testKeyPair {
+	// Different fixed 32-byte private key for a second address
+	privateKeyHex := "4b7a2da3bd6f891249fd81c2abc7f1fbd6dad23f08b4b77cbb01e3f7ecb4e24e"
+	privateKeyBytes, _ := hex.DecodeString(privateKeyHex)
+
+	_, pubKey := ec.PrivateKeyFromBytes(privateKeyBytes)
+	addr, _ := script.NewAddressFromPublicKey(pubKey, true)
+
+	return testKeyPair{
+		PrivateKey: privateKeyBytes,
+		Address:    addr.AddressString,
+	}
+}
+
+// getTestKeyPair2 returns a fresh second test key pair.
+func getTestKeyPair2() testKeyPair {
+	return generateTestKeyPair2()
+}
+
+// makeUTXOsMultiAddr creates UTXOs spread across multiple key pairs for multi-address testing.
+func makeUTXOsMultiAddr(pairs []testKeyPair, amountsPerPair [][]uint64) []UTXO {
+	total := 0
+	for _, amounts := range amountsPerPair {
+		total += len(amounts)
+	}
+	utxos := make([]UTXO, 0, total)
+	n := 0
+	for i, kp := range pairs {
+		for _, amount := range amountsPerPair[i] {
+			n++
+			utxos = append(utxos, UTXO{
+				TxID:    testTxID(n),
+				Vout:    0,
+				Amount:  amount,
+				Address: kp.Address,
+			})
+		}
+	}
+	return utxos
+}
+
 // Ensure mockServerConfig and mockMultiRouteServer are used (for godot linter).
 var (
 	_ = mockServerConfig{}

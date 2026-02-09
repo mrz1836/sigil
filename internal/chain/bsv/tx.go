@@ -143,9 +143,15 @@ func (b *TxBuilder) SetFeeRate(rate uint64) {
 //
 //nolint:gocognit,gocyclo // Transaction building involves multiple steps
 func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.TransactionResult, error) {
-	// Validate addresses
-	if err := ValidateBase58CheckAddress(req.From); err != nil {
-		return nil, fmt.Errorf("invalid from address: %w", err)
+	// Validate addresses: From is required unless pre-fetched UTXOs are provided
+	if len(req.UTXOs) == 0 {
+		if err := ValidateBase58CheckAddress(req.From); err != nil {
+			return nil, fmt.Errorf("invalid from address: %w", err)
+		}
+	} else if req.From != "" {
+		if err := ValidateBase58CheckAddress(req.From); err != nil {
+			return nil, fmt.Errorf("invalid from address: %w", err)
+		}
 	}
 	if err := ValidateBase58CheckAddress(req.To); err != nil {
 		return nil, fmt.Errorf("invalid to address: %w", err)
@@ -156,10 +162,18 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		return nil, sigilerr.ErrAmountRequired
 	}
 
-	// Get UTXOs for the address
-	utxos, err := c.ListUTXOs(ctx, req.From)
-	if err != nil {
-		return nil, fmt.Errorf("listing UTXOs: %w", err)
+	// Get UTXOs: use pre-fetched multi-address UTXOs or fetch for single address
+	var (
+		utxos []UTXO
+		err   error
+	)
+	if len(req.UTXOs) > 0 {
+		utxos = convertChainUTXOs(req.UTXOs)
+	} else {
+		utxos, err = c.ListUTXOs(ctx, req.From)
+		if err != nil {
+			return nil, fmt.Errorf("listing UTXOs: %w", err)
+		}
 	}
 
 	// Get fee quote
@@ -239,14 +253,24 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		return nil, fmt.Errorf("validating transaction: %w", err)
 	}
 
-	// Build and sign raw transaction
-	rawTx, err := BuildRawTransaction(builder, req.PrivateKey)
+	// Build and sign raw transaction (multi-key when PrivateKeys is provided)
+	var rawTx []byte
+	if len(req.PrivateKeys) > 0 {
+		rawTx, err = BuildRawTransactionMultiKey(builder, req.PrivateKeys)
+	} else {
+		rawTx, err = BuildRawTransaction(builder, req.PrivateKey)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("building raw transaction: %w", err)
 	}
 
-	// Zero the private key after use
-	ZeroPrivateKey(req.PrivateKey)
+	// Zero private keys after use
+	if req.PrivateKey != nil {
+		ZeroPrivateKey(req.PrivateKey)
+	}
+	for addr := range req.PrivateKeys {
+		ZeroPrivateKey(req.PrivateKeys[addr])
+	}
 
 	// Broadcast transaction
 	txHash, err := c.BroadcastTransaction(ctx, rawTx)
@@ -305,6 +329,123 @@ func BuildRawTransaction(builder *TxBuilder, privateKey []byte) ([]byte, error) 
 	}
 
 	return tx.Bytes(), nil
+}
+
+// BuildRawTransactionMultiKey builds and signs a raw BSV transaction where inputs
+// may belong to different addresses with different private keys.
+// The keyMap maps each address to its 32-byte private key.
+// Each input's UTXO.Address is looked up in keyMap to find its signing key.
+func BuildRawTransactionMultiKey(builder *TxBuilder, keyMap map[string][]byte) ([]byte, error) {
+	if err := validateMultiKeyInputs(builder, keyMap); err != nil {
+		return nil, err
+	}
+
+	// Build unlockers per address
+	unlockers, err := buildUnlockers(keyMap)
+	if err != nil {
+		return nil, err
+	}
+
+	tx := transaction.NewTransaction()
+
+	if err := addInputsToTxMultiKey(tx, builder.Inputs, unlockers); err != nil {
+		return nil, err
+	}
+
+	if err := addOutputsToTx(tx, builder.Outputs); err != nil {
+		return nil, err
+	}
+
+	if err := signAndVerifyTx(tx); err != nil {
+		return nil, err
+	}
+
+	return tx.Bytes(), nil
+}
+
+// validateMultiKeyInputs validates builder and keyMap for BuildRawTransactionMultiKey.
+func validateMultiKeyInputs(builder *TxBuilder, keyMap map[string][]byte) error {
+	if builder == nil || len(builder.Inputs) == 0 {
+		return ErrNoInputs
+	}
+	if len(builder.Outputs) == 0 {
+		return ErrNoOutputs
+	}
+	if len(keyMap) == 0 {
+		return fmt.Errorf("%w: no private keys provided", ErrInvalidPrivateKey)
+	}
+	for addr, keyBytes := range keyMap {
+		if len(keyBytes) != 32 {
+			return fmt.Errorf("%w: key for %s: expected 32 bytes, got %d",
+				ErrInvalidPrivateKey, addr, len(keyBytes))
+		}
+	}
+	return nil
+}
+
+// buildUnlockers creates P2PKH unlockers for each address in the key map.
+func buildUnlockers(keyMap map[string][]byte) (map[string]*p2pkh.P2PKH, error) {
+	unlockers := make(map[string]*p2pkh.P2PKH, len(keyMap))
+	for addr, keyBytes := range keyMap {
+		privKey, _ := ec.PrivateKeyFromBytes(keyBytes)
+		unlocker, err := p2pkh.Unlock(privKey, nil)
+		if err != nil {
+			return nil, fmt.Errorf("%w: creating unlocking template for %s: %w",
+				ErrSigningFailed, addr, err)
+		}
+		unlockers[addr] = unlocker
+	}
+	return unlockers, nil
+}
+
+// addInputsToTxMultiKey adds inputs with per-address unlockers.
+func addInputsToTxMultiKey(tx *transaction.Transaction, utxos []UTXO, unlockers map[string]*p2pkh.P2PKH) error {
+	for i, utxo := range utxos {
+		unlocker, ok := unlockers[utxo.Address]
+		if !ok {
+			return fmt.Errorf("%w: input %d: no private key for address %s",
+				ErrSigningFailed, i, utxo.Address)
+		}
+
+		prevTxID, err := chainhash.NewHashFromHex(utxo.TxID)
+		if err != nil {
+			return fmt.Errorf("%w: input %d: %w", ErrInvalidTxID, i, err)
+		}
+
+		lockingScript, err := getLockingScript(utxo)
+		if err != nil {
+			return fmt.Errorf("%w: input %d: %w", ErrMissingLockingScript, i, err)
+		}
+
+		input := &transaction.TransactionInput{
+			SourceTXID:              prevTxID,
+			SourceTxOutIndex:        utxo.Vout,
+			SequenceNumber:          transaction.DefaultSequenceNumber,
+			UnlockingScriptTemplate: unlocker,
+		}
+		input.SetSourceTxOutput(&transaction.TransactionOutput{
+			Satoshis:      utxo.Amount,
+			LockingScript: lockingScript,
+		})
+		tx.AddInput(input)
+	}
+	return nil
+}
+
+// convertChainUTXOs converts chain.UTXO slice to bsv.UTXO slice.
+func convertChainUTXOs(utxos []chain.UTXO) []UTXO {
+	result := make([]UTXO, len(utxos))
+	for i, u := range utxos {
+		result[i] = UTXO{
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			ScriptPubKey:  u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+		}
+	}
+	return result
 }
 
 // validateBuildInputs validates the inputs for BuildRawTransaction.

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -14,6 +13,7 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -267,10 +267,10 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 
 	// Zero private keys after use
 	if req.PrivateKey != nil {
-		ZeroPrivateKey(req.PrivateKey)
+		wallet.ZeroBytes(req.PrivateKey)
 	}
 	for addr := range req.PrivateKeys {
-		ZeroPrivateKey(req.PrivateKeys[addr])
+		wallet.ZeroBytes(req.PrivateKeys[addr])
 	}
 
 	// Broadcast transaction
@@ -286,8 +286,8 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		Hash:   txHash,
 		From:   req.From,
 		To:     req.To,
-		Amount: c.FormatAmount(amountToBigInt(amount)),
-		Fee:    c.FormatAmount(amountToBigInt(fee)),
+		Amount: c.FormatAmount(chain.AmountToBigInt(amount)),
+		Fee:    c.FormatAmount(chain.AmountToBigInt(fee)),
 		Status: "pending",
 	}, nil
 }
@@ -555,18 +555,6 @@ func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string
 		return "", fmt.Errorf("%w: all providers failed: %w", ErrBroadcastFailed, lastErr)
 	}
 	return "", fmt.Errorf("%w: no broadcast providers configured", ErrBroadcastFailed)
-}
-
-// ZeroPrivateKey zeros out a private key for security.
-func ZeroPrivateKey(key []byte) {
-	for i := range key {
-		key[i] = 0
-	}
-}
-
-// amountToBigInt converts uint64 to *big.Int.
-func amountToBigInt(amount uint64) *big.Int {
-	return new(big.Int).SetUint64(amount)
 }
 
 // ErrSweepInsufficientFunds indicates there are not enough funds to cover the fee.

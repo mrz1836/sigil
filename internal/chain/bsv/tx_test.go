@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 func TestTxBuilder_AddInput(t *testing.T) {
@@ -158,10 +159,10 @@ func TestTxBuilder_TotalOutputAmount(t *testing.T) {
 	assert.Equal(t, uint64(100000), builder.TotalOutputAmount())
 }
 
-func TestZeroPrivateKey(t *testing.T) {
+func TestZeroBytes(t *testing.T) {
 	key := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
-	ZeroPrivateKey(key)
+	wallet.ZeroBytes(key)
 
 	for i, b := range key {
 		assert.Equal(t, byte(0), b, "byte at position %d should be zero", i)
@@ -599,23 +600,23 @@ func TestTxBuilder_TotalAmounts_Large(t *testing.T) {
 	assert.Equal(t, uint64(100000000000000), builder.TotalOutputAmount())
 }
 
-// TestZeroPrivateKey_Empty tests zeroing an empty key.
-func TestZeroPrivateKey_Empty(t *testing.T) {
+// TestZeroBytes_Empty tests zeroing an empty key.
+func TestZeroBytes_Empty(t *testing.T) {
 	t.Parallel()
 	key := []byte{}
-	ZeroPrivateKey(key) // Should not panic
+	wallet.ZeroBytes(key) // Should not panic
 	assert.Empty(t, key)
 }
 
-// TestZeroPrivateKey_32Bytes tests zeroing a standard 32-byte private key.
-func TestZeroPrivateKey_32Bytes(t *testing.T) {
+// TestZeroBytes_32Bytes tests zeroing a standard 32-byte private key.
+func TestZeroBytes_32Bytes(t *testing.T) {
 	t.Parallel()
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 1)
 	}
 
-	ZeroPrivateKey(key)
+	wallet.ZeroBytes(key)
 
 	for i, b := range key {
 		assert.Equal(t, byte(0), b, "byte at position %d should be zero", i)

@@ -13,6 +13,10 @@ import (
 )
 
 const (
+	// DefaultMaxResponseBody is the maximum response body size for broadcast endpoints.
+	// Set to 10 MB to accommodate large BSV transactions.
+	DefaultMaxResponseBody int64 = 10 << 20
+
 	// GorillaPoolARCURL is the default GorillaPool ARC broadcast endpoint.
 	GorillaPoolARCURL = "https://arc.gorillapool.io"
 
@@ -73,7 +77,7 @@ func (w *WhatsOnChainBroadcaster) Broadcast(ctx context.Context, httpClient *htt
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, DefaultMaxResponseBody))
 	responseText := strings.TrimSpace(string(body))
 
 	if resp.StatusCode != http.StatusOK {
@@ -188,7 +192,7 @@ func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, httpClient *h
 
 // handleErrorResponse parses an ARC error response and returns an appropriate error.
 func (g *GorillaPoolARCBroadcaster) handleErrorResponse(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, DefaultMaxResponseBody))
 
 	var apiErr arcAPIError
 	if err := json.Unmarshal(body, &apiErr); err != nil {

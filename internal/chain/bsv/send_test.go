@@ -528,8 +528,8 @@ func TestSend_SweepAll(t *testing.T) {
 		// Verify fee is correct for 1 input, 1 output (no change)
 		expectedFee := EstimateFeeForTx(1, 1, DefaultFeeRate)
 		expectedAmount := utxoAmount - expectedFee
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedFee)), result.Fee)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedFee)), result.Fee)
 	})
 
 	t.Run("sweep multiple UTXOs - consolidates all", func(t *testing.T) {
@@ -564,8 +564,8 @@ func TestSend_SweepAll(t *testing.T) {
 		// Fee for 3 inputs, 1 output (no change)
 		expectedFee := EstimateFeeForTx(3, 1, DefaultFeeRate)
 		expectedAmount := uint64(120000) - expectedFee
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedFee)), result.Fee)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedFee)), result.Fee)
 	})
 
 	t.Run("sweep with no UTXOs returns error", func(t *testing.T) {
@@ -690,7 +690,7 @@ func TestSend_SweepAll(t *testing.T) {
 		// Fee for 1 input, 1 output at 10 sat/byte
 		expectedFee := EstimateFeeForTx(1, 1, feeRate)
 		expectedAmount := utxoAmount - expectedFee
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)
 	})
 
 	t.Run("sweep minimum viable (1 satoshi after fee)", func(t *testing.T) {
@@ -726,7 +726,7 @@ func TestSend_SweepAll(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		// 1 satoshi = 0.00000001 BSV
-		assert.Equal(t, client.FormatAmount(amountToBigInt(1)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(1)), result.Amount)
 	})
 
 	t.Run("sweep ignores Amount field when SweepAll is true", func(t *testing.T) {
@@ -765,7 +765,7 @@ func TestSend_SweepAll(t *testing.T) {
 		// Amount should be sweep amount, not 1000
 		expectedFee := EstimateFeeForTx(1, 1, DefaultFeeRate)
 		expectedAmount := utxoAmount - expectedFee
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)
 	})
 
 	t.Run("sweep with invalid to address", func(t *testing.T) {
@@ -1011,7 +1011,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		totalInput := uint64(120000)
 		expectedFee := EstimateFeeForTx(2, 1, DefaultFeeRate)
 		expectedAmount := totalInput - expectedFee
-		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(chain.AmountToBigInt(expectedAmount)), result.Amount)
 	})
 
 	t.Run("normal send with pre-fetched UTXOs from multiple addresses", func(t *testing.T) {

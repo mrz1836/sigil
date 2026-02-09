@@ -11,6 +11,7 @@ require (
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mrz1836/go-sanitize v1.5.4
+	github.com/mrz1836/go-whatsonchain v1.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.6

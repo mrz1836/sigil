@@ -310,13 +310,25 @@ sigil balance show [flags]
 |------|---------|-------------|
 | `--wallet` | - | Wallet name (required) |
 | `--chain` | - | Filter by chain (`eth`, `bsv`) |
+| `--refresh` | `false` | Force fresh fetch from network, ignoring cache |
 
 **Examples:**
 ```bash
 sigil balance show --wallet main
 sigil balance show --wallet main --chain eth
+sigil balance show --wallet main --refresh
 sigil balance show --wallet main -o json
 ```
+
+**Unconfirmed Balances:**
+
+When pending (unconfirmed) transactions are detected, an additional "Unconfirmed" column appears in the balance table showing the net change from mempool transactions. Negative values indicate outgoing funds; positive values indicate incoming funds.
+
+- **BSV:** The WhatsOnChain API natively reports confirmed and unconfirmed balances.
+- **ETH (RPC provider):** Pending balance is computed by comparing `eth_getBalance` at the `latest` vs `pending` block tags.
+- **ETH (Etherscan provider):** Unconfirmed data is not available from the Etherscan API.
+
+If no addresses have pending transactions, the table uses the standard "Balance" column header.
 
 <br>
 
@@ -400,6 +412,8 @@ sigil addresses <subcommand>
 
 List all addresses in a wallet with their status and balance.
 
+Balances are fetched live from the network with cache fallback. When any address has pending transactions, the table shows separate "Confirmed" and "Unconfirmed" columns. An address is considered "used" if it has historical activity in the UTXO store or has a non-zero confirmed/unconfirmed balance.
+
 ```bash
 sigil addresses list [flags]
 ```
@@ -412,6 +426,7 @@ sigil addresses list [flags]
 | `--type` | `-t` | `all` | Filter: `receive`, `change`, `all` |
 | `--used` | - | `false` | Show only used addresses |
 | `--unused` | - | `false` | Show only unused addresses |
+| `--refresh` | - | `false` | Force fresh fetch, ignore cache |
 
 **Examples:**
 ```bash
@@ -426,6 +441,9 @@ sigil addresses list --wallet main --unused
 
 # List only change addresses that have been used
 sigil addresses list --wallet main --type change --used
+
+# Force fresh balance fetch
+sigil addresses list --wallet main --refresh
 
 # Output as JSON
 sigil addresses list --wallet main -o json
@@ -484,7 +502,7 @@ sigil tx send [flags]
 |------|---------|-------------|
 | `--wallet` | - | Wallet name (required) |
 | `--to` | - | Recipient address (required) |
-| `--amount` | - | Amount to send (required) |
+| `--amount` | - | Amount to send, or `all` for entire balance (required) |
 | `--chain` | `eth` | Blockchain: `eth`, `bsv` |
 | `--token` | - | ERC-20 token symbol (e.g., `USDC`) - ETH only |
 | `--gas` | `medium` | Gas speed: `slow`, `medium`, `fast` |
@@ -495,16 +513,29 @@ sigil tx send [flags]
 # Send ETH
 sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount 0.1 --chain eth
 
+# Send all ETH (entire balance minus gas fees)
+sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount all --chain eth
+
 # Send USDC
 sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount 100 --chain eth --token USDC
 
+# Send all USDC (entire token balance)
+sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount all --chain eth --token USDC
+
 # Send BSV
 sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.001 --chain bsv
+
+# Send all BSV (entire balance minus mining fee)
+sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount all --chain bsv
 ```
+
+**Send All (`--amount all`):**
+
+Use `--amount all` to send your entire balance. Fees are deducted automatically from the send amount, so the transaction always succeeds if you have enough to cover fees. The confirmation prompt shows the exact calculated amount before broadcast. For BSV, this consolidates all UTXOs into a single output with no change. For ETH, the send amount is `balance - gas cost`. For ERC-20 tokens, the full token balance is sent (ETH is still needed for gas).
 
 **BSV Change Addresses:**
 
-When sending BSV, any change (remaining balance after sending the requested amount plus fees) is sent to a new change address on the BIP44 internal chain (`m/44'/236'/0'/1/x`). This improves privacy by avoiding address reuse. You can view your change addresses with `sigil addresses list --type change`.
+When sending BSV (with a specific amount, not `--amount all`), any change (remaining balance after sending the requested amount plus fees) is sent to a new change address on the BIP44 internal chain (`m/44'/236'/0'/1/x`). This improves privacy by avoiding address reuse. You can view your change addresses with `sigil addresses list --type change`.
 
 <br>
 

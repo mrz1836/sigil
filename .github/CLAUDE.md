@@ -16,10 +16,12 @@ This repository uses **`AGENTS.md`** as the single source of truth for:
 
 1. **Study `AGENTS.md`**
    Make sure every automated change or suggestion respects those rules.
-2. **Follow branch‑prefix and commit‑message standards**
+2. **Respect the constitution.md**
+   [This file](../.specify/memory/constitution.md) defines the core principles and values of this project. All agents must align with it.
+3. **Follow branch‑prefix and commit‑message standards**
    They drive Mergify auto‑labeling and CI gates.
-3. **Never tag releases**
-4. **Pass CI**
+4. **Never tag releases**
+5. **Pass CI**
    Run `go fmt`, `goimports`, `go vet`, `staticcheck`, and `golangci‑lint` locally before opening a PR.
 
 If you encounter conflicting guidance elsewhere, `AGENTS.md` wins.

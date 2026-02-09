@@ -8,6 +8,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"sort"
 )
 
 // Exit codes per FR-006.
@@ -33,10 +34,15 @@ type SigilError struct {
 func (e *SigilError) Error() string {
 	msg := e.Message
 
-	// Include details in error message
+	// Include details in error message (sorted for deterministic output)
 	if len(e.Details) > 0 {
-		for k, v := range e.Details {
-			msg = fmt.Sprintf("%s (%s: %s)", msg, k, v)
+		keys := make([]string, 0, len(e.Details))
+		for k := range e.Details {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			msg = fmt.Sprintf("%s (%s: %s)", msg, k, e.Details[k])
 		}
 	}
 

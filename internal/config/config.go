@@ -38,11 +38,13 @@ type NetworksConfig struct {
 
 // ETHNetworkConfig defines Ethereum network settings.
 type ETHNetworkConfig struct {
-	Enabled      bool          `yaml:"enabled"`
-	RPC          string        `yaml:"rpc"`
-	FallbackRPCs []string      `yaml:"fallback_rpcs,omitempty"`
-	ChainID      int           `yaml:"chain_id"`
-	Tokens       []TokenConfig `yaml:"tokens"`
+	Enabled         bool          `yaml:"enabled"`
+	RPC             string        `yaml:"rpc"`
+	FallbackRPCs    []string      `yaml:"fallback_rpcs,omitempty"`
+	ChainID         int           `yaml:"chain_id"`
+	Tokens          []TokenConfig `yaml:"tokens"`
+	Provider        string        `yaml:"provider,omitempty"`          // "rpc" or "etherscan"; default "etherscan"
+	EtherscanAPIKey string        `yaml:"etherscan_api_key,omitempty"` // Etherscan API key
 }
 
 // TokenConfig defines an ERC-20 token to track.
@@ -189,6 +191,19 @@ func (c *Config) IsVerbose() bool {
 // GetSecurity returns the security configuration.
 func (c *Config) GetSecurity() SecurityConfig {
 	return c.Security
+}
+
+// GetETHProvider returns the ETH balance provider ("rpc" or "etherscan").
+func (c *Config) GetETHProvider() string {
+	if c.Networks.ETH.Provider == "" {
+		return "etherscan"
+	}
+	return c.Networks.ETH.Provider
+}
+
+// GetETHEtherscanAPIKey returns the Etherscan API key.
+func (c *Config) GetETHEtherscanAPIKey() string {
+	return c.Networks.ETH.EtherscanAPIKey
 }
 
 // DefaultHome returns the default sigil home directory.

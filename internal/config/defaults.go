@@ -29,6 +29,7 @@ func Defaults() *Config {
 				RPC:          DefaultETHRPCURL,
 				FallbackRPCs: DefaultETHFallbackRPCs,
 				ChainID:      1,
+				Provider:     "etherscan",
 				Tokens: []TokenConfig{
 					{
 						Symbol:   "USDC",

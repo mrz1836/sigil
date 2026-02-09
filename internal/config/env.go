@@ -10,14 +10,16 @@ import (
 
 // Environment variable names.
 const (
-	EnvHome         = "SIGIL_HOME"
-	EnvETHRPC       = "SIGIL_ETH_RPC"
-	EnvBSVAPIKey    = "SIGIL_BSV_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
-	EnvOutputFormat = "SIGIL_OUTPUT_FORMAT"
-	EnvVerbose      = "SIGIL_VERBOSE"
-	EnvLogLevel     = "SIGIL_LOG_LEVEL"
-	EnvNoColor      = "NO_COLOR"
-	EnvSessionTTL   = "SIGIL_SESSION_TTL"
+	EnvHome            = "SIGIL_HOME"
+	EnvETHRPC          = "SIGIL_ETH_RPC"
+	EnvETHProvider     = "SIGIL_ETH_PROVIDER"
+	EnvEtherscanAPIKey = "ETHERSCAN_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
+	EnvBSVAPIKey       = "SIGIL_BSV_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
+	EnvOutputFormat    = "SIGIL_OUTPUT_FORMAT"
+	EnvVerbose         = "SIGIL_VERBOSE"
+	EnvLogLevel        = "SIGIL_LOG_LEVEL"
+	EnvNoColor         = "NO_COLOR"
+	EnvSessionTTL      = "SIGIL_SESSION_TTL"
 )
 
 // ApplyEnvironment applies environment variable overrides to the configuration.
@@ -30,6 +32,17 @@ func ApplyEnvironment(cfg *Config) {
 
 	if v := os.Getenv(EnvETHRPC); v != "" {
 		cfg.Networks.ETH.RPC = SanitizeURL(v)
+	}
+
+	if v := os.Getenv(EnvETHProvider); v != "" {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "rpc" || v == "etherscan" {
+			cfg.Networks.ETH.Provider = v
+		}
+	}
+
+	if v := os.Getenv(EnvEtherscanAPIKey); v != "" {
+		cfg.Networks.ETH.EtherscanAPIKey = strings.TrimSpace(v)
 	}
 
 	if v := os.Getenv(EnvBSVAPIKey); v != "" {

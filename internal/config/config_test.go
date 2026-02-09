@@ -457,3 +457,96 @@ func TestSave_MkdirAllFails(t *testing.T) {
 	err := config.Save(cfg, "/proc/nonexistent/config.yaml")
 	assert.Error(t, err)
 }
+
+func TestDefaults_ETHProvider(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
+	assert.Equal(t, "etherscan", cfg.GetETHProvider())
+}
+
+func TestConfig_GetETHProvider_EmptyFallback(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Networks.ETH.Provider = ""
+	assert.Equal(t, "etherscan", cfg.GetETHProvider())
+}
+
+func TestConfig_GetETHProvider_RPC(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	cfg.Networks.ETH.Provider = "rpc"
+	assert.Equal(t, "rpc", cfg.GetETHProvider())
+}
+
+func TestConfig_GetETHEtherscanAPIKey(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Empty(t, cfg.GetETHEtherscanAPIKey())
+
+	cfg.Networks.ETH.EtherscanAPIKey = "my-key"
+	assert.Equal(t, "my-key", cfg.GetETHEtherscanAPIKey())
+}
+
+func TestApplyEnvironment_EtherscanAPIKey(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("ETHERSCAN_API_KEY", "env-key")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "env-key", cfg.Networks.ETH.EtherscanAPIKey)
+}
+
+func TestApplyEnvironment_EtherscanAPIKey_Trimmed(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("ETHERSCAN_API_KEY", "  env-key  ")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "env-key", cfg.Networks.ETH.EtherscanAPIKey)
+}
+
+func TestApplyEnvironment_ETHProvider(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_ETH_PROVIDER", "rpc")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "rpc", cfg.Networks.ETH.Provider)
+}
+
+func TestApplyEnvironment_ETHProvider_Etherscan(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Networks.ETH.Provider = "rpc" // Override to rpc first
+	t.Setenv("SIGIL_ETH_PROVIDER", "etherscan")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
+}
+
+func TestApplyEnvironment_ETHProvider_CaseInsensitive(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_ETH_PROVIDER", "RPC")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "rpc", cfg.Networks.ETH.Provider)
+}
+
+func TestApplyEnvironment_ETHProvider_Invalid(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_ETH_PROVIDER", "invalid")
+	config.ApplyEnvironment(cfg)
+	// Should not change from default since "invalid" is not "rpc" or "etherscan"
+	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
+}
+
+func TestLoadSave_RoundTrip_WithEtherscan(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := config.Defaults()
+	cfg.Networks.ETH.Provider = "etherscan"
+	cfg.Networks.ETH.EtherscanAPIKey = "test-api-key-123"
+
+	err := config.Save(cfg, path)
+	require.NoError(t, err)
+
+	loaded, err := config.Load(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, "etherscan", loaded.Networks.ETH.Provider)
+	assert.Equal(t, "test-api-key-123", loaded.Networks.ETH.EtherscanAPIKey)
+}

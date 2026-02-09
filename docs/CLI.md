@@ -342,6 +342,9 @@ By default, shows the first unused address. The same address is shown until it r
 | `--new` | - | `false` | Force generation of a new address |
 | `--label` | `-l` | - | Set a label for the address |
 | `--qr` | - | `false` | Display QR code for the address |
+| `--check` | - | `false` | Check for received funds and refresh local UTXO state |
+| `--address` | - | - | Specific address to check (use with `--check`) |
+| `--all` | - | `false` | Check all receiving addresses (use with `--check`) |
 
 **Examples:**
 ```bash
@@ -359,6 +362,24 @@ sigil receive --wallet main --chain eth
 
 # Show address with QR code for mobile wallet scanning
 sigil receive --wallet main --chain bsv --qr
+
+# Check if funds have arrived at your current receive address
+sigil receive --wallet main --chain bsv --check
+
+# Check a specific address for funds
+sigil receive --wallet main --chain bsv --check --address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+
+# Check all BSV receiving addresses for funds
+sigil receive --wallet main --chain bsv --check --all
+
+# Check all ETH receiving addresses for balances (requires ETHERSCAN_API_KEY)
+sigil receive --wallet main --chain eth --check --all
+
+# Check all chains at once (BSV + ETH) — omit --chain
+sigil receive --wallet main --check --all
+
+# Check all addresses with JSON output
+sigil receive --wallet main --check --all -o json
 ```
 
 <br>
@@ -860,7 +881,9 @@ Environment variables override configuration file settings.
 | Variable | Description |
 |----------|-------------|
 | `SIGIL_HOME` | Sigil data directory (default: `~/.sigil`) |
-| `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL (default: Cloudflare gateway) |
+| `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL (default: PublicNode gateway) |
+| `SIGIL_ETH_PROVIDER` | ETH balance provider: `etherscan` (default) or `rpc` |
+| `ETHERSCAN_API_KEY` | Etherscan API key (required when provider is `etherscan`) |
 | `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional) |
 | `SIGIL_OUTPUT_FORMAT` | Default output format (`text`, `json`, `auto`) |
 | `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
@@ -872,6 +895,7 @@ Environment variables override configuration file settings.
 ```bash
 export SIGIL_HOME=/custom/path
 export SIGIL_ETH_RPC=https://mainnet.infura.io/v3/YOUR_KEY
+export ETHERSCAN_API_KEY=your_etherscan_api_key
 export SIGIL_OUTPUT_FORMAT=json
 export SIGIL_LOG_LEVEL=debug
 export SIGIL_SESSION_TTL=30  # 30 minute sessions
@@ -910,7 +934,9 @@ security:
 # Network settings
 networks:
   eth:
-    rpc: https://cloudflare-eth.com  # Default Cloudflare gateway (no API key needed)
+    provider: etherscan             # "etherscan" (default) or "rpc"
+    etherscan_api_key: ""           # Or set ETHERSCAN_API_KEY env var
+    rpc: https://ethereum-rpc.publicnode.com  # Fallback RPC (or primary when provider=rpc)
   bsv:
     api_key: ""           # WhatsOnChain API key (optional)
 ```
@@ -929,5 +955,7 @@ Use dot notation with `config get` and `config set`:
 | `logging.file` | Log file path | Any path |
 | `security.session_enabled` | Enable session caching | `true`, `false` |
 | `security.session_ttl_minutes` | Session duration | `1`-`60` |
+| `networks.eth.provider` | ETH balance provider | `etherscan`, `rpc` |
+| `networks.eth.etherscan_api_key` | Etherscan API key | Any string |
 | `networks.eth.rpc` | Ethereum RPC URL | Any URL |
 | `networks.bsv.api_key` | WhatsOnChain API key | Any string |

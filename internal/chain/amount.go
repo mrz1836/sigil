@@ -71,6 +71,11 @@ func ParseDecimalAmount(amount string, decimalPlaces int, invalidAmountErr error
 	return result, nil
 }
 
+// AmountToBigInt converts a uint64 amount to *big.Int.
+func AmountToBigInt(amount uint64) *big.Int {
+	return new(big.Int).SetUint64(amount)
+}
+
 // FormatDecimalAmount converts a big.Int to a human-readable string with the given decimal places.
 // For example, 1500000000000000000 with 18 decimals returns "1.500000000000000000".
 func FormatDecimalAmount(amount *big.Int, decimalPlaces int) string {

@@ -74,10 +74,12 @@ func RetryWithConfig[T any](ctx context.Context, cfg RetryConfig, operation func
 		if attempt < cfg.MaxAttempts-1 {
 			delay := calculateDelay(attempt, cfg.BaseDelay, cfg.MaxDelay)
 
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return result, ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 	}

@@ -374,12 +374,14 @@ func TestBalanceCacheIntegration(t *testing.T) {
 func TestConnectETHClient_EmptyURL(t *testing.T) {
 	t.Parallel()
 
+	transport := sharedETHTransport()
+
 	// Test with empty primary and no fallbacks
-	_, err := connectETHClient("", nil)
+	_, err := connectETHClient("", nil, transport)
 	require.Error(t, err)
 
 	// Test with empty primary and empty fallbacks
-	_, err = connectETHClient("", []string{""})
+	_, err = connectETHClient("", []string{""}, transport)
 	require.Error(t, err)
 }
 
@@ -387,8 +389,10 @@ func TestConnectETHClient_EmptyURL(t *testing.T) {
 func TestConnectETHClient_ValidURL(t *testing.T) {
 	t.Parallel()
 
+	transport := sharedETHTransport()
+
 	// Test with valid-looking primary URL (actual connection tested elsewhere)
-	client, err := connectETHClient("https://example.com", nil)
+	client, err := connectETHClient("https://example.com", nil, transport)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	client.Close()
@@ -398,8 +402,10 @@ func TestConnectETHClient_ValidURL(t *testing.T) {
 func TestConnectETHClient_FallbackToValid(t *testing.T) {
 	t.Parallel()
 
+	transport := sharedETHTransport()
+
 	// Test with empty primary but valid fallback
-	client, err := connectETHClient("", []string{"https://fallback.example.com"})
+	client, err := connectETHClient("", []string{"https://fallback.example.com"}, transport)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	client.Close()

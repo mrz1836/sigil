@@ -193,37 +193,6 @@ func TestExitCode(t *testing.T) {
 	}
 }
 
-// TestGlobalGetters tests Config(), Logger(), Formatter(), Context() getters.
-// NOT parallel: mutates package-level globals.
-func TestGlobalGetters(t *testing.T) {
-	// Save original values
-	origCfg := cfg
-	origLogger := logger
-	origFormatter := formatter
-	origCmdCtx := cmdCtx
-	defer func() {
-		cfg = origCfg
-		logger = origLogger
-		formatter = origFormatter
-		cmdCtx = origCmdCtx
-	}()
-
-	testCfg := config.Defaults()
-	testLogger := config.NullLogger()
-	testFmt := output.NewFormatter(output.FormatText, nil)
-	testCtx := &CommandContext{Cfg: testCfg}
-
-	cfg = testCfg
-	logger = testLogger
-	formatter = testFmt
-	cmdCtx = testCtx
-
-	assert.Equal(t, testCfg, Config())
-	assert.Equal(t, testLogger, Logger())
-	assert.Equal(t, testFmt, Formatter())
-	assert.Equal(t, testCtx, Context())
-}
-
 // TestCleanup_NilLogger verifies cleanup doesn't panic with nil logger.
 func TestCleanup_NilLogger(t *testing.T) {
 	origLogger := logger

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -151,9 +152,16 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		chainID wallet.ChainID
 		address string
 	}
-	tasks := make([]balanceTask, 0)
-
 	// Build a flat list of address fetch tasks.
+	var taskCount int
+	for chainID, addresses := range w.Addresses {
+		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
+			continue
+		}
+		taskCount += len(addresses)
+	}
+	tasks := make([]balanceTask, 0, taskCount)
+
 	for chainID, addresses := range w.Addresses {
 		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
 			continue
@@ -287,15 +295,28 @@ func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, addres
 	return entries, stale, fetchErr
 }
 
+// sharedETHTransport creates an HTTP transport for sharing across ETH clients.
+func sharedETHTransport() *http.Transport {
+	return &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
 // connectETHClient attempts to connect to the primary RPC, falling back to alternates on failure.
-func connectETHClient(rpcURL string, fallbackRPCs []string) (*eth.Client, error) {
-	client, err := eth.NewClient(rpcURL, nil)
+func connectETHClient(rpcURL string, fallbackRPCs []string, transport *http.Transport) (*eth.Client, error) {
+	opts := &eth.ClientOptions{Transport: transport}
+	client, err := eth.NewClient(rpcURL, opts)
 	if err == nil {
 		return client, nil
 	}
 	// Try fallback RPCs
 	for _, fallbackURL := range fallbackRPCs {
-		client, err = eth.NewClient(fallbackURL, nil)
+		client, err = eth.NewClient(fallbackURL, opts)
 		if err == nil {
 			return client, nil
 		}
@@ -304,7 +325,7 @@ func connectETHClient(rpcURL string, fallbackRPCs []string) (*eth.Client, error)
 }
 
 // fetchETHBalanceWithFallback fetches ETH balance, trying fallback RPCs on failure.
-func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, address, primaryRPC string, fallbackRPCs []string) (*eth.Balance, *eth.Client, error) {
+func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, address, primaryRPC string, fallbackRPCs []string, transport *http.Transport) (*eth.Balance, *eth.Client, error) {
 	// Try primary client first
 	balance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
 		bal, fetchErr := client.GetNativeBalance(ctx, address)
@@ -317,12 +338,13 @@ func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, addres
 		return balance, client, nil
 	}
 
-	// Try fallback RPCs
+	// Try fallback RPCs, sharing the same transport
+	opts := &eth.ClientOptions{Transport: transport}
 	for _, fallbackURL := range fallbackRPCs {
 		if fallbackURL == primaryRPC {
 			continue
 		}
-		fallbackClient, clientErr := eth.NewClient(fallbackURL, nil)
+		fallbackClient, clientErr := eth.NewClient(fallbackURL, opts)
 		if clientErr != nil {
 			continue
 		}
@@ -453,14 +475,15 @@ func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *c
 	}
 
 	fallbackRPCs := cfg.GetETHFallbackRPCs()
-	client, err := connectETHClient(rpcURL, fallbackRPCs)
+	transport := sharedETHTransport()
+	client, err := connectETHClient(rpcURL, fallbackRPCs, transport)
 	if err != nil {
 		return nil, true, err
 	}
 	defer client.Close()
 
 	// Fetch ETH balance with fallback support
-	ethBalance, client, err := fetchETHBalanceWithFallback(ctx, client, address, rpcURL, fallbackRPCs)
+	ethBalance, client, err := fetchETHBalanceWithFallback(ctx, client, address, rpcURL, fallbackRPCs, transport)
 	if err != nil {
 		return nil, true, err
 	}

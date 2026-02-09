@@ -429,7 +429,7 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 			return sweepErr
 		}
 
-		amount = amountToBigInt(sweepAmount)
+		amount = chain.AmountToBigInt(sweepAmount)
 		estimatedFee = totalInputs - sweepAmount
 		displayAmount = client.FormatAmount(amount) + " (sweep all)"
 		sendUTXOs = allUTXOs
@@ -615,11 +615,6 @@ func displayBSVTxResultJSON(w interface {
 	}
 
 	_ = writeJSON(w, payload)
-}
-
-// amountToBigInt converts uint64 to *big.Int.
-func amountToBigInt(amount uint64) *big.Int {
-	return new(big.Int).SetUint64(amount)
 }
 
 // resolveToken resolves a token symbol to its contract address and decimals.

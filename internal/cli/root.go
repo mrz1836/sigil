@@ -207,26 +207,6 @@ func cleanup() {
 	}
 }
 
-// Config returns the global configuration.
-func Config() *config.Config {
-	return cfg
-}
-
-// Logger returns the global logger.
-func Logger() *config.Logger {
-	return logger
-}
-
-// Formatter returns the global output formatter.
-func Formatter() *output.Formatter {
-	return formatter
-}
-
-// Context returns the global command context.
-func Context() *CommandContext {
-	return cmdCtx
-}
-
 // versionCmd shows version information.
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables

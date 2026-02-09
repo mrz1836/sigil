@@ -332,7 +332,7 @@ func TestAmountToBigInt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result := amountToBigInt(tc.amount)
+			result := chain.AmountToBigInt(tc.amount)
 			assert.Equal(t, tc.expected, result.String())
 		})
 	}

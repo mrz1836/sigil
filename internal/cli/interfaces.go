@@ -24,6 +24,12 @@ type ConfigProvider interface {
 	// GetETHFallbackRPCs returns the fallback Ethereum RPC URLs.
 	GetETHFallbackRPCs() []string
 
+	// GetETHProvider returns the ETH balance provider ("rpc" or "etherscan").
+	GetETHProvider() string
+
+	// GetETHEtherscanAPIKey returns the Etherscan API key.
+	GetETHEtherscanAPIKey() string
+
 	// GetBSVAPIKey returns the BSV API key.
 	GetBSVAPIKey() string
 

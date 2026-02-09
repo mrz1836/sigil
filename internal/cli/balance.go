@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
+	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/wallet"
@@ -323,18 +324,105 @@ func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, addres
 	return nil, client, err
 }
 
-// fetchETHBalances fetches ETH and USDC balances.
+// fetchETHBalances fetches ETH and USDC balances using the configured provider with failover.
 func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
+	provider := cfg.GetETHProvider()
+
+	type fetchFn func() ([]cache.BalanceCacheEntry, bool, error)
+
+	etherscanFn := func() ([]cache.BalanceCacheEntry, bool, error) {
+		apiKey := cfg.GetETHEtherscanAPIKey()
+		if apiKey == "" {
+			return nil, true, etherscan.ErrAPIKeyRequired
+		}
+		return fetchETHBalancesViaEtherscan(ctx, address, balanceCache, apiKey)
+	}
+
+	rpcFn := func() ([]cache.BalanceCacheEntry, bool, error) {
+		return fetchETHBalancesViaRPC(ctx, address, balanceCache, cfg)
+	}
+
+	var primaryFn, secondaryFn fetchFn
+	if provider == "rpc" {
+		primaryFn = rpcFn
+		secondaryFn = etherscanFn
+	} else {
+		// Default: etherscan primary, rpc secondary
+		primaryFn = etherscanFn
+		secondaryFn = rpcFn
+	}
+
+	// Try primary
+	entries, stale, err := primaryFn()
+	if err == nil {
+		return entries, stale, nil
+	}
+
+	// Primary failed: try secondary (failover)
+	fallbackEntries, fallbackStale, fallbackErr := secondaryFn()
+	if fallbackErr == nil {
+		return fallbackEntries, fallbackStale, nil
+	}
+
+	// Both providers failed: return cached data
+	cached, cachedStale, cacheErr := getCachedETHBalances(address, balanceCache)
+	if cacheErr == nil {
+		return cached, cachedStale, nil
+	}
+
+	return nil, true, err
+}
+
+// fetchETHBalancesViaEtherscan fetches ETH and USDC balances using the Etherscan API.
+func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCache *cache.BalanceCache, apiKey string) ([]cache.BalanceCacheEntry, bool, error) {
+	var entries []cache.BalanceCacheEntry
+
+	client, err := etherscan.NewClient(apiKey, nil)
+	if err != nil {
+		return nil, true, err
+	}
+
+	// Fetch ETH balance
+	ethBalance, err := client.GetNativeBalance(ctx, address)
+	if err != nil {
+		return nil, true, err
+	}
+
+	ethEntry := cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  address,
+		Balance:  eth.FormatBalanceAmount(ethBalance.Amount, ethBalance.Decimals),
+		Symbol:   ethBalance.Symbol,
+		Decimals: ethBalance.Decimals,
+	}
+	balanceCache.Set(ethEntry)
+	entries = append(entries, ethEntry)
+
+	// Fetch USDC balance
+	usdcBalance, err := client.GetUSDCBalance(ctx, address)
+	if err == nil {
+		usdcEntry := cache.BalanceCacheEntry{
+			Chain:    chain.ETH,
+			Address:  address,
+			Balance:  eth.FormatBalanceAmount(usdcBalance.Amount, usdcBalance.Decimals),
+			Symbol:   usdcBalance.Symbol,
+			Token:    usdcBalance.Token,
+			Decimals: usdcBalance.Decimals,
+		}
+		balanceCache.Set(usdcEntry)
+		entries = append(entries, usdcEntry)
+	}
+
+	return entries, false, nil
+}
+
+// fetchETHBalancesViaRPC fetches ETH and USDC balances using JSON-RPC.
+func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
 	var entries []cache.BalanceCacheEntry
 	var stale bool
 
-	// Get ETH RPC URL from config
 	rpcURL := cfg.GetETHRPC()
 	if rpcURL == "" {
-		cached, isStale, cacheErr := getCachedETHBalances(address, balanceCache)
-		if cacheErr == nil {
-			return cached, isStale, nil
-		}
 		return nil, true, sigilerr.WithSuggestion(
 			sigilerr.ErrNetworkError,
 			"ETH RPC not configured. Set SIGIL_ETH_RPC or configure networks.eth.rpc in config.yaml",
@@ -344,15 +432,14 @@ func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.B
 	fallbackRPCs := cfg.GetETHFallbackRPCs()
 	client, err := connectETHClient(rpcURL, fallbackRPCs)
 	if err != nil {
-		return getCachedETHBalances(address, balanceCache)
+		return nil, true, err
 	}
 	defer client.Close()
 
 	// Fetch ETH balance with fallback support
 	ethBalance, client, err := fetchETHBalanceWithFallback(ctx, client, address, rpcURL, fallbackRPCs)
 	if err != nil {
-		cachedEntries, isStale, _ := getCachedETHBalances(address, balanceCache)
-		return cachedEntries, isStale, err
+		return nil, true, err
 	}
 
 	// Store in cache

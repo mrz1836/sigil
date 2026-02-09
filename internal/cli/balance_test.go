@@ -21,15 +21,17 @@ import (
 
 // mockConfigProvider implements ConfigProvider for testing.
 type mockConfigProvider struct {
-	home         string
-	ethRPC       string
-	fallbackRPCs []string
-	bsvAPIKey    string
-	logLevel     string
-	logFile      string
-	outputFormat string
-	verbose      bool
-	security     config.SecurityConfig
+	home               string
+	ethRPC             string
+	fallbackRPCs       []string
+	ethProvider        string
+	ethEtherscanAPIKey string
+	bsvAPIKey          string
+	logLevel           string
+	logFile            string
+	outputFormat       string
+	verbose            bool
+	security           config.SecurityConfig
 }
 
 func (m *mockConfigProvider) GetHome() string                    { return m.home }
@@ -41,6 +43,17 @@ func (m *mockConfigProvider) GetLoggingFile() string             { return m.logF
 func (m *mockConfigProvider) GetOutputFormat() string            { return m.outputFormat }
 func (m *mockConfigProvider) IsVerbose() bool                    { return m.verbose }
 func (m *mockConfigProvider) GetSecurity() config.SecurityConfig { return m.security }
+
+func (m *mockConfigProvider) GetETHProvider() string {
+	if m.ethProvider == "" {
+		return "etherscan"
+	}
+	return m.ethProvider
+}
+
+func (m *mockConfigProvider) GetETHEtherscanAPIKey() string {
+	return m.ethEtherscanAPIKey
+}
 
 func TestFormatCacheAge(t *testing.T) {
 	tests := []struct {
@@ -671,4 +684,103 @@ func TestFetchBalancesForAddress_BSV_Direct(t *testing.T) {
 	// BSV with no API and no cache should return error
 	_, _, err := fetchBalancesForAddress(ctx, wallet.ChainBSV, "1BSVTestAddr", balanceCache, cfg)
 	require.Error(t, err)
+}
+
+// TestFetchETHBalances_EtherscanNoKey_FallbackToRPC tests that when etherscan is primary
+// but no API key is set, the system falls back to RPC.
+func TestFetchETHBalances_EtherscanNoKey_FallbackToRPC(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethProvider:        "etherscan",
+		ethEtherscanAPIKey: "", // No API key
+		ethRPC:             "invalid://primary",
+		fallbackRPCs:       nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0x123",
+		Balance:  "1.0",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+	ctx := context.Background()
+
+	// Etherscan fails (no key), RPC fails (invalid URL), should return cached data
+	entries, _, err := fetchETHBalances(ctx, "0x123", balanceCache, cfg)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "1.0", entries[0].Balance)
+}
+
+// TestFetchETHBalances_RPCPrimary tests the RPC-primary provider path.
+func TestFetchETHBalances_RPCPrimary(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethProvider:        "rpc",
+		ethEtherscanAPIKey: "",
+		ethRPC:             "invalid://primary",
+		fallbackRPCs:       nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	ctx := context.Background()
+
+	// RPC fails (invalid URL), Etherscan fails (no key), no cache → error
+	_, stale, err := fetchETHBalances(ctx, "0x789", balanceCache, cfg)
+	require.Error(t, err)
+	assert.True(t, stale)
+}
+
+// TestFetchETHBalances_RPCPrimary_WithCache tests RPC primary fallback to cache.
+func TestFetchETHBalances_RPCPrimary_WithCache(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockConfigProvider{
+		ethProvider:        "rpc",
+		ethEtherscanAPIKey: "",
+		ethRPC:             "invalid://primary",
+		fallbackRPCs:       nil,
+	}
+
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{
+		Chain:    chain.ETH,
+		Address:  "0x456",
+		Balance:  "5.0",
+		Symbol:   "ETH",
+		Decimals: 18,
+	})
+	ctx := context.Background()
+
+	// Both providers fail but cache is available
+	entries, _, err := fetchETHBalances(ctx, "0x456", balanceCache, cfg)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "5.0", entries[0].Balance)
+}
+
+// TestMockConfigProvider_NewMethods verifies the new mock methods.
+func TestMockConfigProvider_NewMethods(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockConfigProvider{
+		ethProvider:        "rpc",
+		ethEtherscanAPIKey: "test-key",
+	}
+
+	var cfg ConfigProvider = mock
+	assert.Equal(t, "rpc", cfg.GetETHProvider())
+	assert.Equal(t, "test-key", cfg.GetETHEtherscanAPIKey())
+}
+
+// TestMockConfigProvider_DefaultProvider tests default provider value.
+func TestMockConfigProvider_DefaultProvider(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockConfigProvider{}
+	assert.Equal(t, "etherscan", mock.GetETHProvider())
 }

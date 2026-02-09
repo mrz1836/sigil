@@ -197,7 +197,7 @@ type SendRequest struct {
 	PrivateKey    []byte   // Signing key for single-address sends (will be zeroed after use)
 	Token         string   // ERC-20 token address (ETH only, empty for native)
 	GasLimit      uint64   // Optional gas limit override (ETH only)
-	FeeRate       uint64   // Optional fee rate override (satoshis per byte)
+	FeeRate       uint64   // Optional fee rate override (satoshis per kilobyte)
 	ChangeAddress string   // Optional change address (BSV only, defaults to From)
 	SweepAll      bool     // When true, send maximum amount minus fees (no change output)
 

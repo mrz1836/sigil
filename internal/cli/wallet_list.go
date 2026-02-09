@@ -181,7 +181,7 @@ func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.
 	}
 
 	// Prompt for password
-	password, promptErr := promptPassword("Enter wallet password: ")
+	password, promptErr := promptPasswordFn("Enter wallet password: ")
 	if promptErr != nil {
 		return nil, nil, promptErr
 	}

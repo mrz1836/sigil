@@ -12,6 +12,17 @@ import (
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
+// Package-level function variables for testability.
+//
+//nolint:gochecknoglobals // Required for test injection
+var (
+	promptPasswordFn    = promptPassword
+	promptNewPasswordFn = promptNewPassword
+	promptPassphraseFn  = promptPassphrase
+	promptConfirmFn     = promptConfirmation
+	promptSeedFn        = promptSeedMaterial
+)
+
 // promptPassword prompts for a password with hidden input.
 // The caller is responsible for zeroing the returned bytes after use.
 func promptPassword(prompt string) ([]byte, error) {

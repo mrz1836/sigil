@@ -33,8 +33,9 @@ var (
 
 // Fee calculation constants.
 const (
-	// DefaultFeeRate is the default fee rate in satoshis per byte.
-	DefaultFeeRate uint64 = 1
+	// DefaultFeeRate is the default fee rate in satoshis per kilobyte.
+	// 50 sat/KB = 0.05 sat/byte, matching the current BSV network status quo.
+	DefaultFeeRate uint64 = 50
 
 	// InputSize is the estimated size of a P2PKH input in bytes.
 	InputSize uint64 = 148
@@ -146,8 +147,8 @@ func CreateMigrationPlan(result *Result, destination string, feeRate uint64) (*M
 	//nolint:gosec // TotalUTXOs is bounded by number of addresses scanned, not user input
 	plan.EstimatedSize = OverheadSize + (uint64(plan.TotalUTXOs) * InputSize) + OutputSize
 
-	// Calculate fee
-	plan.EstimatedFee = plan.EstimatedSize * feeRate
+	// Calculate fee (feeRate is in sat/KB, round up)
+	plan.EstimatedFee = (plan.EstimatedSize*feeRate + 999) / 1000
 
 	// Check if fee exceeds total
 	if plan.EstimatedFee >= plan.TotalInput {

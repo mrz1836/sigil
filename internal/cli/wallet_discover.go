@@ -243,7 +243,7 @@ func promptPassphraseForDiscover() (string, error) {
 	outln(os.Stderr, "\nBIP39 Passphrase:")
 	outln(os.Stderr, "Note: For Centbee wallets, enter your 4-digit PIN here.")
 
-	passphrase, err := promptPassword("Enter passphrase (or press Enter for none): ")
+	passphrase, err := promptPasswordFn("Enter passphrase (or press Enter for none): ")
 	if err != nil {
 		return "", err
 	}

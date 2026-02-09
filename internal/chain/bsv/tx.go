@@ -107,9 +107,10 @@ func (b *TxBuilder) TotalOutputAmount() uint64 {
 }
 
 // CalculateFee calculates the fee based on transaction size.
+// The feeRate is in satoshis per kilobyte, rounded up.
 func (b *TxBuilder) CalculateFee(feeRate uint64) uint64 {
 	size := EstimateTxSize(len(b.Inputs), len(b.Outputs))
-	return size * feeRate
+	return (size*feeRate + 999) / 1000
 }
 
 // Validate checks that the transaction is valid.
@@ -578,7 +579,7 @@ var ErrSweepInsufficientFunds = errors.New("insufficient funds: fee exceeds tota
 // Parameters:
 //   - totalInputs: total amount in satoshis from all UTXOs
 //   - numInputs: number of UTXOs being spent
-//   - feeRate: fee rate in satoshis per byte
+//   - feeRate: fee rate in satoshis per kilobyte
 //
 // Returns:
 //   - sendAmount: the amount that can be sent after deducting the fee

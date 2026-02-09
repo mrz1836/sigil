@@ -306,7 +306,7 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	}
 	if !txConfirm {
 		displayTxDetails(cmd, fromAddress, txTo, displayAmount, txToken, estimate)
-		if !promptConfirmation() {
+		if !promptConfirmFn() {
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
 		}
@@ -477,7 +477,7 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	// Display transaction details and confirm
 	if !txConfirm {
 		displayBSVTxDetails(cmd, primaryAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
-		if !promptConfirmation() {
+		if !promptConfirmFn() {
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
 		}
@@ -557,7 +557,7 @@ func displayBSVTxDetails(cmd *cobra.Command, from, to, amount string, fee, feeRa
 	out(w, "  From:      %s\n", from)
 	out(w, "  To:        %s\n", to)
 	out(w, "  Amount:    %s BSV\n", amount)
-	out(w, "  Fee Rate:  %d sat/byte\n", feeRate)
+	out(w, "  Fee Rate:  %d sat/KB\n", feeRate)
 	out(w, "  Est. Fee:  %d satoshis\n", fee)
 
 	outln(w)

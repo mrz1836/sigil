@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	// DefaultFeeRate is the default fee rate in satoshis per byte.
-	DefaultFeeRate = 1
+	// DefaultFeeRate is the default fee rate in satoshis per kilobyte (1000 bytes).
+	// 50 sat/KB = 0.05 sat/byte, matching the current BSV network status quo.
+	DefaultFeeRate = 50
 
-	// MinFeeRate is the minimum fee rate in satoshis per byte.
-	MinFeeRate = 1
+	// MinFeeRate is the minimum fee rate in satoshis per kilobyte.
+	MinFeeRate = 10
 
-	// MaxFeeRate is the maximum reasonable fee rate in satoshis per byte.
-	MaxFeeRate = 50
+	// MaxFeeRate is the maximum reasonable fee rate in satoshis per kilobyte.
+	MaxFeeRate = 50000
 
 	// TAALMerchantAPIURL is the URL for TAAL's Merchant API.
 	TAALMerchantAPIURL = "https://merchantapi.taal.com/mapi/feeQuote"
@@ -33,10 +34,10 @@ const (
 
 // FeeQuote represents a fee quote from a miner.
 type FeeQuote struct {
-	// Standard fee rate for data transactions.
+	// Standard fee rate in satoshis per kilobyte.
 	StandardRate uint64 `json:"standard_rate"`
 
-	// Data fee rate for OP_RETURN transactions.
+	// Data fee rate in satoshis per kilobyte.
 	DataRate uint64 `json:"data_rate"`
 
 	// Source of the fee quote (e.g., "taal", "gorillapool").
@@ -106,14 +107,14 @@ func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 		return defaultFeeQuote(), nil
 	}
 
-	// Extract standard fee rate
+	// Extract standard fee rate in sat/KB
 	var standardRate uint64 = DefaultFeeRate
 	for _, fee := range payload.Fees {
 		if fee.FeeType == "standard" && fee.MiningFee.Bytes > 0 {
 			//nolint:gosec // Safe: satoshis and bytes are always positive from API
-			standardRate = uint64(fee.MiningFee.Satoshis) / uint64(fee.MiningFee.Bytes)
-			if standardRate == 0 {
-				standardRate = 1
+			standardRate = uint64(fee.MiningFee.Satoshis) * 1000 / uint64(fee.MiningFee.Bytes)
+			if standardRate < MinFeeRate {
+				standardRate = MinFeeRate
 			}
 			break
 		}
@@ -138,9 +139,11 @@ func EstimateTxSize(numInputs, numOutputs int) uint64 {
 }
 
 // EstimateFeeForTx estimates the fee for a transaction with given inputs/outputs.
+// The feeRate is in satoshis per kilobyte. The result is rounded up to ensure
+// the fee always covers the rate.
 func EstimateFeeForTx(numInputs, numOutputs int, feeRate uint64) uint64 {
 	size := EstimateTxSize(numInputs, numOutputs)
-	return size * feeRate
+	return (size*feeRate + 999) / 1000
 }
 
 // EstimateFeeForAmount estimates the fee for sending a specific amount.

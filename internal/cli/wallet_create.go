@@ -48,7 +48,7 @@ func generateWalletSeed(wordCount int, usePassphrase bool) (mnemonic string, see
 
 	var passphrase string
 	if usePassphrase {
-		passphrase, err = promptPassphrase()
+		passphrase, err = promptPassphraseFn()
 		if err != nil {
 			return "", nil, err
 		}
@@ -74,7 +74,7 @@ func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage) 
 		return nil, err
 	}
 
-	password, err := promptNewPassword()
+	password, err := promptNewPasswordFn()
 	if err != nil {
 		return nil, err
 	}

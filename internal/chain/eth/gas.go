@@ -35,9 +35,9 @@ const (
 // ParseGasSpeed parses a string into a GasSpeed.
 func ParseGasSpeed(s string) (GasSpeed, error) {
 	switch s {
-	case "slow", "":
+	case "slow":
 		return GasSpeedSlow, nil
-	case "medium":
+	case "", "medium":
 		return GasSpeedMedium, nil
 	case "fast":
 		return GasSpeedFast, nil

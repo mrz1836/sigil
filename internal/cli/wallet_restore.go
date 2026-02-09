@@ -75,7 +75,7 @@ func getSeedForRestore(cmd *cobra.Command) ([]byte, error) {
 	input := restoreInput
 	if input == "" {
 		var err error
-		input, err = promptSeedMaterial()
+		input, err = promptSeedFn()
 		if err != nil {
 			return nil, err
 		}
@@ -102,14 +102,14 @@ func confirmAndSaveWallet(w *wallet.Wallet, seed []byte, storage *wallet.FileSto
 	ctx := GetCmdContext(cmd)
 	displayAddressVerification(w, cmd)
 
-	if !promptConfirmation() {
+	if !promptConfirmFn() {
 		outln(cmd.OutOrStdout(), "Wallet restoration canceled.")
 		return nil
 	}
 
-	password, err := promptNewPassword()
-	if err != nil {
-		return err
+	password, promptErr := promptNewPasswordFn()
+	if promptErr != nil {
+		return promptErr
 	}
 	defer wallet.ZeroBytes(password)
 
@@ -195,7 +195,7 @@ func getPassphraseIfNeeded(usePassphrase bool) (string, error) {
 	if !usePassphrase {
 		return "", nil
 	}
-	return promptPassphrase()
+	return promptPassphraseFn()
 }
 
 // displayAddressVerification shows derived addresses for user verification.

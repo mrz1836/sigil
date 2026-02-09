@@ -302,7 +302,7 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 		selected = append(selected, utxo)
 		total += utxo.Amount
 
-		estimatedFee = EstimateTxSize(len(selected), 2) * feeRate
+		estimatedFee = (EstimateTxSize(len(selected), 2)*feeRate + 999) / 1000
 		target := amount + estimatedFee
 		if total >= target {
 			change = total - target
@@ -319,11 +319,11 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 
 // EstimateFee estimates the fee for a transaction.
 func (c *Client) EstimateFee(_ context.Context, _, _ string, _ *big.Int) (*big.Int, error) {
-	// Default fee rate: 1 sat/byte
-	feeRate := int64(1)
+	// Default fee rate: 50 sat/KB (0.05 sat/byte)
+	feeRate := int64(DefaultFeeRate)
 
 	// Estimated transaction size: ~225 bytes for P2PKH
-	fee := int64(estimatedTxSize) * feeRate
+	fee := (int64(estimatedTxSize)*feeRate + 999) / 1000
 
 	return big.NewInt(fee), nil
 }

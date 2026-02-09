@@ -134,7 +134,7 @@ func runBackupCreate(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Prompt for password
-	password, err := promptPassword("Enter wallet password: ")
+	password, err := promptPasswordFn("Enter wallet password: ")
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func runBackupVerify(cmd *cobra.Command, _ []string) error {
 	outln(w)
 
 	outln(w, "To test decryption, enter your password (or press Enter to skip):")
-	password, err := promptPassword("Password: ")
+	password, err := promptPasswordFn("Password: ")
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func runBackupRestore(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Prompt for password
-	password, err := promptPassword("Enter backup password: ")
+	password, err := promptPasswordFn("Enter backup password: ")
 	if err != nil {
 		return err
 	}

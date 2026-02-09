@@ -104,11 +104,9 @@ func init() {
 	_ = utxoBalanceCmd.MarkFlagRequired("wallet")
 }
 
-//nolint:gocognit,gocyclo,nestif // Display logic for UTXO list is complex
+//nolint:gocognit,nestif // Display logic with JSON/text format branching
 func runUTXOList(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
-	ctx, cancel := contextWithTimeout(cmd, 30*time.Second)
-	defer cancel()
 
 	// Only BSV is supported for UTXOs
 	if utxoChain != "bsv" {
@@ -118,8 +116,10 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
-	// Load wallet
+	// Check wallet exists
 	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	walletPath := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", utxoWallet)
+
 	exists, err := storage.Exists(utxoWallet)
 	if err != nil {
 		return err
@@ -131,39 +131,14 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
-	// Load wallet to get address (no password needed for public addresses)
-	password, err := promptPassword("Enter wallet password: ")
-	if err != nil {
-		return err
+	// Load UTXO store (no password needed — public data)
+	store := utxostore.New(walletPath)
+	if err := store.Load(); err != nil {
+		return fmt.Errorf("loading UTXO store: %w", err)
 	}
-	defer wallet.ZeroBytes(password)
 
-	wlt, seed, err := storage.Load(utxoWallet, password)
-	if err != nil {
-		return err
-	}
-	defer wallet.ZeroBytes(seed)
-
-	// Get BSV address
-	bsvAddresses, ok := wlt.Addresses[wallet.ChainBSV]
-	if !ok || len(bsvAddresses) == 0 {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			fmt.Sprintf("wallet '%s' has no BSV addresses", utxoWallet),
-		)
-	}
-	address := bsvAddresses[0].Address
-
-	// Create BSV client
-	client := bsv.NewClient(&bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
-	})
-
-	// List UTXOs
-	utxos, err := client.ListUTXOs(ctx, address)
-	if err != nil {
-		return fmt.Errorf("listing UTXOs: %w", err)
-	}
+	// Get all unspent UTXOs across all addresses
+	utxos := store.GetUTXOs(chain.BSV, "")
 
 	// Display results
 	w := cmd.OutOrStdout()
@@ -175,7 +150,8 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("writing JSON output: %w", err)
 			}
 		} else {
-			out(w, "No UTXOs found for address %s\n", address)
+			out(w, "No UTXOs stored for wallet '%s'.\n", utxoWallet)
+			out(w, "Run 'sigil utxo refresh --wallet %s' to fetch UTXOs from chain.\n", utxoWallet)
 		}
 		return nil
 	}
@@ -183,7 +159,7 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 	if format == output.FormatJSON {
 		displayUTXOsJSON(w, utxos)
 	} else {
-		displayUTXOsText(w, address, utxos)
+		displayUTXOsText(w, utxos)
 	}
 
 	return nil
@@ -192,17 +168,15 @@ func runUTXOList(cmd *cobra.Command, _ []string) error {
 // displayUTXOsText shows UTXOs in text format as a table.
 func displayUTXOsText(w interface {
 	Write(p []byte) (n int, err error)
-}, address string, utxos []bsv.UTXO,
+}, utxos []*utxostore.StoredUTXO,
 ) {
-	out(w, "UTXOs for %s\n", address)
-	outln(w)
-	outln(w, "TXID                                                              VOUT    AMOUNT (sats)  CONFIRMATIONS")
-	outln(w, "────────────────────────────────────────────────────────────────  ────    ─────────────  ─────────────")
+	outln(w, "TXID                                                              VOUT    AMOUNT (sats)  ADDRESS")
+	outln(w, "────────────────────────────────────────────────────────────────  ────    ─────────────  ───────────────────────────────────")
 
 	var total uint64
 	for _, utxo := range utxos {
-		out(w, "%-64s  %4d    %13d  %13d\n",
-			utxo.TxID, utxo.Vout, utxo.Amount, utxo.Confirmations)
+		out(w, "%-64s  %4d    %13d  %s\n",
+			utxo.TxID, utxo.Vout, utxo.Amount, utxo.Address)
 		total += utxo.Amount
 	}
 
@@ -212,11 +186,12 @@ func displayUTXOsText(w interface {
 }
 
 // displayUTXOsJSON shows UTXOs in JSON format.
-func displayUTXOsJSON(w io.Writer, utxos []bsv.UTXO) {
+func displayUTXOsJSON(w io.Writer, utxos []*utxostore.StoredUTXO) {
 	type utxoJSON struct {
 		TxID          string `json:"txid"`
 		Vout          uint32 `json:"vout"`
 		Amount        uint64 `json:"amount"`
+		Address       string `json:"address"`
 		Confirmations uint32 `json:"confirmations"`
 	}
 
@@ -226,6 +201,7 @@ func displayUTXOsJSON(w io.Writer, utxos []bsv.UTXO) {
 			TxID:          utxo.TxID,
 			Vout:          utxo.Vout,
 			Amount:        utxo.Amount,
+			Address:       utxo.Address,
 			Confirmations: utxo.Confirmations,
 		})
 	}

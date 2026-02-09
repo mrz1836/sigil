@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
@@ -31,65 +30,67 @@ func TestDisplayUTXOsText(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		address  string
-		utxos    []bsv.UTXO
+		utxos    []*utxostore.StoredUTXO
 		contains []string
 	}{
 		{
-			name:    "single UTXO",
-			address: "1TestAddress",
-			utxos: []bsv.UTXO{
+			name: "single UTXO",
+			utxos: []*utxostore.StoredUTXO{
 				{
 					TxID:          "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 					Vout:          0,
 					Amount:        100000,
 					Confirmations: 6,
+					Address:       "1TestAddress",
 				},
 			},
 			contains: []string{
-				"UTXOs for 1TestAddress",
 				"TXID",
 				"VOUT",
 				"AMOUNT",
+				"ADDRESS",
 				"abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 				"100000",
+				"1TestAddress",
 				"Total: 1 UTXOs",
 				"0.00100000 BSV",
 			},
 		},
 		{
-			name:    "multiple UTXOs",
-			address: "1MultiUTXOAddress",
-			utxos: []bsv.UTXO{
+			name: "multiple UTXOs",
+			utxos: []*utxostore.StoredUTXO{
 				{
 					TxID:          "txid1111111111111111111111111111111111111111111111111111111111111111",
 					Vout:          0,
 					Amount:        50000,
 					Confirmations: 10,
+					Address:       "1MultiUTXOAddress",
 				},
 				{
 					TxID:          "txid2222222222222222222222222222222222222222222222222222222222222222",
 					Vout:          1,
 					Amount:        150000,
 					Confirmations: 5,
+					Address:       "1OtherAddress",
 				},
 			},
 			contains: []string{
-				"UTXOs for 1MultiUTXOAddress",
+				"1MultiUTXOAddress",
+				"1OtherAddress",
 				"Total: 2 UTXOs",
 				"200000 satoshis",
 				"0.00200000 BSV",
 			},
 		},
 		{
-			name:    "large amounts",
-			address: "1WhaleAddress",
-			utxos: []bsv.UTXO{
+			name: "large amounts",
+			utxos: []*utxostore.StoredUTXO{
 				{
 					TxID:          "largetx111111111111111111111111111111111111111111111111111111111111",
 					Vout:          0,
 					Amount:        100000000, // 1 BSV
 					Confirmations: 100,
+					Address:       "1WhaleAddress",
 				},
 			},
 			contains: []string{
@@ -105,7 +106,7 @@ func TestDisplayUTXOsText(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			displayUTXOsText(&buf, tc.address, tc.utxos)
+			displayUTXOsText(&buf, tc.utxos)
 
 			result := buf.String()
 			for _, s := range tc.contains {
@@ -120,40 +121,44 @@ func TestDisplayUTXOsJSON(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		utxos    []bsv.UTXO
+		utxos    []*utxostore.StoredUTXO
 		contains []string
 	}{
 		{
 			name: "single UTXO",
-			utxos: []bsv.UTXO{
+			utxos: []*utxostore.StoredUTXO{
 				{
 					TxID:          "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 					Vout:          0,
 					Amount:        50000,
 					Confirmations: 3,
+					Address:       "1TestAddr",
 				},
 			},
 			contains: []string{
 				`"txid": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"`,
 				`"vout": 0`,
 				`"amount": 50000`,
+				`"address": "1TestAddr"`,
 				`"confirmations": 3`,
 			},
 		},
 		{
 			name: "multiple UTXOs",
-			utxos: []bsv.UTXO{
+			utxos: []*utxostore.StoredUTXO{
 				{
 					TxID:          "first00000000000000000000000000000000000000000000000000000000001",
 					Vout:          0,
 					Amount:        10000,
 					Confirmations: 1,
+					Address:       "1AddrA",
 				},
 				{
 					TxID:          "second0000000000000000000000000000000000000000000000000000000002",
 					Vout:          2,
 					Amount:        20000,
 					Confirmations: 2,
+					Address:       "1AddrB",
 				},
 			},
 			contains: []string{
@@ -161,6 +166,7 @@ func TestDisplayUTXOsJSON(t *testing.T) {
 				`"txid": "second0000000000000000000000000000000000000000000000000000000002"`,
 				`"vout": 2`,
 				`"amount": 20000`,
+				`"address": "1AddrB"`,
 			},
 		},
 	}
@@ -188,10 +194,10 @@ func TestDisplayUTXOsJSON_ArrayFormat(t *testing.T) {
 	t.Parallel()
 
 	// Test that commas are correct between elements
-	utxos := []bsv.UTXO{
-		{TxID: "tx1", Vout: 0, Amount: 100, Confirmations: 1},
-		{TxID: "tx2", Vout: 1, Amount: 200, Confirmations: 2},
-		{TxID: "tx3", Vout: 2, Amount: 300, Confirmations: 3},
+	utxos := []*utxostore.StoredUTXO{
+		{TxID: "tx1", Vout: 0, Amount: 100, Confirmations: 1, Address: "1A"},
+		{TxID: "tx2", Vout: 1, Amount: 200, Confirmations: 2, Address: "1B"},
+		{TxID: "tx3", Vout: 2, Amount: 300, Confirmations: 3, Address: "1C"},
 	}
 
 	var buf bytes.Buffer

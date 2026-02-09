@@ -170,7 +170,7 @@ func TestDisplayAddressesText(t *testing.T) {
 					Address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 					Path:    "m/44'/236'/0'/0/0",
 					Label:   "",
-					Balance: 0,
+					Balance: "",
 					Used:    false,
 					ChainID: chain.BSV,
 				},
@@ -190,13 +190,13 @@ func TestDisplayAddressesText(t *testing.T) {
 					Type:    "receive",
 					Index:   0,
 					Address: "1TestAddr",
-					Balance: 150000000, // 1.5 BSV
+					Balance: "1.5",
 					Used:    true,
 					ChainID: chain.BSV,
 				},
 			},
 			contains: []string{
-				"1.5000",
+				"1.5",
 				"used",
 			},
 		},
@@ -312,7 +312,7 @@ func TestDisplayAddressesJSON(t *testing.T) {
 					Address: "1TestAddress",
 					Path:    "m/44'/236'/0'/0/0",
 					Label:   "Test",
-					Balance: 1000,
+					Balance: "0.00001",
 					Used:    true,
 					ChainID: chain.BSV,
 				},
@@ -324,8 +324,27 @@ func TestDisplayAddressesJSON(t *testing.T) {
 				assert.Contains(t, output, `"address": "1TestAddress"`)
 				assert.Contains(t, output, `"path": "m/44'/236'/0'/0/0"`)
 				assert.Contains(t, output, `"label": "Test"`)
-				assert.Contains(t, output, `"balance": 1000`)
+				assert.Contains(t, output, `"balance": "0.00001"`)
 				assert.Contains(t, output, `"used": true`)
+			},
+		},
+		{
+			name: "address with unconfirmed",
+			addresses: []addressInfo{
+				{
+					Type:        "receive",
+					Index:       0,
+					Address:     "1TestAddress",
+					Path:        "m/44'/236'/0'/0/0",
+					Balance:     "1.5",
+					Unconfirmed: "0.5",
+					Used:        true,
+					ChainID:     chain.BSV,
+				},
+			},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, `"balance": "1.5"`)
+				assert.Contains(t, output, `"unconfirmed": "0.5"`)
 			},
 		},
 		{
@@ -374,14 +393,15 @@ func TestDisplayAddressesJSON(t *testing.T) {
 func TestDisplayAddressesJSONStructure(t *testing.T) {
 	addresses := []addressInfo{
 		{
-			Type:    "receive",
-			Index:   5,
-			Address: "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0",
-			Path:    "m/44'/60'/0'/0/5",
-			Label:   "Main",
-			Balance: 1000000000000000000, // 1 ETH in wei (but stored as satoshis context)
-			Used:    true,
-			ChainID: chain.ETH,
+			Type:        "receive",
+			Index:       5,
+			Address:     "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0",
+			Path:        "m/44'/60'/0'/0/5",
+			Label:       "Main",
+			Balance:     "1.0",
+			Unconfirmed: "0.5",
+			Used:        true,
+			ChainID:     chain.ETH,
 		},
 	}
 
@@ -393,14 +413,15 @@ func TestDisplayAddressesJSONStructure(t *testing.T) {
 
 	var result struct {
 		Addresses []struct {
-			Chain   string `json:"chain"`
-			Type    string `json:"type"`
-			Index   int    `json:"index"`
-			Address string `json:"address"`
-			Path    string `json:"path"`
-			Label   string `json:"label"`
-			Balance uint64 `json:"balance"`
-			Used    bool   `json:"used"`
+			Chain       string `json:"chain"`
+			Type        string `json:"type"`
+			Index       int    `json:"index"`
+			Address     string `json:"address"`
+			Path        string `json:"path"`
+			Label       string `json:"label"`
+			Balance     string `json:"balance"`
+			Unconfirmed string `json:"unconfirmed"`
+			Used        bool   `json:"used"`
 		} `json:"addresses"`
 	}
 
@@ -415,7 +436,8 @@ func TestDisplayAddressesJSONStructure(t *testing.T) {
 	assert.Equal(t, "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0", addr.Address)
 	assert.Equal(t, "m/44'/60'/0'/0/5", addr.Path)
 	assert.Equal(t, "Main", addr.Label)
-	assert.Equal(t, uint64(1000000000000000000), addr.Balance)
+	assert.Equal(t, "1.0", addr.Balance)
+	assert.Equal(t, "0.5", addr.Unconfirmed)
 	assert.True(t, addr.Used)
 }
 
@@ -453,14 +475,15 @@ func TestDisplayAddressesJSON_Escaping(t *testing.T) {
 func TestAddressInfoStruct(t *testing.T) {
 	// Test that addressInfo correctly holds all fields
 	info := addressInfo{
-		Type:    "change",
-		Index:   42,
-		Address: "1TestAddress123456789012345678901234",
-		Path:    "m/44'/236'/0'/1/42",
-		Label:   "My Change",
-		Balance: 500000000,
-		Used:    true,
-		ChainID: chain.BSV,
+		Type:        "change",
+		Index:       42,
+		Address:     "1TestAddress123456789012345678901234",
+		Path:        "m/44'/236'/0'/1/42",
+		Label:       "My Change",
+		Balance:     "5.0",
+		Unconfirmed: "-0.5",
+		Used:        true,
+		ChainID:     chain.BSV,
 	}
 
 	assert.Equal(t, "change", info.Type)
@@ -468,7 +491,8 @@ func TestAddressInfoStruct(t *testing.T) {
 	assert.Equal(t, "1TestAddress123456789012345678901234", info.Address)
 	assert.Equal(t, "m/44'/236'/0'/1/42", info.Path)
 	assert.Equal(t, "My Change", info.Label)
-	assert.Equal(t, uint64(500000000), info.Balance)
+	assert.Equal(t, "5.0", info.Balance)
+	assert.Equal(t, "-0.5", info.Unconfirmed)
 	assert.True(t, info.Used)
 	assert.Equal(t, chain.BSV, info.ChainID)
 }
@@ -481,7 +505,7 @@ func TestDisplayAddressesTextTableFormat(t *testing.T) {
 			Index:   0,
 			Address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 			Label:   "Genesis",
-			Balance: 5000000000, // 50 BSV
+			Balance: "50.0",
 			Used:    true,
 			ChainID: chain.BSV,
 		},
@@ -505,6 +529,9 @@ func TestDisplayAddressesTextTableFormat(t *testing.T) {
 
 	// Verify separator line with box-drawing characters
 	assert.Contains(t, output, "───")
+
+	// Verify balance value is shown
+	assert.Contains(t, output, "50.0")
 }
 
 func TestDisplayAddressesTextEmptyLabel(t *testing.T) {
@@ -538,13 +565,13 @@ func TestDisplayAddressesTextEmptyLabel(t *testing.T) {
 }
 
 func TestDisplayAddressesTextZeroBalance(t *testing.T) {
-	// Zero balance should display as "-"
+	// Empty balance should display as "-"
 	addresses := []addressInfo{
 		{
 			Type:    "receive",
 			Index:   0,
 			Address: "1TestAddr",
-			Balance: 0,
+			Balance: "",
 			ChainID: chain.BSV,
 		},
 	}
@@ -559,7 +586,7 @@ func TestDisplayAddressesTextZeroBalance(t *testing.T) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "1TestAddr") {
-			// Balance column should show "-" for zero balance
+			// Balance column should show "-" for empty balance
 			assert.Contains(t, line, "-")
 			break
 		}
@@ -579,37 +606,27 @@ func TestBuildAddressInfo(t *testing.T) {
 		HasActivity: true,
 		Label:       "Active",
 	})
-	store.AddUTXO(&utxostore.StoredUTXO{
-		ChainID: chain.BSV,
-		TxID:    "abc123",
-		Vout:    0,
-		Amount:  50000,
-		Address: "1ActiveAddr",
-	})
 
 	tests := []struct {
-		name        string
-		addr        wallet.Address
-		chainID     chain.ID
-		wantUsed    bool
-		wantBalance uint64
-		wantLabel   string
+		name      string
+		addr      wallet.Address
+		chainID   chain.ID
+		wantUsed  bool
+		wantLabel string
 	}{
 		{
-			name:        "address with no store data",
-			addr:        wallet.Address{Index: 0, Address: "1UnknownAddr", Path: "m/44'/236'/0'/0/0"},
-			chainID:     chain.BSV,
-			wantUsed:    false,
-			wantBalance: 0,
-			wantLabel:   "",
+			name:      "address with no store data",
+			addr:      wallet.Address{Index: 0, Address: "1UnknownAddr", Path: "m/44'/236'/0'/0/0"},
+			chainID:   chain.BSV,
+			wantUsed:  false,
+			wantLabel: "",
 		},
 		{
-			name:        "address with activity",
-			addr:        wallet.Address{Index: 1, Address: "1ActiveAddr", Path: "m/44'/236'/0'/0/1"},
-			chainID:     chain.BSV,
-			wantUsed:    true,
-			wantBalance: 50000,
-			wantLabel:   "Active",
+			name:      "address with activity",
+			addr:      wallet.Address{Index: 1, Address: "1ActiveAddr", Path: "m/44'/236'/0'/0/1"},
+			chainID:   chain.BSV,
+			wantUsed:  true,
+			wantLabel: "Active",
 		},
 	}
 
@@ -623,8 +640,158 @@ func TestBuildAddressInfo(t *testing.T) {
 			assert.Equal(t, tc.addr.Address, info.Address)
 			assert.Equal(t, tc.chainID, info.ChainID)
 			assert.Equal(t, tc.wantUsed, info.Used)
-			assert.Equal(t, tc.wantBalance, info.Balance)
+			assert.Empty(t, info.Balance, "balance should be empty before network fetch")
 			assert.Equal(t, tc.wantLabel, info.Label)
 		})
 	}
+}
+
+func TestIsNonZeroBalance(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{"empty string", "", false},
+		{"zero", "0", false},
+		{"zero with decimal", "0.0", false},
+		{"zero BSV format", "0.00000000", false},
+		{"negative zero", "-0.0", false},
+		{"positive amount", "1.5", true},
+		{"small amount", "0.00000001", true},
+		{"negative amount", "-0.5", true},
+		{"integer", "100", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isNonZeroBalance(tc.s)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHasUnconfirmedAddressData(t *testing.T) {
+	tests := []struct {
+		name      string
+		addresses []addressInfo
+		want      bool
+	}{
+		{
+			name:      "empty list",
+			addresses: []addressInfo{},
+			want:      false,
+		},
+		{
+			name: "no unconfirmed",
+			addresses: []addressInfo{
+				{Balance: "1.0"},
+				{Balance: "2.0"},
+			},
+			want: false,
+		},
+		{
+			name: "has unconfirmed",
+			addresses: []addressInfo{
+				{Balance: "1.0"},
+				{Balance: "2.0", Unconfirmed: "0.5"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := hasUnconfirmedAddressData(tc.addresses)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDisplayAddressesTextWithUnconfirmed(t *testing.T) {
+	// When any address has unconfirmed data, wide table should show
+	addresses := []addressInfo{
+		{
+			Type:        "receive",
+			Index:       0,
+			Address:     "1TestAddr1",
+			Balance:     "1.5",
+			Unconfirmed: "0.5",
+			Used:        true,
+			ChainID:     chain.BSV,
+		},
+		{
+			Type:    "receive",
+			Index:   1,
+			Address: "1TestAddr2",
+			Balance: "2.0",
+			Used:    true,
+			ChainID: chain.BSV,
+		},
+	}
+
+	buf := new(bytes.Buffer)
+	cmd := &cobra.Command{}
+	cmd.SetOut(buf)
+
+	displayAddressesText(cmd, addresses)
+
+	output := buf.String()
+
+	// Wide table should show Confirmed and Unconfirmed columns
+	assert.Contains(t, output, "Confirmed")
+	assert.Contains(t, output, "Unconfirmed")
+	assert.NotContains(t, output, "  Balance  ") // Should NOT show single Balance column
+	assert.Contains(t, output, "1.5")
+	assert.Contains(t, output, "0.5")
+	assert.Contains(t, output, "2.0")
+}
+
+func TestDisplayAddressesTextNoUnconfirmed(t *testing.T) {
+	// When no address has unconfirmed data, narrow table should show
+	addresses := []addressInfo{
+		{
+			Type:    "receive",
+			Index:   0,
+			Address: "1TestAddr",
+			Balance: "1.5",
+			Used:    true,
+			ChainID: chain.BSV,
+		},
+	}
+
+	buf := new(bytes.Buffer)
+	cmd := &cobra.Command{}
+	cmd.SetOut(buf)
+
+	displayAddressesText(cmd, addresses)
+
+	output := buf.String()
+
+	// Narrow table should show Balance column, not Confirmed/Unconfirmed
+	assert.Contains(t, output, "Balance")
+	assert.NotContains(t, output, "Confirmed")
+	assert.Contains(t, output, "1.5")
+}
+
+func TestFormatHelpers(t *testing.T) {
+	// truncateAddressDisplay
+	assert.Equal(t, "short", truncateAddressDisplay("short"))
+	long := "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0abc123"
+	truncated := truncateAddressDisplay(long)
+	assert.Contains(t, truncated, "...")
+	assert.Less(t, len(truncated), len(long))
+
+	// formatLabel
+	assert.Equal(t, "-", formatLabel(""))
+	assert.Equal(t, "Short", formatLabel("Short"))
+	assert.Equal(t, "VeryLongLab...", formatLabel("VeryLongLabelThatIsTooLong"))
+
+	// formatBalanceDisplay
+	assert.Equal(t, "-", formatBalanceDisplay(""))
+	assert.Equal(t, "1.5", formatBalanceDisplay("1.5"))
+
+	// formatStatus
+	assert.Equal(t, "used", formatStatus(true))
+	assert.Equal(t, "unused", formatStatus(false))
 }

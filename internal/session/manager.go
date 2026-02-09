@@ -371,7 +371,16 @@ func (m *FileManager) keyringKey(wallet string) string {
 
 // sessionPath returns the full path for a session file.
 func (m *FileManager) sessionPath(wallet string) string {
-	return filepath.Join(m.basePath, wallet+sessionFileExtension)
+	path := filepath.Join(m.basePath, wallet+sessionFileExtension)
+
+	// Defensive check: ensure no directory traversal
+	cleanPath := filepath.Clean(path)
+	expectedSuffix := string(filepath.Separator) + wallet + sessionFileExtension
+	if !strings.HasSuffix(cleanPath, expectedSuffix) {
+		return ""
+	}
+
+	return cleanPath
 }
 
 // zeroBytes securely zeros a byte slice.

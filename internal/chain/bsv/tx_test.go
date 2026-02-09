@@ -63,8 +63,8 @@ func TestTxBuilder_CalculateFee(t *testing.T) {
 	_ = builder.AddOutput("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 50000)
 	_ = builder.AddOutput("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 49000) // Change
 
-	// Calculate fee at 1 sat/byte
-	fee := builder.CalculateFee(1)
+	// Calculate fee at 1000 sat/KB (equivalent to 1 sat/byte)
+	fee := builder.CalculateFee(1000)
 	expectedSize := EstimateTxSize(1, 2)
 	assert.Equal(t, expectedSize, fee)
 }
@@ -378,18 +378,18 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 		{
 			name: "exact balance (input = output + fee)",
 			setupFunc: func(b *TxBuilder) {
-				// 1 input, 1 output: size = 10 + 148 + 34 = 192 bytes, fee = 192 satoshis
+				// 1 input, 1 output: size = 10 + 148 + 34 = 192 bytes, fee = 10 satoshis (at 50 sat/KB)
 				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
-				_ = b.AddOutput(validAddress(), 100000-192) // Exactly covers fee
+				_ = b.AddOutput(validAddress(), 100000-10) // Exactly covers fee
 			},
 			wantErr: false,
 		},
 		{
 			name: "one satoshi short of covering fee",
 			setupFunc: func(b *TxBuilder) {
-				// Need 192 for fee, but only have 191 spare
+				// Need 10 for fee (at 50 sat/KB), but only have 9 spare
 				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
-				_ = b.AddOutput(validAddress(), 100000-191) // One satoshi short
+				_ = b.AddOutput(validAddress(), 100000-9) // One satoshi short
 			},
 			wantErr:    true,
 			errContain: "insufficient",
@@ -398,14 +398,14 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			name: "large tx with 100 inputs",
 			setupFunc: func(b *TxBuilder) {
 				// 100 inputs, 1 output: size = 10 + (100*148) + 34 = 14844 bytes
-				// Fee at 1 sat/byte = 14844 satoshis
+				// Fee at 50 sat/KB = (14844*50+999)/1000 = 743 satoshis
 				for i := 0; i < 100; i++ {
 					_ = b.AddInput(makeUTXO(testTxID(i), 1000))
 				}
 				// Total input: 100 * 1000 = 100000
-				// Fee: 14844
-				// Available for output: 100000 - 14844 = 85156
-				_ = b.AddOutput(validAddress(), 85156)
+				// Fee: 743
+				// Available for output: 100000 - 743 = 99257
+				_ = b.AddOutput(validAddress(), 99257)
 			},
 			wantErr: false,
 		},
@@ -413,7 +413,7 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			name: "large tx with 100 outputs",
 			setupFunc: func(b *TxBuilder) {
 				// 1 input, 100 outputs: size = 10 + 148 + (100*34) = 3558 bytes
-				// Fee at 1 sat/byte = 3558 satoshis
+				// Fee at 50 sat/KB = (3558*50+999)/1000 = 178 satoshis
 				_ = b.AddInput(makeUTXO(testTxID(1), 5000000)) // 5M satoshis
 				dustLimit := chain.BSV.DustLimit()             // 1 satoshi for BSV
 				for i := 0; i < 100; i++ {
@@ -430,8 +430,8 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 		{
 			name: "fee rate affects validation - high fee rate insufficient funds",
 			setupFunc: func(b *TxBuilder) {
-				b.SetFeeRate(50) // Max fee rate
-				// 1 input, 1 output: size = 192, fee = 192 * 50 = 9600
+				b.SetFeeRate(50000) // Max fee rate (50000 sat/KB = 50 sat/byte)
+				// 1 input, 1 output: size = 192, fee = (192*50000+999)/1000 = 9600
 				_ = b.AddInput(makeUTXO(testTxID(1), 10000))
 				_ = b.AddOutput(validAddress(), 1000) // Valid output, but 10000 < 1000 + 9600
 			},
@@ -439,10 +439,10 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			errContain: "insufficient",
 		},
 		{
-			name: "fee rate 50 with adequate funds",
+			name: "fee rate 50000 with adequate funds",
 			setupFunc: func(b *TxBuilder) {
-				b.SetFeeRate(50) // Max fee rate
-				// 1 input, 1 output: size = 192, fee = 192 * 50 = 9600
+				b.SetFeeRate(50000) // Max fee rate (50000 sat/KB = 50 sat/byte)
+				// 1 input, 1 output: size = 192, fee = (192*50000+999)/1000 = 9600
 				_ = b.AddInput(makeUTXO(testTxID(1), 100000))
 				_ = b.AddOutput(validAddress(), 100000-9600) // 90400 satoshis
 			},
@@ -481,9 +481,9 @@ func TestTxBuilder_SetFeeRate(t *testing.T) {
 	}{
 		{"zero clamps to minimum", 0, MinFeeRate},
 		{"minimum stays at minimum", MinFeeRate, MinFeeRate},
-		{"mid-range stays unchanged", 25, 25},
+		{"mid-range stays unchanged", 25000, 25000},
 		{"maximum stays at maximum", MaxFeeRate, MaxFeeRate},
-		{"above maximum clamps to maximum", 100, MaxFeeRate},
+		{"above maximum clamps to maximum", 100000, MaxFeeRate},
 		{"way above maximum clamps to maximum", 1000000, MaxFeeRate},
 	}
 
@@ -511,46 +511,46 @@ func TestTxBuilder_CalculateFee_Comprehensive(t *testing.T) {
 		expected   uint64
 	}{
 		{
-			name:       "1 input, 1 output @ 1 sat/byte",
+			name:       "1 input, 1 output @ 1000 sat/KB",
 			numInputs:  1,
 			numOutputs: 1,
-			feeRate:    1,
-			expected:   192, // 10 + 148 + 34
+			feeRate:    1000,
+			expected:   192, // (192*1000+999)/1000 = 192
 		},
 		{
-			name:       "1 input, 2 outputs @ 1 sat/byte",
+			name:       "1 input, 2 outputs @ 1000 sat/KB",
 			numInputs:  1,
 			numOutputs: 2,
-			feeRate:    1,
-			expected:   226, // 10 + 148 + 68
+			feeRate:    1000,
+			expected:   226, // (226*1000+999)/1000 = 226
 		},
 		{
-			name:       "10 inputs, 1 output @ 1 sat/byte",
+			name:       "10 inputs, 1 output @ 1000 sat/KB",
 			numInputs:  10,
 			numOutputs: 1,
-			feeRate:    1,
-			expected:   1524, // 10 + 1480 + 34
+			feeRate:    1000,
+			expected:   1524, // (1524*1000+999)/1000 = 1524
 		},
 		{
-			name:       "1 input, 10 outputs @ 1 sat/byte",
+			name:       "1 input, 10 outputs @ 1000 sat/KB",
 			numInputs:  1,
 			numOutputs: 10,
-			feeRate:    1,
-			expected:   498, // 10 + 148 + 340
+			feeRate:    1000,
+			expected:   498, // (498*1000+999)/1000 = 498
 		},
 		{
-			name:       "100 inputs, 100 outputs @ 1 sat/byte",
+			name:       "100 inputs, 100 outputs @ 1000 sat/KB",
 			numInputs:  100,
 			numOutputs: 100,
-			feeRate:    1,
-			expected:   18210, // 10 + 14800 + 3400
+			feeRate:    1000,
+			expected:   18210, // (18210*1000+999)/1000 = 18210
 		},
 		{
-			name:       "1 input, 2 outputs @ 50 sat/byte",
+			name:       "1 input, 2 outputs @ 50000 sat/KB",
 			numInputs:  1,
 			numOutputs: 2,
-			feeRate:    50,
-			expected:   11300, // 226 * 50
+			feeRate:    50000,
+			expected:   11300, // (226*50000+999)/1000 = 11300
 		},
 	}
 

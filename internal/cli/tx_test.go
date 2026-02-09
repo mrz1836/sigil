@@ -434,7 +434,7 @@ func TestDisplayBSVTxDetails(t *testing.T) {
 				"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
 				"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
 				"0.001 BSV",
-				"1 sat/byte",
+				"1 sat/KB",
 				"226 satoshis",
 			},
 		},

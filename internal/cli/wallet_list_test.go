@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,8 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
+)
+
+var (
+	errSessionCorrupt      = errors.New("session corrupt")
+	errKeychainUnavailable = errors.New("keychain unavailable")
 )
 
 // TestDisplayWalletText tests text display formatting for wallet details.
@@ -236,4 +244,313 @@ func TestRunWalletList_WithWalletsJSON(t *testing.T) {
 	var parsed []string
 	require.NoError(t, json.Unmarshal([]byte(result), &parsed))
 	assert.Contains(t, parsed, "charlie")
+}
+
+// --- Tests for loadWalletWithSession ---
+
+// walletTestSessionMgr is a configurable mock session manager for wallet loading tests.
+type walletTestSessionMgr struct {
+	available   bool
+	hasValid    bool
+	getSeed     []byte
+	getSess     *session.Session
+	getErr      error
+	startErr    error
+	startCalled bool
+}
+
+func (m *walletTestSessionMgr) Available() bool { return m.available }
+func (m *walletTestSessionMgr) StartSession(_ string, _ []byte, _ time.Duration) error {
+	m.startCalled = true
+	return m.startErr
+}
+
+func (m *walletTestSessionMgr) GetSession(_ string) ([]byte, *session.Session, error) {
+	if m.getErr != nil {
+		return nil, nil, m.getErr
+	}
+	cp := make([]byte, len(m.getSeed))
+	copy(cp, m.getSeed)
+	return cp, m.getSess, nil
+}
+func (m *walletTestSessionMgr) HasValidSession(_ string) bool             { return m.hasValid }
+func (m *walletTestSessionMgr) EndSession(_ string) error                 { return nil }
+func (m *walletTestSessionMgr) EndAllSessions() int                       { return 0 }
+func (m *walletTestSessionMgr) ListSessions() ([]*session.Session, error) { return nil, nil }
+
+func TestLoadWalletWithSession_WalletNotFound(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+		Log: config.NullLogger(),
+	})
+
+	_, _, err := loadWalletWithSession("nonexistent", storage, cmd)
+	require.Error(t, err)
+	require.ErrorIs(t, err, wallet.ErrWalletNotFound)
+}
+
+func TestLoadWalletWithSession_PasswordPrompt(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "testpw")
+
+	storage := wallet.NewFileStorage(walletsDir)
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+		Log: config.NullLogger(),
+	})
+
+	wlt, seed, err := loadWalletWithSession("testpw", storage, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, wlt)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.Equal(t, "testpw", wlt.Name)
+}
+
+func TestLoadWalletWithSession_SessionValid(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "sessiontest")
+
+	storage := wallet.NewFileStorage(walletsDir)
+
+	// We need a real seed to test session retrieval
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	fakeSeed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+
+	sess := &session.Session{
+		WalletName: "sessiontest",
+		CreatedAt:  time.Now(),
+		ExpiresAt:  time.Now().Add(15 * time.Minute),
+	}
+	mgr := &walletTestSessionMgr{
+		available: true,
+		hasValid:  true,
+		getSeed:   fakeSeed,
+		getSess:   sess,
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg:        &mockConfigProvider{home: tmpDir, security: config.SecurityConfig{SessionEnabled: true}},
+		Fmt:        &mockFormatProvider{format: output.FormatText},
+		Log:        config.NullLogger(),
+		SessionMgr: mgr,
+	})
+
+	wlt, seed, err := loadWalletWithSession("sessiontest", storage, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, wlt)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.Equal(t, "sessiontest", wlt.Name)
+	assert.Contains(t, errBuf.String(), "Using cached session")
+}
+
+func TestLoadWalletWithSession_SessionGetError(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "sessionerr")
+
+	storage := wallet.NewFileStorage(walletsDir)
+
+	mgr := &walletTestSessionMgr{
+		available: true,
+		hasValid:  true,
+		getErr:    errSessionCorrupt,
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg:        &mockConfigProvider{home: tmpDir, security: config.SecurityConfig{SessionEnabled: true}},
+		Fmt:        &mockFormatProvider{format: output.FormatText},
+		Log:        config.NullLogger(),
+		SessionMgr: mgr,
+	})
+
+	// Falls through to password prompt
+	wlt, seed, err := loadWalletWithSession("sessionerr", storage, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, wlt)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.Equal(t, "sessionerr", wlt.Name)
+}
+
+func TestLoadWalletWithSession_StartSessionFailure(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "startfail")
+
+	storage := wallet.NewFileStorage(walletsDir)
+
+	mgr := &walletTestSessionMgr{
+		available: true,
+		hasValid:  false,
+		startErr:  errKeychainUnavailable,
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg:        &mockConfigProvider{home: tmpDir, security: config.SecurityConfig{SessionEnabled: true, SessionTTLMinutes: 15}},
+		Fmt:        &mockFormatProvider{format: output.FormatText},
+		Log:        config.NullLogger(),
+		SessionMgr: mgr,
+	})
+
+	wlt, seed, err := loadWalletWithSession("startfail", storage, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, wlt)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.True(t, mgr.startCalled)
+	// Should not contain "Session started" since start failed
+	assert.NotContains(t, errBuf.String(), "Session started")
+}
+
+func TestLoadWalletWithSession_StartSessionSuccess(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "startsuccess")
+
+	storage := wallet.NewFileStorage(walletsDir)
+
+	mgr := &walletTestSessionMgr{
+		available: true,
+		hasValid:  false,
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg:        &mockConfigProvider{home: tmpDir, security: config.SecurityConfig{SessionEnabled: true, SessionTTLMinutes: 15}},
+		Fmt:        &mockFormatProvider{format: output.FormatText},
+		Log:        config.NullLogger(),
+		SessionMgr: mgr,
+	})
+
+	wlt, seed, err := loadWalletWithSession("startsuccess", storage, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, wlt)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.True(t, mgr.startCalled)
+	assert.Contains(t, errBuf.String(), "Session started")
+}
+
+// --- Tests for runWalletShow ---
+
+func TestRunWalletShow_Text(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "showtest")
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+		Log: config.NullLogger(),
+	})
+
+	err := runWalletShow(cmd, []string{"showtest"})
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Wallet: showtest")
+	assert.Contains(t, result, "Addresses:")
+}
+
+func TestRunWalletShow_JSON(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	createTestWallet(t, walletsDir, "showjson")
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatJSON},
+		Log: config.NullLogger(),
+	})
+
+	err := runWalletShow(cmd, []string{"showjson"})
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, "showjson", parsed["name"])
+}
+
+func TestRunWalletShow_NotFound(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+		Log: config.NullLogger(),
+	})
+
+	err := runWalletShow(cmd, []string{"nonexistent"})
+	require.Error(t, err)
+	require.ErrorIs(t, err, wallet.ErrWalletNotFound)
 }

@@ -11,7 +11,7 @@ import (
 
 // estimateFee calculates the fee for a transaction with the given number of inputs and outputs.
 func estimateFee(inputs, outputs int, feeRate uint64) uint64 {
-	return EstimateTxSize(inputs, outputs) * feeRate
+	return (EstimateTxSize(inputs, outputs)*feeRate + 999) / 1000
 }
 
 // TestSelectUTXOs_MultipleAddresses tests UTXO selection across multiple addresses.

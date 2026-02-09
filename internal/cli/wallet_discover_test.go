@@ -356,6 +356,30 @@ func TestOutputDiscoverJSON(t *testing.T) {
 	}
 }
 
+func TestOutputDiscoverJSON_NilSlicesNormalized(t *testing.T) {
+	t.Parallel()
+
+	response := DiscoverResponse{
+		SchemesScanned: nil,
+		Addresses:      nil,
+	}
+
+	var buf bytes.Buffer
+	outputDiscoverJSON(&buf, response)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	// nil slices should be normalized to empty arrays, not null
+	schemes, ok := parsed["schemes_scanned"].([]any)
+	require.True(t, ok, "schemes_scanned should be an array, not null")
+	assert.Empty(t, schemes)
+
+	addrs, ok := parsed["addresses"].([]any)
+	require.True(t, ok, "addresses should be an array, not null")
+	assert.Empty(t, addrs)
+}
+
 func TestOutputDiscoverJSON_Escaping(t *testing.T) {
 	t.Parallel()
 

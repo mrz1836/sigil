@@ -3,12 +3,16 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/utxostore"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 var (
@@ -87,4 +91,69 @@ func TestDisplayScanResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Tests for createAndSaveWallet ---
+
+func TestCreateAndSaveWallet_HappyPath(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("testpassword123"), true)
+
+	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
+
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	w, err := createAndSaveWallet("create_test", seed, storage)
+	require.NoError(t, err)
+	require.NotNil(t, w)
+
+	assert.Equal(t, "create_test", w.Name)
+	assert.NotEmpty(t, w.Addresses[wallet.ChainETH])
+	assert.NotEmpty(t, w.Addresses[wallet.ChainBSV])
+
+	// Verify wallet was persisted
+	exists, err := storage.Exists("create_test")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+func TestCreateAndSaveWallet_InvalidSeed(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("testpassword123"), true)
+
+	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
+
+	// An empty seed should cause DeriveAddresses to fail
+	_, err := createAndSaveWallet("bad_seed", []byte{}, storage)
+	require.Error(t, err)
+}
+
+// --- Tests for generateWalletSeed with passphrase ---
+
+func TestGenerateWalletSeed_WithPassphrase(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("testpassword123"), true)
+
+	mnemonic, seed, err := generateWalletSeed(12, true)
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	words := strings.Fields(mnemonic)
+	assert.Len(t, words, 12)
+	assert.Len(t, seed, 64)
+
+	// The passphrase version should produce a different seed than no passphrase
+	seedNoPassphrase, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seedNoPassphrase)
+
+	assert.NotEqual(t, seedNoPassphrase, seed, "passphrase should produce different seed")
 }

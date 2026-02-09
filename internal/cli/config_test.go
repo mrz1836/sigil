@@ -609,6 +609,43 @@ func TestDisplayConfigJSON(t *testing.T) {
 	assert.Equal(t, "abcd...", bsvNetwork["api_key"])
 }
 
+func TestDisplayConfigJSON_ShortAPIKey(t *testing.T) {
+	testCfg := config.Defaults()
+	testCfg.Home = "/test/sigil"
+	testCfg.Networks.BSV.APIKey = "ab" // Less than 4 chars
+
+	buf := new(bytes.Buffer)
+	err := displayConfigJSON(buf, testCfg)
+	require.NoError(t, err)
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+
+	networks, ok := out["networks"].(map[string]any)
+	require.True(t, ok)
+	bsvNetwork, ok := networks["bsv"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "***...", bsvNetwork["api_key"])
+}
+
+func TestDisplayConfigJSON_EmptyAPIKey(t *testing.T) {
+	testCfg := config.Defaults()
+	testCfg.Networks.BSV.APIKey = ""
+
+	buf := new(bytes.Buffer)
+	err := displayConfigJSON(buf, testCfg)
+	require.NoError(t, err)
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+
+	networks, ok := out["networks"].(map[string]any)
+	require.True(t, ok)
+	bsvNetwork, ok := networks["bsv"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "(not configured)", bsvNetwork["api_key"])
+}
+
 // --- Tests for runConfigInit, runConfigShow, runConfigGet, runConfigSet ---
 
 // newConfigTestCmd creates a cobra.Command for config run* testing with output capture.

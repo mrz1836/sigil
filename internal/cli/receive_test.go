@@ -982,3 +982,74 @@ func TestFormatUTXOCount(t *testing.T) {
 		})
 	}
 }
+
+func TestDisplayReceiveCheckText_BSVExplorer(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{Index: 0, Address: "1BSVCheckAddr", Path: "m/44'/236'/0'/0/0"}
+	utxos := []*utxostore.StoredUTXO{
+		{TxID: "txcheck1", Vout: 0, Amount: 50000, Confirmations: 3},
+	}
+
+	var buf bytes.Buffer
+	displayReceiveCheckText(&buf, addr, chain.BSV, "savings", 50000, utxos)
+
+	result := buf.String()
+	assert.Contains(t, result, "WhatsOnChain")
+	assert.Contains(t, result, "1BSVCheckAddr")
+	assert.Contains(t, result, "savings")
+	assert.Contains(t, result, "Funds received")
+}
+
+func TestDisplayReceiveCheckText_ETHExplorer(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{Index: 0, Address: "0xETHCheckAddr", Path: "m/44'/60'/0'/0/0"}
+
+	var buf bytes.Buffer
+	displayReceiveCheckText(&buf, addr, chain.ETH, "", 0, nil)
+
+	result := buf.String()
+	assert.Contains(t, result, "Etherscan")
+	assert.Contains(t, result, "0xETHCheckAddr")
+	assert.Contains(t, result, "No funds received yet")
+}
+
+func TestDisplayReceiveCheckText_NoLabel(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{Index: 2, Address: "1NoLabelAddr", Path: "m/44'/236'/0'/0/2"}
+
+	var buf bytes.Buffer
+	displayReceiveCheckText(&buf, addr, chain.BSV, "", 0, nil)
+
+	result := buf.String()
+	assert.NotContains(t, result, "Label:")
+}
+
+func TestDisplayReceiveCheckAllJSON_Empty(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	displayReceiveCheckAllJSON(&buf, chain.BSV, []addressCheckResult{})
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.InDelta(t, 0.0, parsed["addresses_checked"], 0)
+	assert.InDelta(t, 0.0, parsed["total_balance"], 0)
+
+	addrs, ok := parsed["addresses"].([]any)
+	require.True(t, ok, "addresses should be an array")
+	assert.Empty(t, addrs)
+}
+
+func TestDisplayReceiveCheckAllText_Empty(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	displayReceiveCheckAllText(&buf, chain.BSV, []addressCheckResult{})
+
+	result := buf.String()
+	assert.Contains(t, result, "Checking 0 receiving address")
+	assert.Contains(t, result, "Total: 0.00000000 BSV")
+}

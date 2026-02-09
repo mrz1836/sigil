@@ -46,9 +46,9 @@ func TestParseGasSpeed(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "empty string defaults to slow",
+			name:     "empty string defaults to medium",
 			input:    "",
-			expected: GasSpeedSlow,
+			expected: GasSpeedMedium,
 			wantErr:  false,
 		},
 		{

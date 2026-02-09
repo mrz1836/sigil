@@ -378,6 +378,209 @@ func TestBackupVerify_InvalidChecksum(t *testing.T) {
 }
 
 // TestBackupRestore_WrongPassword tests restore with incorrect password.
+// --- Tests for runBackupCreate/Verify/Restore (via mock prompts) ---
+
+func TestRunBackupCreate_HappyPath(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+	withMockPrompts(t, []byte("testpassword123"), true)
+
+	// Create a wallet to back up
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet("backupme", []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("testpassword123")))
+
+	origBackupWallet := backupWallet
+	defer func() { backupWallet = origBackupWallet }()
+	backupWallet = "backupme"
+
+	cmd, buf := newBackupListTestCmd(tmpDir, output.FormatText)
+	err = runBackupCreate(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Backup created successfully")
+	assert.Contains(t, result, "backupme")
+}
+
+func TestRunBackupCreate_WalletNotFound(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+
+	origBackupWallet := backupWallet
+	defer func() { backupWallet = origBackupWallet }()
+	backupWallet = "nonexistent"
+
+	cmd, _ := newBackupListTestCmd(tmpDir, output.FormatText)
+	err := runBackupCreate(cmd, nil)
+	require.Error(t, err)
+	require.ErrorIs(t, err, wallet.ErrWalletNotFound)
+}
+
+func TestRunBackupVerify_StructureOnly(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+	// Password prompt returns empty (skip decryption test)
+	origPW := promptPasswordFn
+	t.Cleanup(func() { promptPasswordFn = origPW })
+	promptPasswordFn = func(_ string) ([]byte, error) {
+		return []byte{}, nil
+	}
+
+	// Create wallet and backup first
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet("verifyme", []wallet.ChainID{wallet.ChainETH})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("verifypass123")))
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	svc := backup.NewService(backupDir, storage)
+	_, backupPath, err := svc.Create("verifyme", []byte("verifypass123"))
+	require.NoError(t, err)
+
+	origInput := backupInput
+	defer func() { backupInput = origInput }()
+	backupInput = backupPath
+
+	cmd, buf := newBackupListTestCmd(tmpDir, output.FormatText)
+	err = runBackupVerify(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "verified successfully")
+	assert.Contains(t, result, "verifyme")
+}
+
+func TestRunBackupVerify_WithDecryption(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+	withMockPrompts(t, []byte("verifypass123"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet("decryptme", []wallet.ChainID{wallet.ChainETH})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("verifypass123")))
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	svc := backup.NewService(backupDir, storage)
+	_, backupPath, err := svc.Create("decryptme", []byte("verifypass123"))
+	require.NoError(t, err)
+
+	origInput := backupInput
+	defer func() { backupInput = origInput }()
+	backupInput = backupPath
+
+	cmd, buf := newBackupListTestCmd(tmpDir, output.FormatText)
+	err = runBackupVerify(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Decryption verified successfully")
+}
+
+func TestRunBackupRestore_HappyPath(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+	withMockPrompts(t, []byte("restorepass123"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet("original_wallet", []wallet.ChainID{wallet.ChainETH})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("restorepass123")))
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	svc := backup.NewService(backupDir, storage)
+	_, backupPath, err := svc.Create("original_wallet", []byte("restorepass123"))
+	require.NoError(t, err)
+
+	origInput := backupInput
+	origName := restoreName
+	defer func() {
+		backupInput = origInput
+		restoreName = origName
+	}()
+	backupInput = backupPath
+	restoreName = "restored_from_backup"
+
+	cmd, buf := newBackupListTestCmd(tmpDir, output.FormatText)
+	err = runBackupRestore(cmd, nil)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Wallet restored successfully")
+	assert.Contains(t, result, "restored_from_backup")
+
+	exists, err := storage.Exists("restored_from_backup")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+func TestRunBackupRestore_WalletExists(t *testing.T) {
+	tmpDir, testCleanup := setupTestEnv(t)
+	defer testCleanup()
+	withMockPrompts(t, []byte("existpass123"), true)
+
+	walletsDir := filepath.Join(tmpDir, "wallets")
+	storage := wallet.NewFileStorage(walletsDir)
+	w, err := wallet.NewWallet("existing_wallet", []wallet.ChainID{wallet.ChainETH})
+	require.NoError(t, err)
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+	require.NoError(t, w.DeriveAddresses(seed, 1))
+	require.NoError(t, storage.Save(w, seed, []byte("existpass123")))
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	svc := backup.NewService(backupDir, storage)
+	_, backupPath, err := svc.Create("existing_wallet", []byte("existpass123"))
+	require.NoError(t, err)
+
+	origInput := backupInput
+	origName := restoreName
+	defer func() {
+		backupInput = origInput
+		restoreName = origName
+	}()
+	backupInput = backupPath
+	restoreName = "" // Use original name, which already exists
+
+	cmd, _ := newBackupListTestCmd(tmpDir, output.FormatText)
+	err = runBackupRestore(cmd, nil)
+	require.Error(t, err)
+	require.ErrorIs(t, err, wallet.ErrWalletExists)
+}
+
 func TestBackupRestore_WrongPassword(t *testing.T) {
 	tmpDir, testCleanup := setupTestEnv(t)
 	defer testCleanup()

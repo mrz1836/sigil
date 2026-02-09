@@ -27,7 +27,7 @@ func TestSpend_SingleAddressWithChange(t *testing.T) {
 	assert.Len(t, selected, 1)
 	assert.Equal(t, uint64(100000), selected[0].Amount)
 
-	fee := EstimateTxSize(1, 2) * DefaultFeeRate
+	fee := (EstimateTxSize(1, 2)*DefaultFeeRate + 999) / 1000
 	expectedChange := 100000 - 50000 - fee
 	assert.Equal(t, expectedChange, change)
 
@@ -85,7 +85,7 @@ func TestSpend_ExactAmount_NoChange(t *testing.T) {
 
 	// UTXO that exactly covers amount + fee
 	targetAmount := uint64(50000)
-	exactUTXO := targetAmount + EstimateTxSize(1, 2)*DefaultFeeRate
+	exactUTXO := targetAmount + (EstimateTxSize(1, 2)*DefaultFeeRate+999)/1000
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: exactUTXO, Address: testAddress},
@@ -113,7 +113,7 @@ func TestSpend_ChangeBelowDust_BTC(t *testing.T) {
 	// change = 51000 - 50000 - fee (above dust)
 	// For change = 400 (below dust): UTXO = 50000 + fee + 400
 	targetAmount := uint64(50000)
-	utxoAmount := targetAmount + EstimateTxSize(1, 2) + 400 // 400 sats change
+	utxoAmount := targetAmount + (EstimateTxSize(1, 2)*DefaultFeeRate+999)/1000 + 400 // 400 sats change
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
@@ -141,7 +141,7 @@ func TestSpend_ChangeBelowDust_BSV(t *testing.T) {
 
 	// Create UTXO where change = 1 satoshi (valid on BSV)
 	targetAmount := uint64(50000)
-	utxoAmount := targetAmount + EstimateTxSize(1, 2) + 1 // 1 sat change
+	utxoAmount := targetAmount + (EstimateTxSize(1, 2)*DefaultFeeRate+999)/1000 + 1 // 1 sat change
 
 	utxos := []UTXO{
 		{TxID: testTxID(0), Vout: 0, Amount: utxoAmount, Address: testAddress},
@@ -229,7 +229,7 @@ func TestSpend_MultiInputTransaction(t *testing.T) {
 	// Should select all 3 since fee grows with inputs
 	assert.Len(t, selected, 3)
 
-	fee := EstimateTxSize(3, 2) * DefaultFeeRate
+	fee := (EstimateTxSize(3, 2)*DefaultFeeRate + 999) / 1000
 	expectedChange := 15000 - 12000 - fee
 	assert.Equal(t, expectedChange, change)
 }
@@ -244,12 +244,12 @@ func TestSpend_FeeEstimation(t *testing.T) {
 		numOutputs int
 		feeRate    uint64
 	}{
-		{"1 input, 1 output", 1, 1, 1},
-		{"1 input, 2 outputs", 1, 2, 1},
-		{"3 inputs, 1 output", 3, 1, 1},
-		{"5 inputs, 2 outputs", 5, 2, 1},
-		{"10 inputs, 1 output", 10, 1, 1},
-		{"1 input, 1 output @ 50 sat/byte", 1, 1, 50},
+		{"1 input, 1 output", 1, 1, 1000},
+		{"1 input, 2 outputs", 1, 2, 1000},
+		{"3 inputs, 1 output", 3, 1, 1000},
+		{"5 inputs, 2 outputs", 5, 2, 1000},
+		{"10 inputs, 1 output", 10, 1, 1000},
+		{"1 input, 1 output @ 50 sat/byte", 1, 1, 50000},
 	}
 
 	for _, tt := range tests {
@@ -273,7 +273,7 @@ func TestSpend_FeeEstimation(t *testing.T) {
 				assert.Greater(t, fee, lowFee)
 			}
 
-			t.Logf("%d inputs, %d outputs @ %d sat/byte = %d satoshis",
+			t.Logf("%d inputs, %d outputs @ %d sat/KB = %d satoshis",
 				tt.numInputs, tt.numOutputs, tt.feeRate, fee)
 		})
 	}
@@ -309,7 +309,7 @@ func TestSpend_LargeTransaction(t *testing.T) {
 	for _, u := range selected {
 		total += u.Amount
 	}
-	fee := EstimateTxSize(len(selected), 2) * DefaultFeeRate
+	fee := (EstimateTxSize(len(selected), 2)*DefaultFeeRate + 999) / 1000
 	assert.GreaterOrEqual(t, total, uint64(80000)+fee)
 
 	t.Logf("Selected %d UTXOs totaling %d, change %d", len(selected), total, change)
@@ -328,7 +328,7 @@ func TestSpend_MaxOutput(t *testing.T) {
 	client := NewClient(nil)
 
 	// Try to send max (UTXO - fee)
-	feeEstimate := EstimateTxSize(1, 2) * DefaultFeeRate
+	feeEstimate := (EstimateTxSize(1, 2)*DefaultFeeRate + 999) / 1000
 	maxSendAmount := utxoAmount - feeEstimate
 
 	selected, change, err := client.SelectUTXOs(utxos, maxSendAmount, DefaultFeeRate)
@@ -362,9 +362,9 @@ func TestSpend_InsufficientFunds(t *testing.T) {
 		{
 			name: "cannot cover fee",
 			utxos: []UTXO{
-				{TxID: testTxID(0), Vout: 0, Amount: 200, Address: testAddress},
+				{TxID: testTxID(0), Vout: 0, Amount: 110, Address: testAddress},
 			},
-			amount: 100, // 200 - 100 = 100, but fee exceeds available
+			amount: 100, // 110 - 100 = 10, but fee exceeds available
 		},
 	}
 

@@ -596,10 +596,10 @@ func TestSend_SweepAll(t *testing.T) {
 		t.Parallel()
 
 		kp := getTestKeyPair()
-		utxos := makeUTXOsWithKey(kp, 100) // 100 satoshis, fee is 192
+		utxos := makeUTXOsWithKey(kp, 5) // 5 satoshis, fee at 50 sat/KB is 10
 		server := mockMultiRouteServer(mockServerConfig{
 			UTXOs:   utxos,
-			Balance: 100,
+			Balance: 5,
 		})
 		defer server.Close()
 

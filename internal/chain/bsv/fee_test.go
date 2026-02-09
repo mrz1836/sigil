@@ -71,8 +71,8 @@ func TestGetFeeQuote(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "taal", quote.Source)
-		// 500 satoshis / 1000 bytes = 0, but minimum is 1
-		assert.GreaterOrEqual(t, quote.StandardRate, uint64(1))
+		// 500 satoshis * 1000 / 1000 bytes = 500 sat/KB
+		assert.Equal(t, uint64(500), quote.StandardRate)
 	})
 
 	t.Run("network error returns default fee quote", func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestGetFeeQuote(t *testing.T) {
 		assert.Equal(t, "default", quote.Source)
 	})
 
-	t.Run("fee rate of zero uses minimum of 1", func(t *testing.T) {
+	t.Run("fee rate of zero uses minimum", func(t *testing.T) {
 		t.Parallel()
 
 		payload := TAALPayload{
@@ -222,7 +222,7 @@ func TestGetFeeQuote(t *testing.T) {
 		quote, err := client.GetFeeQuote(ctx)
 		require.NoError(t, err)
 
-		assert.Equal(t, uint64(1), quote.StandardRate)
+		assert.Equal(t, uint64(MinFeeRate), quote.StandardRate)
 	})
 }
 
@@ -358,34 +358,34 @@ func TestEstimateFeeForTx(t *testing.T) {
 	}{
 		// Basic fee calculations
 		{
-			name:       "basic calculation - 1 sat/byte",
+			name:       "basic calculation - 1000 sat/KB (1 sat/byte)",
 			numInputs:  1,
 			numOutputs: 2,
-			feeRate:    1,
-			expected:   uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * 1, // 226 * 1 = 226
+			feeRate:    1000,
+			expected:   226, // (226*1000+999)/1000 = 226
 		},
 		{
-			name:       "higher fee rate - 5 sat/byte",
+			name:       "higher fee rate - 5000 sat/KB (5 sat/byte)",
 			numInputs:  1,
 			numOutputs: 2,
-			feeRate:    5,
-			expected:   uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * 5, // 226 * 5 = 1130
+			feeRate:    5000,
+			expected:   1130, // (226*5000+999)/1000 = 1130
 		},
 		{
 			name:       "multiple inputs with varying fee rate",
 			numInputs:  3,
 			numOutputs: 2,
-			feeRate:    2,
-			expected:   uint64(TxOverhead+3*P2PKHInputSize+2*P2PKHOutputSize) * 2, // 522 * 2 = 1044
+			feeRate:    2000,
+			expected:   1044, // (522*2000+999)/1000 = 1044
 		},
 
-		// Minimum fee (1 sat/byte - BSV standard)
+		// Minimum fee (10 sat/KB - BSV standard)
 		{
 			name:       "minimum fee rate",
 			numInputs:  1,
 			numOutputs: 1,
 			feeRate:    MinFeeRate,
-			expected:   uint64(TxOverhead+P2PKHInputSize+P2PKHOutputSize) * MinFeeRate, // 192 * 1 = 192
+			expected:   2, // (192*10+999)/1000 = 2919/1000 = 2
 		},
 
 		// Maximum reasonable fee rate
@@ -394,7 +394,7 @@ func TestEstimateFeeForTx(t *testing.T) {
 			numInputs:  1,
 			numOutputs: 2,
 			feeRate:    MaxFeeRate,
-			expected:   uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * MaxFeeRate, // 226 * 50 = 11300
+			expected:   11300, // (226*50000+999)/1000 = 11300999/1000 = 11300
 		},
 
 		// Zero fee rate (edge case)
@@ -403,29 +403,29 @@ func TestEstimateFeeForTx(t *testing.T) {
 			numInputs:  1,
 			numOutputs: 2,
 			feeRate:    0,
-			expected:   0,
+			expected:   0, // (226*0+999)/1000 = 0
 		},
 
 		// Exact satoshi fee calculations for specific tx sizes
 		{
-			name:       "192 byte tx at 1 sat/byte = 192 satoshis",
+			name:       "192 byte tx at 1000 sat/KB = 192 satoshis",
 			numInputs:  1,
 			numOutputs: 1,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   192,
 		},
 		{
-			name:       "226 byte tx at 1 sat/byte = 226 satoshis",
+			name:       "226 byte tx at 1000 sat/KB = 226 satoshis",
 			numInputs:  1,
 			numOutputs: 2,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   226,
 		},
 		{
-			name:       "340 byte tx at 1 sat/byte = 340 satoshis",
+			name:       "340 byte tx at 1000 sat/KB = 340 satoshis",
 			numInputs:  2,
 			numOutputs: 1,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   340,
 		},
 
@@ -434,14 +434,14 @@ func TestEstimateFeeForTx(t *testing.T) {
 			name:       "consolidating 10 UTXOs to single output",
 			numInputs:  10,
 			numOutputs: 1,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   uint64(TxOverhead + 10*P2PKHInputSize + P2PKHOutputSize), // 1524
 		},
 		{
 			name:       "batch send to 5 recipients",
 			numInputs:  2,
 			numOutputs: 5,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   uint64(TxOverhead + 2*P2PKHInputSize + 5*P2PKHOutputSize), // 476
 		},
 
@@ -450,7 +450,7 @@ func TestEstimateFeeForTx(t *testing.T) {
 			name:       "large consolidation at low fee",
 			numInputs:  50,
 			numOutputs: 2,
-			feeRate:    1,
+			feeRate:    1000,
 			expected:   uint64(TxOverhead + 50*P2PKHInputSize + 2*P2PKHOutputSize), // 7478
 		},
 	}
@@ -519,9 +519,9 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 100000000) // 1 BSV
 		require.NoError(t, err)
 
-		// Fee should be tx size (1 input, 2 outputs) * fee rate (2 sat/byte)
+		// Fee should be tx size (1 input, 2 outputs) * fee rate 2000 sat/KB (2 sat/byte)
 		expectedSize := uint64(TxOverhead + P2PKHInputSize + 2*P2PKHOutputSize) // 226
-		expectedFee := expectedSize * 2                                         // 452
+		expectedFee := (expectedSize*2000 + 999) / 1000                         // 452
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -539,9 +539,9 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 100000000) // 1 BSV
 		require.NoError(t, err)
 
-		// Default fee rate is 1 sat/byte
+		// Default fee rate is 50 sat/KB (0.05 sat/byte)
 		expectedSize := uint64(TxOverhead + P2PKHInputSize + 2*P2PKHOutputSize) // 226
-		expectedFee := expectedSize * DefaultFeeRate                            // 226
+		expectedFee := (expectedSize*DefaultFeeRate + 999) / 1000               // 12
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -562,7 +562,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 
 		// Fee is same regardless of amount (tx size based)
 		expectedSize := uint64(TxOverhead + P2PKHInputSize + 2*P2PKHOutputSize) // 226
-		expectedFee := expectedSize * DefaultFeeRate                            // 226
+		expectedFee := (expectedSize*DefaultFeeRate + 999) / 1000
 		assert.Equal(t, expectedFee, fee)
 
 		// Fee is much larger than amount being sent (valid in BSV)
@@ -583,7 +583,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 100) // 100 satoshis
 		require.NoError(t, err)
 
-		expectedFee := uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * DefaultFeeRate
+		expectedFee := (uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize)*DefaultFeeRate + 999) / 1000
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -601,7 +601,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		fee, err := client.EstimateFeeForAmount(ctx, 1000) // 1000 satoshis
 		require.NoError(t, err)
 
-		expectedFee := uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * DefaultFeeRate
+		expectedFee := (uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize)*DefaultFeeRate + 999) / 1000
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -621,7 +621,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		require.NoError(t, err)
 
 		// Fee estimation doesn't depend on amount
-		expectedFee := uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize) * DefaultFeeRate
+		expectedFee := (uint64(TxOverhead+P2PKHInputSize+2*P2PKHOutputSize)*DefaultFeeRate + 999) / 1000
 		assert.Equal(t, expectedFee, fee)
 	})
 }
@@ -634,75 +634,19 @@ func TestValidateFeeRate(t *testing.T) {
 		rate     uint64
 		expected uint64
 	}{
-		// Below minimum
-		{
-			name:     "zero returns minimum",
-			rate:     0,
-			expected: MinFeeRate,
-		},
-
-		// At boundaries
-		{
-			name:     "at minimum returns minimum",
-			rate:     MinFeeRate,
-			expected: MinFeeRate,
-		},
-		{
-			name:     "at maximum returns maximum",
-			rate:     MaxFeeRate,
-			expected: MaxFeeRate,
-		},
-		{
-			name:     "one below maximum stays unchanged",
-			rate:     MaxFeeRate - 1,
-			expected: MaxFeeRate - 1,
-		},
-		{
-			name:     "one above minimum stays unchanged",
-			rate:     MinFeeRate + 1,
-			expected: MinFeeRate + 1,
-		},
-
-		// Above maximum
-		{
-			name:     "above maximum returns maximum",
-			rate:     100,
-			expected: MaxFeeRate,
-		},
-		{
-			name:     "way above maximum returns maximum",
-			rate:     1000000,
-			expected: MaxFeeRate,
-		},
-
-		// Within range
-		{
-			name:     "within range returns same value",
-			rate:     10,
-			expected: 10,
-		},
-		{
-			name:     "mid-range value",
-			rate:     25,
-			expected: 25,
-		},
-
-		// BSV typical fee rates
-		{
-			name:     "typical BSV rate - 1 sat/byte",
-			rate:     1,
-			expected: 1,
-		},
-		{
-			name:     "elevated BSV rate - 2 sat/byte",
-			rate:     2,
-			expected: 2,
-		},
-		{
-			name:     "high BSV rate - 10 sat/byte",
-			rate:     10,
-			expected: 10,
-		},
+		{"zero returns minimum", 0, MinFeeRate},
+		{"below minimum returns minimum", 5, MinFeeRate},
+		{"at minimum returns minimum", MinFeeRate, MinFeeRate},
+		{"at maximum returns maximum", MaxFeeRate, MaxFeeRate},
+		{"one below maximum stays unchanged", MaxFeeRate - 1, MaxFeeRate - 1},
+		{"one above minimum stays unchanged", MinFeeRate + 1, MinFeeRate + 1},
+		{"above maximum returns maximum", 100000, MaxFeeRate},
+		{"way above maximum returns maximum", 1000000, MaxFeeRate},
+		{"within range returns same value", 100, 100},
+		{"mid-range value", 25000, 25000},
+		{"typical BSV rate - 50 sat/KB (0.05 sat/byte)", 50, 50},
+		{"standard rate - 1000 sat/KB (1 sat/byte)", 1000, 1000},
+		{"high rate - 10000 sat/KB (10 sat/byte)", 10000, 10000},
 	}
 
 	for _, tt := range tests {
@@ -719,51 +663,51 @@ func TestTxSizeVsFee(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		numInputs  int
-		numOutputs int
-		feeRate1   uint64 // At 1 sat/byte
-		feeRate50  uint64 // At 50 sat/byte
+		name         string
+		numInputs    int
+		numOutputs   int
+		feeRate1000  uint64 // At 1000 sat/KB (1 sat/byte)
+		feeRate50000 uint64 // At 50000 sat/KB (50 sat/byte)
 	}{
 		{
 			name:       "1 input, 1 output",
 			numInputs:  1,
 			numOutputs: 1,
 			// Size: 10 + 148 + 34 = 192 bytes
-			feeRate1:  192,
-			feeRate50: 9600,
+			feeRate1000:  192,
+			feeRate50000: 9600,
 		},
 		{
 			name:       "1 input, 2 outputs",
 			numInputs:  1,
 			numOutputs: 2,
 			// Size: 10 + 148 + 68 = 226 bytes
-			feeRate1:  226,
-			feeRate50: 11300,
+			feeRate1000:  226,
+			feeRate50000: 11300,
 		},
 		{
 			name:       "10 inputs, 1 output",
 			numInputs:  10,
 			numOutputs: 1,
 			// Size: 10 + 1480 + 34 = 1524 bytes
-			feeRate1:  1524,
-			feeRate50: 76200,
+			feeRate1000:  1524,
+			feeRate50000: 76200,
 		},
 		{
 			name:       "1 input, 10 outputs",
 			numInputs:  1,
 			numOutputs: 10,
 			// Size: 10 + 148 + 340 = 498 bytes
-			feeRate1:  498,
-			feeRate50: 24900,
+			feeRate1000:  498,
+			feeRate50000: 24900,
 		},
 		{
 			name:       "100 inputs, 100 outputs",
 			numInputs:  100,
 			numOutputs: 100,
 			// Size: 10 + 14800 + 3400 = 18210 bytes
-			feeRate1:  18210,
-			feeRate50: 910500,
+			feeRate1000:  18210,
+			feeRate50000: 910500,
 		},
 	}
 
@@ -771,16 +715,16 @@ func TestTxSizeVsFee(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Test at 1 sat/byte
+			// Test at 1000 sat/KB (1 sat/byte)
 			size := EstimateTxSize(tt.numInputs, tt.numOutputs)
-			fee1 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 1)
-			assert.Equal(t, size, fee1, "fee at 1 sat/byte should equal size")
-			assert.Equal(t, tt.feeRate1, fee1)
+			fee1 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 1000)
+			assert.Equal(t, size, fee1, "fee at 1000 sat/KB should equal size")
+			assert.Equal(t, tt.feeRate1000, fee1)
 
-			// Test at 50 sat/byte
-			fee50 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 50)
+			// Test at 50000 sat/KB (50 sat/byte)
+			fee50 := EstimateFeeForTx(tt.numInputs, tt.numOutputs, 50000)
 			assert.Equal(t, size*50, fee50)
-			assert.Equal(t, tt.feeRate50, fee50)
+			assert.Equal(t, tt.feeRate50000, fee50)
 		})
 	}
 }
@@ -795,12 +739,15 @@ func TestFeeRateBoundaries(t *testing.T) {
 		expectedRate uint64
 	}{
 		{"zero clamps to minimum", 0, MinFeeRate},
-		{"1 stays at 1", 1, 1},
-		{"25 stays at 25", 25, 25},
-		{"50 stays at 50", 50, 50},
-		{"51 clamps to 50", 51, 50},
-		{"100 clamps to 50", 100, 50},
-		{"max uint64 clamps to 50", ^uint64(0), 50},
+		{"5 clamps to minimum", 5, MinFeeRate},
+		{"10 stays at 10 (minimum)", 10, 10},
+		{"50 stays at 50 (default)", 50, 50},
+		{"1000 stays at 1000", 1000, 1000},
+		{"25000 stays at 25000", 25000, 25000},
+		{"50000 stays at 50000 (maximum)", 50000, 50000},
+		{"50001 clamps to 50000", 50001, 50000},
+		{"100000 clamps to 50000", 100000, 50000},
+		{"max uint64 clamps to 50000", ^uint64(0), 50000},
 	}
 
 	for _, tt := range tests {
@@ -842,10 +789,10 @@ func TestEstimateFeeForTx_LargeTx(t *testing.T) {
 		numOutputs int
 		feeRate    uint64
 	}{
-		{"500 inputs, 1 output", 500, 1, 1},
-		{"1 input, 500 outputs", 1, 500, 1},
-		{"100 inputs, 100 outputs", 100, 100, 1},
-		{"1000 inputs, 10 outputs at 50 sat/byte", 1000, 10, 50},
+		{"500 inputs, 1 output", 500, 1, 1000},
+		{"1 input, 500 outputs", 1, 500, 1000},
+		{"100 inputs, 100 outputs", 100, 100, 1000},
+		{"1000 inputs, 10 outputs at 50000 sat/KB", 1000, 10, 50000},
 	}
 
 	for _, tt := range tests {
@@ -855,8 +802,8 @@ func TestEstimateFeeForTx_LargeTx(t *testing.T) {
 			size := EstimateTxSize(tt.numInputs, tt.numOutputs)
 			fee := EstimateFeeForTx(tt.numInputs, tt.numOutputs, tt.feeRate)
 
-			// Fee should equal size * rate
-			assert.Equal(t, size*tt.feeRate, fee)
+			// Fee should equal (size * rate + 999) / 1000
+			assert.Equal(t, (size*tt.feeRate+999)/1000, fee)
 
 			// Verify no overflow
 			assert.Positive(t, fee)

@@ -23,20 +23,20 @@ func TestCalculateSweepAmount(t *testing.T) {
 		errContain     string
 	}{
 		{
-			name:        "single UTXO sweep at 1 sat/byte",
+			name:        "single UTXO sweep at 1000 sat/KB",
 			totalInputs: 10000,
 			numInputs:   1,
-			feeRate:     1,
-			// Fee: 10 + 148 + 34 = 192 bytes * 1 = 192 satoshis
+			feeRate:     1000,
+			// Fee: (192*1000+999)/1000 = 192 satoshis
 			expectedAmount: 10000 - 192,
 			expectError:    false,
 		},
 		{
-			name:        "multiple UTXO sweep at 1 sat/byte",
+			name:        "multiple UTXO sweep at 1000 sat/KB",
 			totalInputs: 10000,
 			numInputs:   2,
-			feeRate:     1,
-			// Fee: 10 + (2*148) + 34 = 340 bytes * 1 = 340 satoshis
+			feeRate:     1000,
+			// Fee: (340*1000+999)/1000 = 340 satoshis
 			expectedAmount: 10000 - 340,
 			expectError:    false,
 		},
@@ -44,8 +44,8 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "high fee rate sweep",
 			totalInputs: 100000,
 			numInputs:   1,
-			feeRate:     50,
-			// Fee: 192 bytes * 50 = 9600 satoshis
+			feeRate:     50000,
+			// Fee: (192*50000+999)/1000 = 9600 satoshis
 			expectedAmount: 100000 - 9600,
 			expectError:    false,
 		},
@@ -53,7 +53,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "tiny UTXO (fee exceeds value)",
 			totalInputs: 100,
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis > 100 total, so error
 			expectedAmount: 0,
 			expectError:    true,
@@ -63,7 +63,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "BSV allows 1 satoshi outputs",
 			totalInputs: 193,
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis, remaining 193-192 = 1 = BSV dust limit
 			expectedAmount: 1,
 			expectError:    false,
@@ -72,7 +72,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "exactly covers fee leaves nothing",
 			totalInputs: 192,
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis, remaining 0 < dust limit (1)
 			expectedAmount: 0,
 			expectError:    true,
@@ -82,7 +82,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "two satoshis remaining after fee",
 			totalInputs: 194,
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis, remaining 194-192 = 2 > dust limit (1)
 			expectedAmount: 2,
 			expectError:    false,
@@ -91,7 +91,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "old BTC dust limit amount after fee",
 			totalInputs: 738,
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis, remaining 738-192 = 546 (old BTC dust, valid on BSV)
 			expectedAmount: 546,
 			expectError:    false,
@@ -100,8 +100,8 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "many small UTXOs",
 			totalInputs: 50000,
 			numInputs:   10,
-			feeRate:     1,
-			// Fee: 10 + (10*148) + 34 = 1524 bytes * 1 = 1524 satoshis
+			feeRate:     1000,
+			// Fee: (1524*1000+999)/1000 = 1524 satoshis
 			expectedAmount: 50000 - 1524,
 			expectError:    false,
 		},
@@ -109,7 +109,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "large sweep 1 BSV",
 			totalInputs: 100000000, // 1 BSV
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis
 			expectedAmount: 100000000 - 192,
 			expectError:    false,
@@ -118,7 +118,7 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "large sweep 21 million BSV",
 			totalInputs: 2100000000000000, // 21 million BSV
 			numInputs:   1,
-			feeRate:     1,
+			feeRate:     1000,
 			// Fee: 192 satoshis
 			expectedAmount: 2100000000000000 - 192,
 			expectError:    false,
@@ -127,8 +127,8 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "zero total inputs",
 			totalInputs: 0,
 			numInputs:   0,
-			feeRate:     1,
-			// Fee: 10 + 0 + 34 = 44 > 0, so error
+			feeRate:     1000,
+			// Fee: (44*1000+999)/1000 = 44 > 0, so error
 			expectedAmount: 0,
 			expectError:    true,
 			errContain:     "insufficient",
@@ -137,17 +137,17 @@ func TestCalculateSweepAmount(t *testing.T) {
 			name:        "zero fee rate uses minimum",
 			totalInputs: 10000,
 			numInputs:   1,
-			feeRate:     0, // Should be clamped to 1
-			// Fee: 192 * 1 = 192 satoshis
-			expectedAmount: 10000 - 192,
+			feeRate:     0, // Should be clamped to MinFeeRate (10)
+			// Fee: (192*10+999)/1000 = 2 satoshis
+			expectedAmount: 9998,
 			expectError:    false,
 		},
 		{
 			name:        "very high fee rate clamped to max",
 			totalInputs: 100000,
 			numInputs:   1,
-			feeRate:     1000, // Should be clamped to 50
-			// Fee: 192 * 50 = 9600 satoshis
+			feeRate:     100000, // Should be clamped to MaxFeeRate (50000)
+			// Fee: (192*50000+999)/1000 = 9600 satoshis
 			expectedAmount: 100000 - 9600,
 			expectError:    false,
 		},
@@ -180,13 +180,13 @@ func TestCalculateSweepAmount_FeeCalculation(t *testing.T) {
 		numInputs int
 		feeRate   uint64
 	}{
-		{1, 1},
-		{2, 1},
-		{5, 1},
-		{10, 1},
-		{1, 10},
-		{1, 50},
-		{5, 25},
+		{1, 1000},
+		{2, 1000},
+		{5, 1000},
+		{10, 1000},
+		{1, 10000},
+		{1, 50000},
+		{5, 25000},
 	}
 
 	for _, tt := range tests {
@@ -215,7 +215,7 @@ func TestCalculateSweepAmount_ConsolidationScenarios(t *testing.T) {
 		// 100 UTXOs of 1000 satoshis each = 100,000 total
 		totalInputs := uint64(100000)
 		numInputs := 100
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		// Fee: 10 + (100*148) + 34 = 14844 satoshis
 		expectedFee := EstimateFeeForTx(numInputs, 1, feeRate)
@@ -232,9 +232,9 @@ func TestCalculateSweepAmount_ConsolidationScenarios(t *testing.T) {
 		// 50 UTXOs totaling 500,000 satoshis
 		totalInputs := uint64(500000)
 		numInputs := 50
-		feeRate := uint64(50)
+		feeRate := uint64(50000)
 
-		// Fee: 10 + (50*148) + 34 = 7444 bytes * 50 = 372,200 satoshis
+		// Fee: 10 + (50*148) + 34 = 7444 bytes, (7444*50000+999)/1000 = 372,200 satoshis
 		expectedFee := EstimateFeeForTx(numInputs, 1, feeRate)
 
 		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
@@ -248,7 +248,7 @@ func TestCalculateSweepAmount_ConsolidationScenarios(t *testing.T) {
 		// 1 large UTXO of 10 BSV
 		totalInputs := uint64(1000000000) // 10 BSV
 		numInputs := 1
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
 		require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 		// 1 input fee = 192 satoshis
 		totalInputs := uint64(192)
 		numInputs := 1
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		_, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
 		require.Error(t, err)
@@ -285,7 +285,7 @@ func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 
 		totalInputs := uint64(191) // Less than 192 fee
 		numInputs := 1
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		_, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
 		require.Error(t, err)
@@ -297,7 +297,7 @@ func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 
 		totalInputs := uint64(193) // 192 fee + 1
 		numInputs := 1
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		// 1 satoshi remaining = BSV dust limit, should succeed
 		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
@@ -311,7 +311,7 @@ func TestCalculateSweepAmount_EdgeCases(t *testing.T) {
 		// Need: fee (192) + BSV dust limit (1) = 193 minimum
 		totalInputs := uint64(193)
 		numInputs := 1
-		feeRate := uint64(1)
+		feeRate := uint64(1000)
 
 		amount, err := CalculateSweepAmount(totalInputs, numInputs, feeRate)
 		require.NoError(t, err)

@@ -307,7 +307,7 @@ func TestSelectUTXOs(t *testing.T) {
 
 	t.Run("selects sufficient UTXOs", func(t *testing.T) {
 		t.Parallel()
-		selected, change, err := client.SelectUTXOs(utxos, 40000000, 1) // 0.4 BSV
+		selected, change, err := client.SelectUTXOs(utxos, 40000000, 1000) // 0.4 BSV
 		require.NoError(t, err)
 		assert.NotEmpty(t, selected)
 
@@ -322,14 +322,14 @@ func TestSelectUTXOs(t *testing.T) {
 
 	t.Run("returns error for insufficient funds", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := client.SelectUTXOs(utxos, 200000000, 1) // 2 BSV - more than available
+		_, _, err := client.SelectUTXOs(utxos, 200000000, 1000) // 2 BSV - more than available
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "insufficient")
 	})
 
 	t.Run("handles empty UTXO list", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := client.SelectUTXOs([]UTXO{}, 10000, 1)
+		_, _, err := client.SelectUTXOs([]UTXO{}, 10000, 1000)
 		require.Error(t, err)
 	})
 }
@@ -352,7 +352,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "single large UTXO covers target",
 			utxoAmounts:    []uint64{100000},
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 1,
 			expectError:    false,
 		},
@@ -360,7 +360,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "multiple small UTXOs needed",
 			utxoAmounts:    []uint64{10000, 20000, 30000},
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 3,
 			expectError:    false,
 		},
@@ -368,7 +368,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "all UTXOs needed",
 			utxoAmounts:    []uint64{10000, 10000, 10000},
 			targetAmount:   29000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 3,
 			expectError:    false,
 		},
@@ -376,7 +376,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "insufficient funds",
 			utxoAmounts:    []uint64{1000, 2000},
 			targetAmount:   10000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 0,
 			expectError:    true,
 		},
@@ -384,7 +384,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "exact amount match with fee",
 			utxoAmounts:    []uint64{50000 + EstimateTxSize(1, 2)}, // 50000 + fee
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 1,
 			expectError:    false,
 		},
@@ -392,7 +392,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "many small UTXOs",
 			utxoAmounts:    []uint64{1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000},
 			targetAmount:   5000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 6,
 			expectError:    false,
 		},
@@ -400,7 +400,7 @@ func TestSelectUTXOs_Algorithm(t *testing.T) {
 			name:           "single UTXO exactly at target plus fee",
 			utxoAmounts:    []uint64{10000 + EstimateTxSize(1, 2)}, // 10000 + fee
 			targetAmount:   10000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 1,
 			expectError:    false,
 		},
@@ -454,7 +454,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 			name:           "change equals dust limit (546)",
 			utxoAmount:     50000 + EstimateTxSize(1, 2) + 546, // 50000 + fee + 546 change
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectedChange: 546,
 			description:    "change exactly at dust limit should be kept",
 		},
@@ -462,7 +462,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 			name:           "change below dust limit (545)",
 			utxoAmount:     50000 + EstimateTxSize(1, 2) + 545, // 50000 + fee + 545 change
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectedChange: 545,
 			description:    "change below dust - in production would be absorbed into fee",
 		},
@@ -470,7 +470,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 			name:           "change is zero (exact match)",
 			utxoAmount:     50000 + EstimateTxSize(1, 2), // 50000 + fee, no change
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectedChange: 0,
 			description:    "exact match should have zero change",
 		},
@@ -478,7 +478,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 			name:           "change is 1 satoshi",
 			utxoAmount:     50000 + EstimateTxSize(1, 2) + 1, // 50000 + fee + 1
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectedChange: 1,
 			description:    "1 satoshi change - would be absorbed into fee",
 		},
@@ -486,7 +486,7 @@ func TestSelectUTXOs_ChangeHandling(t *testing.T) {
 			name:           "large change",
 			utxoAmount:     100000,
 			targetAmount:   50000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectedChange: 100000 - 50000 - EstimateTxSize(1, 2), // amount - fee
 			description:    "large change should be returned",
 		},
@@ -522,7 +522,7 @@ func TestSelectUTXOs_FeeRateImpact(t *testing.T) {
 			name:           "min fee rate (1 sat/byte) - fewer UTXOs needed",
 			utxoAmounts:    []uint64{10000, 10000, 10000},
 			targetAmount:   10000,
-			feeRate:        1,
+			feeRate:        1000,
 			expectSelected: 2,
 			expectError:    false,
 		},
@@ -530,7 +530,7 @@ func TestSelectUTXOs_FeeRateImpact(t *testing.T) {
 			name:           "max fee rate (50 sat/byte) - more UTXOs needed",
 			utxoAmounts:    []uint64{15000, 15000, 15000},
 			targetAmount:   5000,
-			feeRate:        50,
+			feeRate:        50000,
 			expectSelected: 2,
 			expectError:    false,
 		},
@@ -538,15 +538,15 @@ func TestSelectUTXOs_FeeRateImpact(t *testing.T) {
 			name:           "high fee rate makes tx unaffordable",
 			utxoAmounts:    []uint64{5000, 5000, 5000}, // 15000 total
 			targetAmount:   5000,
-			feeRate:        50,
+			feeRate:        50000,
 			expectSelected: 0,
-			expectError:    true, // 5000 + 11250 = 16250 > 15000
+			expectError:    true, // 5000 + (522*50000+999)/1000 = 5000 + 26100 > 15000
 		},
 		{
 			name:           "mid-range fee rate needs more UTXOs",
 			utxoAmounts:    []uint64{10000, 10000},
 			targetAmount:   5000,
-			feeRate:        25,
+			feeRate:        25000,
 			expectSelected: 2,
 			expectError:    false,
 		},
@@ -582,7 +582,7 @@ func TestSelectUTXOs_SortingOrder(t *testing.T) {
 		makeUTXO(testTxID(3), 50000),  // Middle
 	}
 
-	selected, _, err := client.SelectUTXOs(utxos, 50000, 1)
+	selected, _, err := client.SelectUTXOs(utxos, 50000, 1000)
 	require.NoError(t, err)
 
 	// Should select largest first
@@ -602,7 +602,7 @@ func TestSelectUTXOs_LargeNumber(t *testing.T) {
 	}
 
 	// Try to select 50,000 + fee
-	selected, _, err := client.SelectUTXOs(utxos, 50000, 1)
+	selected, _, err := client.SelectUTXOs(utxos, 50000, 1000)
 	require.NoError(t, err)
 
 	// Should select enough UTXOs to cover amount plus fee growth
@@ -616,7 +616,7 @@ func TestSelectUTXOs_SingleUTXOExact(t *testing.T) {
 
 	// UTXO exactly covers amount + default estimated fee
 	utxos := makeUTXOs(10000 + EstimateTxSize(1, 2)) // 10000 + fee
-	selected, change, err := client.SelectUTXOs(utxos, 10000, 1)
+	selected, change, err := client.SelectUTXOs(utxos, 10000, 1000)
 
 	require.NoError(t, err)
 	assert.Len(t, selected, 1)
@@ -639,7 +639,7 @@ func TestSelectUTXOs_DoesNotMutateInput(t *testing.T) {
 	originalSecond := utxos[1].Amount
 	originalThird := utxos[2].Amount
 
-	_, _, err := client.SelectUTXOs(utxos, 20000, 1)
+	_, _, err := client.SelectUTXOs(utxos, 20000, 1000)
 	require.NoError(t, err)
 
 	// Verify original slice is unchanged

@@ -45,7 +45,7 @@ func TestCreateMigrationPlan_Success(t *testing.T) {
 		t.Errorf("EstimatedSize = %d, want %d", plan.EstimatedSize, expectedSize)
 	}
 
-	expectedFee := expectedSize * DefaultFeeRate
+	expectedFee := (expectedSize*DefaultFeeRate + 999) / 1000
 	if plan.EstimatedFee != expectedFee {
 		t.Errorf("EstimatedFee = %d, want %d", plan.EstimatedFee, expectedFee)
 	}
@@ -64,7 +64,7 @@ func TestCreateMigrationPlan_CustomFeeRate(t *testing.T) {
 		},
 	}
 
-	customFeeRate := uint64(5)
+	customFeeRate := uint64(5000)
 	plan, err := CreateMigrationPlan(result, "dest", customFeeRate)
 	if err != nil {
 		t.Fatalf("CreateMigrationPlan failed: %v", err)
@@ -75,7 +75,7 @@ func TestCreateMigrationPlan_CustomFeeRate(t *testing.T) {
 	}
 
 	expectedSize := OverheadSize + InputSize + OutputSize
-	expectedFee := expectedSize * customFeeRate
+	expectedFee := (expectedSize*customFeeRate + 999) / 1000
 	if plan.EstimatedFee != expectedFee {
 		t.Errorf("EstimatedFee = %d, want %d", plan.EstimatedFee, expectedFee)
 	}
@@ -137,10 +137,11 @@ func TestCreateMigrationPlan_NoDestination(t *testing.T) {
 
 func TestCreateMigrationPlan_DustAmount(t *testing.T) {
 	// Very small balance that would be consumed by fees
+	// At 50 sat/KB, fee for 1 UTXO = (192*50+999)/1000 = 10 sats
 	result := &Result{
-		TotalBalance: 100, // Only 100 satoshis
+		TotalBalance: 5, // Only 5 satoshis, fee is 10
 		FoundAddresses: map[string][]DiscoveredAddress{
-			"Test": {{Address: "addr1", Balance: 100, UTXOCount: 1}},
+			"Test": {{Address: "addr1", Balance: 5, UTXOCount: 1}},
 		},
 	}
 
@@ -155,12 +156,12 @@ func TestCreateMigrationPlan_DustAmount(t *testing.T) {
 
 func TestCreateMigrationPlan_DustWarning(t *testing.T) {
 	// Balance where fee is more than 10% of total
-	// Fee for 1 UTXO ~192 bytes * 1 sat/byte = 192 sats
-	// 10% warning threshold means warning if total < ~1920 sats
+	// Fee for 1 UTXO ~192 bytes at 50 sat/KB = 10 sats
+	// 10% warning threshold means warning if total < ~100 sats
 	result := &Result{
-		TotalBalance: 1000, // 1000 satoshis, fee ~192 = 19.2% > 10%
+		TotalBalance: 50, // 50 satoshis, fee ~10 = 20% > 10%
 		FoundAddresses: map[string][]DiscoveredAddress{
-			"Test": {{Address: "addr1", Balance: 1000, UTXOCount: 1}},
+			"Test": {{Address: "addr1", Balance: 50, UTXOCount: 1}},
 		},
 	}
 
@@ -538,8 +539,8 @@ func TestFeeCalculationConstants(t *testing.T) {
 		t.Errorf("OverheadSize = %d, expected ~10 bytes", OverheadSize)
 	}
 
-	if DefaultFeeRate < 1 {
-		t.Errorf("DefaultFeeRate = %d, expected >= 1 sat/byte", DefaultFeeRate)
+	if DefaultFeeRate < 10 {
+		t.Errorf("DefaultFeeRate = %d, expected >= 10 sat/KB", DefaultFeeRate)
 	}
 }
 

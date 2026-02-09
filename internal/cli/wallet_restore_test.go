@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -228,6 +230,141 @@ func TestGetPassphraseIfNeeded_False(t *testing.T) {
 	passphrase, err := getPassphraseIfNeeded(false)
 	require.NoError(t, err)
 	assert.Empty(t, passphrase)
+}
+
+func TestGetPassphraseIfNeeded_True(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	passphrase, err := getPassphraseIfNeeded(true)
+	require.NoError(t, err)
+	assert.Equal(t, "testpassphrase", passphrase)
+}
+
+func TestConfirmAndSaveWallet_Confirmed(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("testpassword123"), true)
+
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	w, err := createWalletWithAddresses("confirm_test", seed)
+	require.NoError(t, err)
+
+	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+	})
+
+	err = confirmAndSaveWallet(w, seed, storage, cmd)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "restored successfully")
+
+	exists, err := storage.Exists("confirm_test")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+func TestConfirmAndSaveWallet_Rejected(t *testing.T) {
+	tmpDir, cleanup := setupTestEnv(t)
+	defer cleanup()
+	// confirm=false means user rejects
+	withMockPrompts(t, []byte("testpassword123"), false)
+
+	mnemonic, err := wallet.GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := wallet.MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(seed)
+
+	w, err := createWalletWithAddresses("reject_test", seed)
+	require.NoError(t, err)
+
+	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	SetCmdContext(cmd, &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+		Fmt: &mockFormatProvider{format: output.FormatText},
+	})
+
+	err = confirmAndSaveWallet(w, seed, storage, cmd)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "canceled")
+
+	// Wallet should not be saved
+	exists, err := storage.Exists("reject_test")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestGetSeedForRestore_FromFlag(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	origInput := restoreInput
+	origPassphrase := restorePassphrase
+	defer func() {
+		restoreInput = origInput
+		restorePassphrase = origPassphrase
+	}()
+
+	restoreInput = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	restorePassphrase = false
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	seed, err := getSeedForRestore(cmd)
+	require.NoError(t, err)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.Len(t, seed, 64)
+}
+
+func TestGetSeedForRestore_Interactive(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+	withMockPrompts(t, []byte("password"), true)
+
+	origInput := restoreInput
+	origPassphrase := restorePassphrase
+	defer func() {
+		restoreInput = origInput
+		restorePassphrase = origPassphrase
+	}()
+
+	restoreInput = "" // Force interactive prompt
+	restorePassphrase = false
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	seed, err := getSeedForRestore(cmd)
+	require.NoError(t, err)
+	require.NotNil(t, seed)
+	defer wallet.ZeroBytes(seed)
+	assert.Len(t, seed, 64)
 }
 
 func TestProcessMnemonicInput_ValidNoPassphrase(t *testing.T) {

@@ -161,7 +161,7 @@ func mockMultiRouteServer(cfg mockServerConfig) *httptest.Server {
 						}{
 							//nolint:gosec // Test code - safe conversion for test fee rates
 							Satoshis: int64(feeRate),
-							Bytes:    1,
+							Bytes:    1000,
 						},
 					},
 				},

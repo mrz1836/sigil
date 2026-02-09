@@ -542,7 +542,7 @@ func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string
 	var lastErr error
 	for _, b := range c.broadcasters {
 		c.debug("broadcasting via %s", b.Name())
-		txid, err := b.Broadcast(ctx, c.httpClient, txHex)
+		txid, err := b.Broadcast(ctx, txHex)
 		if err == nil {
 			c.debug("broadcast successful via %s: %s", b.Name(), txid)
 			return txid, nil

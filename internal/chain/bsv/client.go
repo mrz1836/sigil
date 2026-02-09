@@ -3,14 +3,14 @@ package bsv
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"regexp"
 	"sort"
 	"time"
+
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/metrics"
@@ -65,6 +65,17 @@ var (
 	base58Regex = regexp.MustCompile("^[13][1-9A-HJ-NP-Za-km-z]{25,34}$")
 )
 
+// WOCClient is the narrow interface for WhatsOnChain SDK methods used by this package.
+type WOCClient interface {
+	AddressBalance(ctx context.Context, address string) (*whatsonchain.AddressBalance, error)
+	AddressUnspentTransactions(ctx context.Context, address string) (whatsonchain.AddressHistory, error)
+	GetMinerFeesStats(ctx context.Context, from, to int64) ([]*whatsonchain.MinerFeeStats, error)
+	BroadcastTx(ctx context.Context, txHex string) (string, error)
+}
+
+// Compile-time check that the real SDK client satisfies WOCClient.
+var _ WOCClient = (whatsonchain.ClientInterface)(nil)
+
 // DebugLogger is the interface for debug logging.
 // This allows the client to accept different logger implementations.
 type DebugLogger interface {
@@ -73,12 +84,8 @@ type DebugLogger interface {
 
 // ClientOptions contains optional configuration for the BSV client.
 type ClientOptions struct {
-	// BaseURL overrides the default WhatsOnChain API URL.
-	BaseURL string
-
-	// BroadcastURL overrides the default broadcast URL.
-	// When set, a single WhatsOnChain-format broadcaster is used with this URL as base.
-	BroadcastURL string
+	// WOCClient allows injecting a custom WhatsOnChain client (e.g., for testing).
+	WOCClient WOCClient
 
 	// APIKey is the optional WhatsOnChain API key for higher rate limits.
 	APIKey string
@@ -95,37 +102,62 @@ var _ chain.Chain = (*Client)(nil)
 
 // Client provides Bitcoin SV blockchain operations.
 type Client struct {
-	baseURL      string
-	apiKey       string
+	woc          WOCClient
 	network      Network
-	httpClient   *http.Client
 	logger       DebugLogger
 	broadcasters []Broadcaster
 }
 
 // NewClient creates a new BSV client.
-func NewClient(opts *ClientOptions) *Client {
+func NewClient(ctx context.Context, opts *ClientOptions) *Client {
 	c := &Client{
-		baseURL: "https://api.whatsonchain.com/v1/bsv/main",
 		network: NetworkMainnet,
-		httpClient: &http.Client{
-			Timeout: defaultTimeout,
-		},
 	}
 
 	if opts != nil {
 		c.applyOptions(opts)
 	}
 
-	// Default broadcasters: WhatsOnChain (primary) + GorillaPool ARC (fallback).
+	// Create default SDK client if none was injected.
+	if c.woc == nil {
+		var wocOpts []whatsonchain.ClientOption
+		wocOpts = append(wocOpts, whatsonchain.WithNetwork(mapNetwork(c.network)))
+		if opts != nil && opts.APIKey != "" {
+			wocOpts = append(wocOpts, whatsonchain.WithAPIKey(opts.APIKey))
+		}
+		wocClient, err := whatsonchain.NewClient(ctx, wocOpts...)
+		if err != nil {
+			// SDK NewClient only returns an error for truly invalid configuration.
+			// Fall back to a default client.
+			wocClient, _ = whatsonchain.NewClient(ctx)
+		}
+		c.woc = wocClient
+	}
+
+	// Default broadcasters: WhatsOnChain SDK (primary) + GorillaPool ARC (fallback).
 	if len(c.broadcasters) == 0 {
 		c.broadcasters = []Broadcaster{
-			&WhatsOnChainBroadcaster{BaseURL: c.baseURL, APIKey: c.apiKey},
-			&GorillaPoolARCBroadcaster{BaseURL: GorillaPoolARCURL},
+			&WOCSDKBroadcaster{woc: c.woc},
+			&GorillaPoolARCBroadcaster{
+				BaseURL:    GorillaPoolARCURL,
+				httpClient: &http.Client{Timeout: defaultTimeout},
+			},
 		}
 	}
 
 	return c
+}
+
+// mapNetwork converts the sigil Network type to the SDK's NetworkType.
+func mapNetwork(n Network) whatsonchain.NetworkType {
+	switch n {
+	case NetworkTestnet:
+		return whatsonchain.NetworkTest
+	case NetworkMainnet:
+		return whatsonchain.NetworkMain
+	default:
+		return whatsonchain.NetworkMain
+	}
 }
 
 // ID returns the chain identifier.
@@ -137,14 +169,6 @@ func (c *Client) ID() chain.ID {
 type BalanceResponse struct {
 	Confirmed   int64 `json:"confirmed"`
 	Unconfirmed int64 `json:"unconfirmed"`
-}
-
-// UTXOResponse represents a WhatsOnChain UTXO response.
-type UTXOResponse struct {
-	TxID   string `json:"tx_hash"`
-	Vout   uint32 `json:"tx_pos"`
-	Value  uint64 `json:"value"`
-	Height int64  `json:"height"`
 }
 
 // UTXO represents an unspent transaction output.
@@ -184,37 +208,15 @@ func (c *Client) doGetFullBalance(ctx context.Context, address string) (*Balance
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/address/%s/balance", c.baseURL, address)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
+	bal, err := c.woc.AddressBalance(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			c.debug("failed to close balance response body: %v", closeErr)
-		}
-	}()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: status %d", sigilerr.ErrNetworkError, resp.StatusCode)
-	}
-
-	var balance BalanceResponse
-	if err := json.NewDecoder(resp.Body).Decode(&balance); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	return &balance, nil
+	return &BalanceResponse{
+		Confirmed:   bal.Confirmed,
+		Unconfirmed: bal.Unconfirmed,
+	}, nil
 }
 
 // GetTokenBalance is not supported for BSV.
@@ -238,44 +240,17 @@ func (c *Client) doListUTXOs(ctx context.Context, address string) ([]UTXO, error
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/address/%s/unspent", c.baseURL, address)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
+	history, err := c.woc.AddressUnspentTransactions(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			c.debug("failed to close UTXO response body: %v", closeErr)
-		}
-	}()
 
-	if resp.StatusCode != http.StatusOK {
-		// Drain body to allow connection reuse
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("%w: status %d", sigilerr.ErrNetworkError, resp.StatusCode)
-	}
-
-	var utxoResp []UTXOResponse
-	if err := json.NewDecoder(resp.Body).Decode(&utxoResp); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	utxos := make([]UTXO, len(utxoResp))
-	for i, u := range utxoResp {
+	utxos := make([]UTXO, len(history))
+	for i, h := range history {
 		utxos[i] = UTXO{
-			TxID:    u.TxID,
-			Vout:    u.Vout,
-			Amount:  u.Value,
+			TxID:    h.TxHash,
+			Vout:    uint32(h.TxPos), //nolint:gosec // TxPos is always non-negative for UTXOs
+			Amount:  uint64(h.Value), //nolint:gosec // Value is always non-negative for UTXOs
 			Address: address,
 		}
 	}
@@ -367,29 +342,11 @@ func (c *Client) ParseAmount(amount string) (*big.Int, error) {
 
 // applyOptions applies optional configuration.
 func (c *Client) applyOptions(opts *ClientOptions) {
-	if opts.BaseURL != "" {
-		c.baseURL = opts.BaseURL
-		// When BaseURL is set (e.g., for testing), use a single WoC broadcaster
-		// pointing at the same server, unless BroadcastURL is explicitly set.
-		if opts.BroadcastURL == "" {
-			c.broadcasters = []Broadcaster{
-				&WhatsOnChainBroadcaster{BaseURL: opts.BaseURL, APIKey: opts.APIKey},
-			}
-		}
-	}
-	if opts.BroadcastURL != "" {
-		c.broadcasters = []Broadcaster{
-			&WhatsOnChainBroadcaster{BaseURL: opts.BroadcastURL, APIKey: opts.APIKey},
-		}
-	}
-	if opts.APIKey != "" {
-		c.apiKey = opts.APIKey
+	if opts.WOCClient != nil {
+		c.woc = opts.WOCClient
 	}
 	if opts.Network != "" {
 		c.network = opts.Network
-		if opts.BaseURL == "" {
-			c.baseURL = fmt.Sprintf("https://api.whatsonchain.com/v1/bsv/%s", opts.Network)
-		}
 	}
 	if opts.Logger != nil {
 		c.logger = opts.Logger

@@ -2,10 +2,7 @@ package bsv
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"math"
-	"net/http"
 	"time"
 )
 
@@ -48,47 +45,15 @@ type FeeQuote struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// wocMinerFeeEntry represents a single entry from the WhatsOnChain miner fees API.
-type wocMinerFeeEntry struct {
-	Timestamp int64   `json:"timestamp"`
-	Name      string  `json:"name"`
-	FeeRate   float64 `json:"fee_rate"` // sat/KB
-}
-
 // GetFeeQuote fetches the current fee quote from WhatsOnChain's miner fees API.
 // Falls back to the default fee rate on any error.
 func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 	now := time.Now().Unix()
 	from := now - feeWindowSeconds
-	url := fmt.Sprintf("%s/miner/fees?from=%d&to=%d", c.baseURL, from, now)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
+	entries, err := c.woc.GetMinerFeesStats(ctx, from, now)
 	if err != nil {
 		c.debug("fee API request failed, using default rate: %v", err)
-		return defaultFeeQuote(), nil
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			c.debug("failed to close fee response body: %v", closeErr)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		c.debug("fee API returned status %d, using default rate", resp.StatusCode)
-		return defaultFeeQuote(), nil
-	}
-
-	var entries []wocMinerFeeEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		c.debug("fee API response decode failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
 

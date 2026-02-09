@@ -29,70 +29,30 @@ const (
 // Broadcaster defines the interface for broadcasting raw transactions.
 type Broadcaster interface {
 	// Broadcast sends a raw transaction hex to the network and returns the txid.
-	Broadcast(ctx context.Context, httpClient *http.Client, rawTxHex string) (string, error)
+	Broadcast(ctx context.Context, rawTxHex string) (string, error)
 	// Name returns the broadcaster name for logging.
 	Name() string
 }
 
-// WhatsOnChainBroadcaster broadcasts via the WhatsOnChain API.
-//
-// API: POST {BaseURL}/tx/raw
-// Request: {"txhex": "<hex>"}
-// Response: text/plain txid on success, error message on failure.
-type WhatsOnChainBroadcaster struct {
-	// BaseURL is the WhatsOnChain API base URL (e.g. "https://api.whatsonchain.com/v1/bsv/main").
-	BaseURL string
-	// APIKey is an optional API key for higher rate limits.
-	APIKey string
+// WOCSDKBroadcaster broadcasts via the WhatsOnChain SDK.
+type WOCSDKBroadcaster struct {
+	woc WOCClient
 }
 
 // Name returns the broadcaster name.
-func (w *WhatsOnChainBroadcaster) Name() string { return "whatsonchain" }
+func (w *WOCSDKBroadcaster) Name() string { return "whatsonchain" }
 
-// Broadcast sends a raw transaction via WhatsOnChain.
-func (w *WhatsOnChainBroadcaster) Broadcast(ctx context.Context, httpClient *http.Client, rawTxHex string) (string, error) {
-	url := w.BaseURL + "/tx/raw"
-
-	payload := struct {
-		TxHex string `json:"txhex"`
-	}{TxHex: rawTxHex}
-
-	payloadBytes, err := json.Marshal(payload)
+// Broadcast sends a raw transaction via the WhatsOnChain SDK.
+func (w *WOCSDKBroadcaster) Broadcast(ctx context.Context, rawTxHex string) (string, error) {
+	txid, err := w.woc.BroadcastTx(ctx, rawTxHex)
 	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payloadBytes))
-	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if w.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+w.APIKey)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, DefaultMaxResponseBody))
-	responseText := strings.TrimSpace(string(body))
-
-	if resp.StatusCode != http.StatusOK {
-		// Classify error responses per go-wallet-toolbox pattern.
-		if isAlreadyBroadcasted(responseText) {
-			// Transaction is already known to the network — treat as success.
-			// We don't have the txid from the response in this case,
-			// so return a placeholder that the caller can handle.
-			return responseText, nil
+		// Check for "already in mempool" in the error message.
+		if isAlreadyBroadcasted(err.Error()) {
+			return err.Error(), nil
 		}
-		return "", fmt.Errorf("%w: status %d, body: %s", ErrBroadcastFailed, resp.StatusCode, responseText)
+		return "", fmt.Errorf("%w: %w", ErrBroadcastFailed, err)
 	}
 
-	// WoC returns plain text txid, possibly quoted.
-	txid := strings.Trim(responseText, "\"")
 	if txid == "" {
 		return "", fmt.Errorf("%w: empty txid in response", ErrBroadcastFailed)
 	}
@@ -118,6 +78,8 @@ func isAlreadyBroadcasted(responseText string) bool {
 type GorillaPoolARCBroadcaster struct {
 	// BaseURL is the ARC API base URL (e.g. "https://arc.gorillapool.io").
 	BaseURL string
+	// httpClient is the HTTP client used for ARC requests.
+	httpClient *http.Client
 }
 
 // Name returns the broadcaster name.
@@ -150,7 +112,7 @@ func (e *arcAPIError) Error() string {
 }
 
 // Broadcast sends a raw transaction via GorillaPool ARC.
-func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, httpClient *http.Client, rawTxHex string) (string, error) {
+func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, rawTxHex string) (string, error) {
 	url := g.BaseURL + "/v1/tx"
 
 	payload := struct {
@@ -168,7 +130,7 @@ func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, httpClient *h
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}

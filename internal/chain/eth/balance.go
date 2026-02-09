@@ -7,26 +7,38 @@ import (
 
 // Balance represents a balance result with metadata.
 type Balance struct {
-	Address  string
-	Amount   *big.Int
-	Symbol   string
-	Decimals int
-	Token    string // Empty for native ETH
+	Address     string
+	Amount      *big.Int
+	Unconfirmed *big.Int // Pending balance delta in wei (pending - latest; can be negative)
+	Symbol      string
+	Decimals    int
+	Token       string // Empty for native ETH
 }
 
-// GetNativeBalance retrieves the native ETH balance.
+// GetNativeBalance retrieves the native ETH balance including pending (unconfirmed) data.
 func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance, error) {
 	amount, err := c.GetBalance(ctx, address)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Balance{
+	bal := &Balance{
 		Address:  address,
 		Amount:   amount,
 		Symbol:   "ETH",
 		Decimals: decimals,
-	}, nil
+	}
+
+	// Attempt to fetch pending balance for unconfirmed delta.
+	// Failure is non-fatal — pending data is optional.
+	if c.rpcClient != nil {
+		pendingAmount, pendingErr := c.rpcClient.GetBalance(ctx, address, "pending")
+		if pendingErr == nil && pendingAmount.Cmp(amount) != 0 {
+			bal.Unconfirmed = new(big.Int).Sub(pendingAmount, amount)
+		}
+	}
+
+	return bal, nil
 }
 
 // GetUSDCBalance retrieves the USDC balance.
@@ -66,6 +78,19 @@ func (c *Client) GetAllBalances(ctx context.Context, address string) ([]*Balance
 	balances = append(balances, usdcBalance)
 
 	return balances, nil
+}
+
+// FormatSignedBalanceAmount formats a possibly-negative balance amount with the correct decimals.
+// For negative values, it formats the absolute value then prepends "-".
+func FormatSignedBalanceAmount(amount *big.Int, decimals int) string {
+	if amount == nil {
+		return "0"
+	}
+	if amount.Sign() >= 0 {
+		return FormatBalanceAmount(amount, decimals)
+	}
+	abs := new(big.Int).Abs(amount)
+	return "-" + FormatBalanceAmount(abs, decimals)
 }
 
 // FormatBalanceAmount formats a balance amount with the correct decimals.

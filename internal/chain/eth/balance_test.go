@@ -111,10 +111,66 @@ func TestFormatBalanceAmount(t *testing.T) {
 	}
 }
 
+func TestFormatSignedBalanceAmount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		amount   *big.Int
+		decimals int
+		expected string
+	}{
+		{
+			name:     "nil returns zero",
+			amount:   nil,
+			decimals: 18,
+			expected: "0",
+		},
+		{
+			name:     "zero value",
+			amount:   big.NewInt(0),
+			decimals: 18,
+			expected: "0.0",
+		},
+		{
+			name:     "positive delegates to FormatBalanceAmount",
+			amount:   big.NewInt(1_000_000_000_000_000_000),
+			decimals: 18,
+			expected: "1.0",
+		},
+		{
+			name:     "negative 1 wei",
+			amount:   big.NewInt(-1),
+			decimals: 18,
+			expected: "-0.000000000000000001",
+		},
+		{
+			name:     "negative 1 ETH",
+			amount:   big.NewInt(-1_000_000_000_000_000_000),
+			decimals: 18,
+			expected: "-1.0",
+		},
+		{
+			name:     "negative 0.5 ETH",
+			amount:   big.NewInt(-500_000_000_000_000_000),
+			decimals: 18,
+			expected: "-0.5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := FormatSignedBalanceAmount(tt.amount, tt.decimals)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestBalanceStruct(t *testing.T) {
 	t.Parallel()
 
-	t.Run("ETH balance", func(t *testing.T) {
+	t.Run("ETH balance without unconfirmed", func(t *testing.T) {
 		t.Parallel()
 		balance := &Balance{
 			Address:  "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
@@ -126,6 +182,19 @@ func TestBalanceStruct(t *testing.T) {
 		assert.Equal(t, "ETH", balance.Symbol)
 		assert.Equal(t, 18, balance.Decimals)
 		assert.Empty(t, balance.Token)
+		assert.Nil(t, balance.Unconfirmed)
+	})
+
+	t.Run("ETH balance with unconfirmed delta", func(t *testing.T) {
+		t.Parallel()
+		balance := &Balance{
+			Address:     "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+			Amount:      big.NewInt(1_000_000_000_000_000_000),
+			Unconfirmed: big.NewInt(-500_000_000_000_000_000),
+			Symbol:      "ETH",
+			Decimals:    18,
+		}
+		assert.Equal(t, big.NewInt(-500_000_000_000_000_000), balance.Unconfirmed)
 	})
 
 	t.Run("USDC balance", func(t *testing.T) {

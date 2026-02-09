@@ -52,13 +52,14 @@ type BalanceCache struct {
 
 // BalanceCacheEntry represents a single cached balance.
 type BalanceCacheEntry struct {
-	Chain     chain.ID  `json:"chain"`
-	Address   string    `json:"address"`
-	Balance   string    `json:"balance"`
-	Symbol    string    `json:"symbol"`
-	Decimals  int       `json:"decimals"`
-	Token     string    `json:"token,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Chain       chain.ID  `json:"chain"`
+	Address     string    `json:"address"`
+	Balance     string    `json:"balance"`
+	Unconfirmed string    `json:"unconfirmed,omitempty"`
+	Symbol      string    `json:"symbol"`
+	Decimals    int       `json:"decimals"`
+	Token       string    `json:"token,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // NewBalanceCache creates a new empty balance cache.

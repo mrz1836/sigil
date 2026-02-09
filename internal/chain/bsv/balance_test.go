@@ -41,8 +41,63 @@ func TestGetNativeBalance(t *testing.T) {
 
 		assert.Equal(t, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", balance.Address)
 		assert.Equal(t, big.NewInt(100000000), balance.Amount)
+		assert.Nil(t, balance.Unconfirmed)
 		assert.Equal(t, "BSV", balance.Symbol)
 		assert.Equal(t, 8, balance.Decimals)
+	})
+
+	t.Run("returns negative unconfirmed balance", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			resp := BalanceResponse{
+				Confirmed:   70422,  // 0.00070422 BSV
+				Unconfirmed: -70422, // spending the full amount
+			}
+			err := json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		balance, err := client.GetNativeBalance(ctx, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+		require.NoError(t, err)
+
+		assert.Equal(t, big.NewInt(70422), balance.Amount)
+		assert.Equal(t, big.NewInt(-70422), balance.Unconfirmed)
+	})
+
+	t.Run("returns positive unconfirmed balance", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			resp := BalanceResponse{
+				Confirmed:   50000000, // 0.5 BSV
+				Unconfirmed: 100000,   // receiving 0.001 BSV
+			}
+			err := json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		balance, err := client.GetNativeBalance(ctx, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+		require.NoError(t, err)
+
+		assert.Equal(t, big.NewInt(50000000), balance.Amount)
+		assert.Equal(t, big.NewInt(100000), balance.Unconfirmed)
 	})
 
 	t.Run("propagates error from GetBalance", func(t *testing.T) {
@@ -459,6 +514,68 @@ func TestFormatBalanceAmount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			result := FormatBalanceAmount(tt.amount, tt.decimals)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestFormatSignedBalanceAmount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		amount   *big.Int
+		decimals int
+		expected string
+	}{
+		{
+			name:     "nil returns zero",
+			amount:   nil,
+			decimals: 8,
+			expected: "0",
+		},
+		{
+			name:     "zero value",
+			amount:   big.NewInt(0),
+			decimals: 8,
+			expected: "0.0",
+		},
+		{
+			name:     "positive delegates to FormatBalanceAmount",
+			amount:   big.NewInt(100000000),
+			decimals: 8,
+			expected: "1.0",
+		},
+		{
+			name:     "negative 1 satoshi",
+			amount:   big.NewInt(-1),
+			decimals: 8,
+			expected: "-0.00000001",
+		},
+		{
+			name:     "negative 70422 satoshis",
+			amount:   big.NewInt(-70422),
+			decimals: 8,
+			expected: "-0.00070422",
+		},
+		{
+			name:     "negative 1 BSV",
+			amount:   big.NewInt(-100000000),
+			decimals: 8,
+			expected: "-1.0",
+		},
+		{
+			name:     "positive small amount",
+			amount:   big.NewInt(100000),
+			decimals: 8,
+			expected: "0.001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := FormatSignedBalanceAmount(tt.amount, tt.decimals)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

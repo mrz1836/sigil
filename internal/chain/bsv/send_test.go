@@ -489,6 +489,303 @@ func TestSend_P2SHAddresses(t *testing.T) {
 	})
 }
 
+// TestSend_SweepAll tests the SweepAll flag for sending entire balance.
+func TestSend_SweepAll(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sweep single UTXO - sends all minus fee", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxoAmount := uint64(100000)
+		utxos := makeUTXOsWithKey(kp, utxoAmount)
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         int64(utxoAmount),
+			BroadcastTxHash: "sweep_single_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "sweep_single_tx", result.Hash)
+
+		// Verify fee is correct for 1 input, 1 output (no change)
+		expectedFee := EstimateFeeForTx(1, 1, DefaultFeeRate)
+		expectedAmount := utxoAmount - expectedFee
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedFee)), result.Fee)
+	})
+
+	t.Run("sweep multiple UTXOs - consolidates all", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 30000, 40000, 50000) // 120k total
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         120000,
+			BroadcastTxHash: "sweep_multi_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Fee for 3 inputs, 1 output (no change)
+		expectedFee := EstimateFeeForTx(3, 1, DefaultFeeRate)
+		expectedAmount := uint64(120000) - expectedFee
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedFee)), result.Fee)
+	})
+
+	t.Run("sweep with no UTXOs returns error", func(t *testing.T) {
+		t.Parallel()
+
+		server := mockUTXOServer([]UTXO{})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:       validAddress(),
+			To:         validAddress2(),
+			PrivateKey: make([]byte, 32),
+			SweepAll:   true,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "insufficient")
+	})
+
+	t.Run("sweep tiny UTXO where fee exceeds balance", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 100) // 100 satoshis, fee is 192
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:   utxos,
+			Balance: 100,
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "insufficient")
+	})
+
+	t.Run("sweep does not need Amount field", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxos := makeUTXOsWithKey(kp, 50000)
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         50000,
+			BroadcastTxHash: "sweep_no_amount_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Amount is nil — sweep calculates it
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			Amount:     nil,
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "sweep_no_amount_tx", result.Hash)
+	})
+
+	t.Run("sweep with custom fee rate", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxoAmount := uint64(100000)
+		utxos := makeUTXOsWithKey(kp, utxoAmount)
+		feeRate := uint64(10)
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         int64(utxoAmount),
+			BroadcastTxHash: "sweep_custom_fee_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			PrivateKey: kp.PrivateKey,
+			FeeRate:    feeRate,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Fee for 1 input, 1 output at 10 sat/byte
+		expectedFee := EstimateFeeForTx(1, 1, feeRate)
+		expectedAmount := utxoAmount - expectedFee
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+	})
+
+	t.Run("sweep minimum viable (1 satoshi after fee)", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		// Fee for 1 input, 1 output at 1 sat/byte = 192
+		fee := EstimateFeeForTx(1, 1, DefaultFeeRate)
+		utxoAmount := fee + 1 // exactly 1 satoshi remaining
+		utxos := makeUTXOsWithKey(kp, utxoAmount)
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         int64(utxoAmount), //nolint:gosec // Test fixture with known safe values
+			BroadcastTxHash: "sweep_min_viable_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		// 1 satoshi = 0.00000001 BSV
+		assert.Equal(t, client.FormatAmount(amountToBigInt(1)), result.Amount)
+	})
+
+	t.Run("sweep ignores Amount field when SweepAll is true", func(t *testing.T) {
+		t.Parallel()
+
+		kp := getTestKeyPair()
+		utxoAmount := uint64(50000)
+		utxos := makeUTXOsWithKey(kp, utxoAmount)
+
+		server := mockMultiRouteServer(mockServerConfig{
+			UTXOs:           utxos,
+			Balance:         int64(utxoAmount),
+			BroadcastTxHash: "sweep_ignore_amount_tx",
+		})
+		defer server.Close()
+
+		client := NewClient(&ClientOptions{
+			BaseURL: server.URL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Provide an Amount, but SweepAll should override it
+		result, err := client.Send(ctx, chain.SendRequest{
+			From:       kp.Address,
+			To:         validAddress2(),
+			Amount:     big.NewInt(1000), // should be ignored
+			PrivateKey: kp.PrivateKey,
+			SweepAll:   true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Amount should be sweep amount, not 1000
+		expectedFee := EstimateFeeForTx(1, 1, DefaultFeeRate)
+		expectedAmount := utxoAmount - expectedFee
+		assert.Equal(t, client.FormatAmount(amountToBigInt(expectedAmount)), result.Amount)
+	})
+
+	t.Run("sweep with invalid to address", func(t *testing.T) {
+		t.Parallel()
+
+		client := NewClient(nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.Send(ctx, chain.SendRequest{
+			From:     validAddress(),
+			To:       "invalid",
+			SweepAll: true,
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "to address")
+	})
+}
+
 // TestSend_ContextCancellation tests context cancellation handling.
 func TestSend_ContextCancellation(t *testing.T) {
 	t.Parallel()

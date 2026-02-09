@@ -5,16 +5,65 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
 )
+
+// TestIsAmountAll tests the isAmountAll helper function.
+func TestIsAmountAll(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		// Positive cases
+		{name: "lowercase all", input: "all", expected: true},
+		{name: "uppercase ALL", input: "ALL", expected: true},
+		{name: "mixed case All", input: "All", expected: true},
+		{name: "mixed case aLl", input: "aLl", expected: true},
+		{name: "with leading space", input: "  all", expected: true},
+		{name: "with trailing space", input: "all  ", expected: true},
+		{name: "with surrounding space", input: "  all  ", expected: true},
+		{name: "with tab", input: "\tall\t", expected: true},
+
+		// Negative cases
+		{name: "numeric amount", input: "0.5", expected: false},
+		{name: "empty string", input: "", expected: false},
+		{name: "partial match alll", input: "alll", expected: false},
+		{name: "partial match all1", input: "all1", expected: false},
+		{name: "partial match al", input: "al", expected: false},
+		{name: "word containing all", input: "wallet", expected: false},
+		{name: "max keyword", input: "max", expected: false},
+		{name: "zero", input: "0", expected: false},
+		{name: "whitespace only", input: "   ", expected: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := isAmountAll(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestAmountAllConstant verifies the amountAll constant value.
+func TestAmountAllConstant(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "all", amountAll)
+}
 
 // TestSanitizeAmount tests amount string sanitization.
 func TestSanitizeAmount(t *testing.T) {
@@ -820,4 +869,193 @@ func TestParseDecimalAmount_EdgeCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInvalidateBalanceCache_SweepAll verifies that after a sweep-all send the
+// cached balance is set to "0.0" and the entry is preserved on disk.
+func TestInvalidateBalanceCache_SweepAll(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	// Pre-populate cache with a BSV balance.
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	storage := cache.NewFileStorage(cachePath)
+	bc := cache.NewBalanceCache()
+	bc.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1abc",
+		Balance:  "0.5",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+	require.NoError(t, storage.Save(bc))
+
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	// Sweep-all: expected balance is "0.0".
+	invalidateBalanceCache(cc, chain.BSV, "1abc", "", "0.0")
+
+	loaded, err := storage.Load()
+	require.NoError(t, err)
+	entry, exists, _ := loaded.Get(chain.BSV, "1abc", "")
+	require.True(t, exists, "cache entry should still exist")
+	assert.Equal(t, "0.0", entry.Balance)
+	assert.Equal(t, "BSV", entry.Symbol)
+	assert.Equal(t, 8, entry.Decimals)
+}
+
+// TestInvalidateBalanceCache_PartialSend verifies that a partial send deletes
+// the cache entry so the next balance query must fetch from the network.
+func TestInvalidateBalanceCache_PartialSend(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	storage := cache.NewFileStorage(cachePath)
+	bc := cache.NewBalanceCache()
+	bc.Set(cache.BalanceCacheEntry{
+		Chain:    chain.BSV,
+		Address:  "1abc",
+		Balance:  "1.0",
+		Symbol:   "BSV",
+		Decimals: 8,
+	})
+	require.NoError(t, storage.Save(bc))
+
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	// Partial send: empty expectedBalance triggers deletion.
+	invalidateBalanceCache(cc, chain.BSV, "1abc", "", "")
+
+	loaded, err := storage.Load()
+	require.NoError(t, err)
+	_, exists, _ := loaded.Get(chain.BSV, "1abc", "")
+	assert.False(t, exists, "cache entry should be deleted after partial send")
+}
+
+// TestInvalidateBalanceCache_PreservesOtherEntries verifies that invalidating
+// one address does not affect other cached entries.
+func TestInvalidateBalanceCache_PreservesOtherEntries(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	storage := cache.NewFileStorage(cachePath)
+	bc := cache.NewBalanceCache()
+	bc.Set(cache.BalanceCacheEntry{
+		Chain: chain.BSV, Address: "1abc", Balance: "0.5", Symbol: "BSV", Decimals: 8,
+	})
+	bc.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0x123", Balance: "2.0", Symbol: "ETH", Decimals: 18,
+	})
+	require.NoError(t, storage.Save(bc))
+
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	invalidateBalanceCache(cc, chain.BSV, "1abc", "", "0.0")
+
+	loaded, err := storage.Load()
+	require.NoError(t, err)
+
+	// BSV entry updated.
+	bsvEntry, exists, _ := loaded.Get(chain.BSV, "1abc", "")
+	require.True(t, exists)
+	assert.Equal(t, "0.0", bsvEntry.Balance)
+
+	// ETH entry untouched.
+	ethEntry, exists, _ := loaded.Get(chain.ETH, "0x123", "")
+	require.True(t, exists)
+	assert.Equal(t, "2.0", ethEntry.Balance)
+}
+
+// TestInvalidateBalanceCache_NoCacheFile verifies no panic or error when the
+// cache file doesn't exist yet.
+func TestInvalidateBalanceCache_NoCacheFile(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	// Should not panic — Load returns an empty cache when file is absent.
+	invalidateBalanceCache(cc, chain.BSV, "1abc", "", "0.0")
+
+	// Verify the cache file was created with the entry.
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	storage := cache.NewFileStorage(cachePath)
+	loaded, err := storage.Load()
+	require.NoError(t, err)
+	entry, exists, _ := loaded.Get(chain.BSV, "1abc", "")
+	require.True(t, exists)
+	assert.Equal(t, "0.0", entry.Balance)
+}
+
+// TestInvalidateBalanceCache_ETHTokenSweep verifies both native and token
+// entries are handled for an ERC-20 sweep.
+func TestInvalidateBalanceCache_ETHTokenSweep(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	storage := cache.NewFileStorage(cachePath)
+	bc := cache.NewBalanceCache()
+	bc.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xABC", Balance: "1.5", Symbol: "ETH", Decimals: 18,
+	})
+	bc.Set(cache.BalanceCacheEntry{
+		Chain: chain.ETH, Address: "0xABC", Token: eth.USDCMainnet,
+		Balance: "500.0", Symbol: "USDC", Decimals: 6,
+	})
+	require.NoError(t, storage.Save(bc))
+
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	// Token sweep: zero out token, delete native (gas spent, amount unknown).
+	invalidateBalanceCache(cc, chain.ETH, "0xABC", eth.USDCMainnet, "0.0")
+	invalidateBalanceCache(cc, chain.ETH, "0xABC", "", "")
+
+	loaded, err := storage.Load()
+	require.NoError(t, err)
+
+	// USDC set to 0.0.
+	usdcEntry, exists, _ := loaded.Get(chain.ETH, "0xABC", eth.USDCMainnet)
+	require.True(t, exists)
+	assert.Equal(t, "0.0", usdcEntry.Balance)
+
+	// ETH native deleted.
+	_, exists, _ = loaded.Get(chain.ETH, "0xABC", "")
+	assert.False(t, exists, "native ETH entry should be deleted")
+}
+
+// TestInvalidateBalanceCache_InvalidHome verifies graceful handling when the
+// home path is invalid (e.g. points to a file instead of a directory).
+func TestInvalidateBalanceCache_InvalidHome(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// Create a regular file where the "cache" directory would need to be.
+	blocker := filepath.Join(tmpDir, "cache")
+	require.NoError(t, os.WriteFile(blocker, []byte("block"), 0o600))
+
+	cc := &CommandContext{
+		Cfg: &mockConfigProvider{home: tmpDir},
+	}
+
+	// Should not panic even when the cache directory cannot be created.
+	assert.NotPanics(t, func() {
+		invalidateBalanceCache(cc, chain.BSV, "1abc", "", "0.0")
+	})
 }

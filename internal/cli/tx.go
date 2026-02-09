@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
@@ -57,15 +58,23 @@ var txSendCmd = &cobra.Command{
 For Ethereum transactions, you can send native ETH or ERC-20 tokens like USDC.
 For BSV transactions, only native BSV is supported.
 
+Use --amount all to send the entire balance (fees are deducted automatically).
+
 Examples:
   # Send ETH
   sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount 0.1 --chain eth
+
+  # Send all ETH
+  sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount all --chain eth
 
   # Send USDC
   sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount 100 --chain eth --token USDC
 
   # Send BSV
-  sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.001 --chain bsv`,
+  sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount 0.001 --chain bsv
+
+  # Send all BSV
+  sigil tx send --wallet main --to 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa --amount all --chain bsv`,
 	RunE: runTxSend,
 }
 
@@ -76,7 +85,7 @@ func init() {
 
 	txSendCmd.Flags().StringVar(&txWallet, "wallet", "", "wallet name (required)")
 	txSendCmd.Flags().StringVar(&txTo, "to", "", "recipient address (required)")
-	txSendCmd.Flags().StringVar(&txAmount, "amount", "", "amount to send (required)")
+	txSendCmd.Flags().StringVar(&txAmount, "amount", "", "amount to send, or 'all' for entire balance (required)")
 	txSendCmd.Flags().StringVar(&txChain, "chain", "eth", "blockchain: eth, bsv")
 	txSendCmd.Flags().StringVar(&txToken, "token", "", "ERC-20 token symbol (e.g., USDC) - ETH only")
 	txSendCmd.Flags().StringVar(&txGasSpeed, "gas", "medium", "gas speed: slow, medium, fast")
@@ -178,26 +187,38 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	}
 
 	// Parse amount and get token address
+	sweepAll := isAmountAll(txAmount)
 	var amount *big.Int
 	var tokenAddress string
 	var decimals int
 
+	//nolint:nestif // Amount parsing branches by token type and sweep mode
 	if txToken != "" {
 		// ERC-20 transfer
 		tokenAddress, decimals, err = resolveToken(txToken)
 		if err != nil {
 			return err
 		}
-		amount, err = parseDecimalAmount(txAmount, decimals)
+		if !sweepAll {
+			amount, err = parseDecimalAmount(txAmount, decimals)
+			if err != nil {
+				return sigilerr.WithSuggestion(
+					sigilerr.ErrInvalidInput,
+					fmt.Sprintf("invalid amount: %s", txAmount),
+				)
+			}
+		}
 	} else {
 		// Native ETH transfer
-		amount, err = client.ParseAmount(txAmount)
-	}
-	if err != nil {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			fmt.Sprintf("invalid amount: %s", txAmount),
-		)
+		if !sweepAll {
+			amount, err = client.ParseAmount(txAmount)
+			if err != nil {
+				return sigilerr.WithSuggestion(
+					sigilerr.ErrInvalidInput,
+					fmt.Sprintf("invalid amount: %s", txAmount),
+				)
+			}
+		}
 	}
 
 	// Estimate gas
@@ -211,15 +232,80 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 		return fmt.Errorf("estimating gas: %w", err)
 	}
 
-	// Check balance
-	err = checkETHBalance(ctx, client, fromAddress, amount, estimate.Total, tokenAddress)
-	if err != nil {
-		return err
+	// For sweep, calculate the actual amount from balance minus fees
+	//nolint:nestif // Sweep calculation branches by token type with balance/gas checks
+	if sweepAll {
+		if tokenAddress != "" {
+			// ERC-20 sweep: send full token balance (ETH needed for gas only)
+			tokenBalance, tokenErr := client.GetTokenBalance(ctx, fromAddress, tokenAddress)
+			if tokenErr != nil {
+				return fmt.Errorf("getting token balance: %w", tokenErr)
+			}
+			if tokenBalance.Sign() <= 0 {
+				return sigilerr.WithDetails(
+					sigilerr.ErrInsufficientFunds,
+					map[string]string{
+						"symbol": txToken,
+						"reason": "zero token balance",
+					},
+				)
+			}
+			amount = tokenBalance
+
+			// Still need ETH for gas
+			ethBalance, ethErr := client.GetBalance(ctx, fromAddress)
+			if ethErr != nil {
+				return fmt.Errorf("getting ETH balance: %w", ethErr)
+			}
+			if ethBalance.Cmp(estimate.Total) < 0 {
+				return sigilerr.WithDetails(
+					sigilerr.ErrInsufficientFunds,
+					map[string]string{
+						"required":  client.FormatAmount(estimate.Total),
+						"available": client.FormatAmount(ethBalance),
+						"symbol":    "ETH",
+						"reason":    "insufficient ETH for gas",
+					},
+				)
+			}
+		} else {
+			// Native ETH sweep: balance minus gas cost
+			ethBalance, ethErr := client.GetBalance(ctx, fromAddress)
+			if ethErr != nil {
+				return fmt.Errorf("getting ETH balance: %w", ethErr)
+			}
+			amount = new(big.Int).Sub(ethBalance, estimate.Total)
+			if amount.Sign() <= 0 {
+				return sigilerr.WithDetails(
+					sigilerr.ErrInsufficientFunds,
+					map[string]string{
+						"required":  client.FormatAmount(estimate.Total),
+						"available": client.FormatAmount(ethBalance),
+						"symbol":    "ETH",
+						"reason":    "balance does not cover gas fees",
+					},
+				)
+			}
+		}
+	} else {
+		// Normal send: check balance covers amount + fees
+		err = checkETHBalance(ctx, client, fromAddress, amount, estimate.Total, tokenAddress)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Display transaction details and confirm
+	displayAmount := txAmount
+	if sweepAll {
+		if tokenAddress != "" {
+			displayAmount = eth.FormatBalanceAmount(amount, decimals) + " (sweep all)"
+		} else {
+			displayAmount = client.FormatAmount(amount) + " (sweep all)"
+		}
+	}
 	if !txConfirm {
-		displayTxDetails(cmd, fromAddress, txTo, txAmount, txToken, estimate)
+		displayTxDetails(cmd, fromAddress, txTo, displayAmount, txToken, estimate)
 		if !promptConfirmation() {
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
@@ -249,6 +335,22 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 		return fmt.Errorf("sending transaction: %w", err)
 	}
 
+	// Invalidate balance cache so next "balance show" reflects the send.
+	if sweepAll && tokenAddress == "" {
+		// Native ETH sweep: balance is now 0
+		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "0.0")
+	} else if sweepAll && tokenAddress != "" {
+		// Token sweep: token balance is 0, ETH balance changed (gas spent)
+		invalidateBalanceCache(cc, chain.ETH, fromAddress, tokenAddress, "0.0")
+		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "")
+	} else {
+		// Partial send: delete entries to force fresh fetch
+		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "")
+		if tokenAddress != "" {
+			invalidateBalanceCache(cc, chain.ETH, fromAddress, tokenAddress, "")
+		}
+	}
+
 	// Display result
 	displayTxResult(cmd, result)
 
@@ -268,17 +370,28 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	}
 
 	// Create BSV client
-	client := bsv.NewClient(&bsv.ClientOptions{
+	opts := &bsv.ClientOptions{
 		APIKey: cc.Cfg.GetBSVAPIKey(),
-	})
+	}
+	// Pass custom broadcast URL if configured (non-default value).
+	if b := cc.Cfg.GetBSVBroadcast(); b != "" && b != "taal" && b != "whatsonchain" {
+		opts.BroadcastURL = b
+	}
+	client := bsv.NewClient(opts)
 
-	// Parse amount
-	amount, err := client.ParseAmount(txAmount)
-	if err != nil {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			fmt.Sprintf("invalid amount: %s", txAmount),
-		)
+	sweepAll := isAmountAll(txAmount)
+
+	// Parse amount (skip for sweep — amount is calculated from balance minus fees)
+	var amount *big.Int
+	if !sweepAll {
+		var err error
+		amount, err = client.ParseAmount(txAmount)
+		if err != nil {
+			return sigilerr.WithSuggestion(
+				sigilerr.ErrInvalidInput,
+				fmt.Sprintf("invalid amount: %s", txAmount),
+			)
+		}
 	}
 
 	// Get fee quote
@@ -288,43 +401,76 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
 	}
 
-	// Estimate fee
-	estimatedFee := bsv.EstimateFeeForTx(1, 2, feeQuote.StandardRate)
+	var displayAmount string
+	var estimatedFee uint64
 
-	// Check balance
-	balance, err := client.GetBalance(ctx, fromAddress)
-	if err != nil {
-		return fmt.Errorf("getting balance: %w", err)
-	}
+	//nolint:nestif // Sweep vs normal send have distinct balance check and fee estimation paths
+	if sweepAll {
+		// Sweep: calculate max send amount from UTXOs
+		utxos, utxoErr := client.ListUTXOs(ctx, fromAddress)
+		if utxoErr != nil {
+			return fmt.Errorf("listing UTXOs: %w", utxoErr)
+		}
+		if len(utxos) == 0 {
+			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found for address")
+		}
 
-	totalRequired := amount.Uint64() + estimatedFee
-	if balance.Uint64() < totalRequired {
-		return sigilerr.WithDetails(
-			sigilerr.ErrInsufficientFunds,
-			map[string]string{
-				"required":  client.FormatAmount(amountToBigInt(totalRequired)),
-				"available": client.FormatAmount(balance),
-				"symbol":    "BSV",
-			},
-		)
+		var totalInputs uint64
+		for _, u := range utxos {
+			totalInputs += u.Amount
+		}
+
+		sweepAmount, sweepErr := bsv.CalculateSweepAmount(totalInputs, len(utxos), feeQuote.StandardRate)
+		if sweepErr != nil {
+			return sweepErr
+		}
+
+		amount = amountToBigInt(sweepAmount)
+		estimatedFee = totalInputs - sweepAmount
+		displayAmount = client.FormatAmount(amount) + " (sweep all)"
+	} else {
+		// Normal: check balance covers amount + fee
+		estimatedFee = bsv.EstimateFeeForTx(1, 2, feeQuote.StandardRate)
+
+		balance, balErr := client.GetBalance(ctx, fromAddress)
+		if balErr != nil {
+			return fmt.Errorf("getting balance: %w", balErr)
+		}
+
+		totalRequired := amount.Uint64() + estimatedFee
+		if balance.Uint64() < totalRequired {
+			return sigilerr.WithDetails(
+				sigilerr.ErrInsufficientFunds,
+				map[string]string{
+					"required":  client.FormatAmount(amountToBigInt(totalRequired)),
+					"available": client.FormatAmount(balance),
+					"symbol":    "BSV",
+				},
+			)
+		}
+		displayAmount = txAmount
 	}
 
 	// Display transaction details and confirm
 	if !txConfirm {
-		displayBSVTxDetails(cmd, fromAddress, txTo, txAmount, estimatedFee, feeQuote.StandardRate)
+		displayBSVTxDetails(cmd, fromAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
 		if !promptConfirmation() {
 			outln(cmd.OutOrStdout(), "Transaction canceled.")
 			return nil
 		}
 	}
 
-	// Derive next change address for BSV (uses internal chain per BIP44).
-	changeAddr, err := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
-	if err != nil {
-		return fmt.Errorf("deriving change address: %w", err)
-	}
-	if updateErr := storage.UpdateMetadata(wlt); updateErr != nil {
-		return fmt.Errorf("persisting wallet metadata: %w", updateErr)
+	// Derive change address only for non-sweep (sweep has no change output)
+	var changeAddress string
+	if !sweepAll {
+		changeAddr, changeErr := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
+		if changeErr != nil {
+			return fmt.Errorf("deriving change address: %w", changeErr)
+		}
+		if updateErr := storage.UpdateMetadata(wlt); updateErr != nil {
+			return fmt.Errorf("persisting wallet metadata: %w", updateErr)
+		}
+		changeAddress = changeAddr.Address
 	}
 
 	// Derive private key from seed for the sending address
@@ -342,20 +488,28 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	}
 	defer wallet.ZeroBytes(privateKey)
 
-	// Build send request with change address
+	// Build send request
 	req := chain.SendRequest{
 		From:          fromAddress,
 		To:            txTo,
 		Amount:        amount,
 		PrivateKey:    privateKey,
 		FeeRate:       feeQuote.StandardRate,
-		ChangeAddress: changeAddr.Address,
+		ChangeAddress: changeAddress,
+		SweepAll:      sweepAll,
 	}
 
 	// Send transaction
 	result, err := client.Send(ctx, req)
 	if err != nil {
 		return fmt.Errorf("sending transaction: %w", err)
+	}
+
+	// Invalidate balance cache so next "balance show" reflects the send.
+	if sweepAll {
+		invalidateBalanceCache(cc, chain.BSV, fromAddress, "", "0.0")
+	} else {
+		invalidateBalanceCache(cc, chain.BSV, fromAddress, "", "")
 	}
 
 	// Display result
@@ -452,6 +606,14 @@ func resolveToken(symbol string) (address string, decimals int, err error) {
 			fmt.Sprintf("unsupported token: %s (only USDC is supported)", symbol),
 		)
 	}
+}
+
+// amountAll is the special value for sending the entire balance.
+const amountAll = "all"
+
+// isAmountAll returns true if the user specified "all" as the amount.
+func isAmountAll(amount string) bool {
+	return strings.EqualFold(strings.TrimSpace(amount), amountAll)
 }
 
 // SanitizeAmount trims whitespace from the amount string without altering content.
@@ -636,4 +798,56 @@ func displayTxResultJSON(w io.Writer, result *chain.TransactionResult) {
 	}
 
 	_ = writeJSON(w, payload)
+}
+
+// invalidateBalanceCache updates the on-disk balance cache after a successful
+// transaction broadcast. If expectedBalance is non-empty, the cached entry is
+// updated with that value (e.g., "0.0" for sweep-all). Otherwise the entry is
+// deleted, forcing the next balance query to fetch from the network.
+// Errors are logged but never returned — cache invalidation is best-effort.
+func invalidateBalanceCache(cc *CommandContext, chainID chain.ID, address, token, expectedBalance string) {
+	cachePath := filepath.Join(cc.Cfg.GetHome(), "cache", "balances.json")
+	cacheStorage := cache.NewFileStorage(cachePath)
+
+	balanceCache, err := cacheStorage.Load()
+	if err != nil {
+		logCacheError(cc, "failed to load balance cache for post-send update: %v", err)
+		return
+	}
+
+	if expectedBalance == "" {
+		// Unknown expected balance — delete to force a fresh network fetch.
+		balanceCache.Delete(chainID, address, token)
+	} else {
+		// Known expected balance (e.g., sweep-all → "0.0").
+		// Preserve symbol/decimals from the existing entry if available.
+		entry := buildPostSendEntry(balanceCache, chainID, address, token, expectedBalance)
+		balanceCache.Set(entry)
+	}
+
+	if err := cacheStorage.Save(balanceCache); err != nil {
+		logCacheError(cc, "failed to save balance cache after send: %v", err)
+	}
+}
+
+// buildPostSendEntry creates a cache entry with the expected post-send balance,
+// preserving symbol and decimals from any existing entry.
+func buildPostSendEntry(bc *cache.BalanceCache, chainID chain.ID, address, token, balance string) cache.BalanceCacheEntry {
+	if existing, exists, _ := bc.Get(chainID, address, token); exists {
+		existing.Balance = balance
+		existing.Unconfirmed = "" // Clear stale unconfirmed data after send
+		return *existing
+	}
+	return cache.BalanceCacheEntry{
+		Chain:   chainID,
+		Address: address,
+		Token:   token,
+		Balance: balance,
+	}
+}
+
+func logCacheError(cc *CommandContext, format string, args ...any) {
+	if cc.Log != nil {
+		cc.Log.Error(format, args...)
+	}
 }

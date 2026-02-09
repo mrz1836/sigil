@@ -199,6 +199,7 @@ type SendRequest struct {
 	GasLimit      uint64   // Optional gas limit override (ETH only)
 	FeeRate       uint64   // Optional fee rate override (satoshis per byte)
 	ChangeAddress string   // Optional change address (BSV only, defaults to From)
+	SweepAll      bool     // When true, send maximum amount minus fees (no change output)
 }
 
 // TransactionResult contains the outcome of a broadcast transaction.

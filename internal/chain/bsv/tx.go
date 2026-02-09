@@ -1,15 +1,11 @@
 package bsv
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
-	"net/http"
 
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -19,11 +15,6 @@ import (
 
 	"github.com/mrz1836/sigil/internal/chain"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
-)
-
-const (
-	// TAALBroadcastURL is the URL for TAAL's transaction broadcast API.
-	TAALBroadcastURL = "https://merchantapi.taal.com/mapi/tx"
 )
 
 var (
@@ -160,11 +151,10 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
-	// Get amount as uint64
-	if req.Amount == nil {
+	// Validate amount for non-sweep requests before any network calls
+	if !req.SweepAll && req.Amount == nil {
 		return nil, sigilerr.ErrAmountRequired
 	}
-	amount := req.Amount.Uint64()
 
 	// Get UTXOs for the address
 	utxos, err := c.ListUTXOs(ctx, req.From)
@@ -178,10 +168,36 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		feeRate = req.FeeRate
 	}
 
-	// Select UTXOs
-	selected, change, err := c.SelectUTXOs(utxos, amount, feeRate)
-	if err != nil {
-		return nil, err
+	var selected []UTXO
+	var amount uint64
+	var change uint64
+
+	//nolint:nestif // Sweep vs normal send have distinct UTXO selection paths
+	if req.SweepAll {
+		// Sweep: use ALL UTXOs, calculate max send amount, no change output
+		if len(utxos) == 0 {
+			return nil, ErrInsufficientFunds
+		}
+		selected = utxos
+
+		var totalInputs uint64
+		for _, u := range utxos {
+			totalInputs += u.Amount
+		}
+
+		sweepAmount, sweepErr := CalculateSweepAmount(totalInputs, len(utxos), feeRate)
+		if sweepErr != nil {
+			return nil, sweepErr
+		}
+		amount = sweepAmount
+	} else {
+		// Normal send: select UTXOs to cover amount + fee
+		amount = req.Amount.Uint64()
+
+		selected, change, err = c.SelectUTXOs(utxos, amount, feeRate)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Build transaction
@@ -201,17 +217,19 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		return nil, fmt.Errorf("adding recipient output: %w", err)
 	}
 
-	// Add change output if above dust
-	dustLimit := chain.BSV.DustLimit()
-	if change >= dustLimit {
-		// Use provided change address, or fall back to sender address
-		changeAddr := req.From
-		if req.ChangeAddress != "" {
-			changeAddr = req.ChangeAddress
-		}
-		err = builder.AddOutput(changeAddr, change)
-		if err != nil {
-			return nil, fmt.Errorf("adding change output: %w", err)
+	// Add change output if above dust (skipped for sweep since there is no change)
+	//nolint:nestif // Change output logic only applies to non-sweep transactions
+	if !req.SweepAll {
+		dustLimit := chain.BSV.DustLimit()
+		if change >= dustLimit {
+			changeAddr := req.From
+			if req.ChangeAddress != "" {
+				changeAddr = req.ChangeAddress
+			}
+			err = builder.AddOutput(changeAddr, change)
+			if err != nil {
+				return nil, fmt.Errorf("adding change output: %w", err)
+			}
 		}
 	}
 
@@ -243,7 +261,7 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		Hash:   txHash,
 		From:   req.From,
 		To:     req.To,
-		Amount: c.FormatAmount(req.Amount),
+		Amount: c.FormatAmount(amountToBigInt(amount)),
 		Fee:    c.FormatAmount(amountToBigInt(fee)),
 		Status: "pending",
 	}, nil
@@ -375,46 +393,26 @@ func getLockingScript(utxo UTXO) (*script.Script, error) {
 }
 
 // BroadcastTransaction broadcasts a raw transaction to the network.
+// It tries each configured broadcaster in order, returning on first success.
 func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string, error) {
 	txHex := hex.EncodeToString(rawTx)
 
-	payload := map[string]string{
-		"rawtx": txHex,
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.broadcastURL, bytes.NewReader(payloadBytes))
-	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			c.debug("failed to close broadcast response body: %v", closeErr)
+	var lastErr error
+	for _, b := range c.broadcasters {
+		c.debug("broadcasting via %s", b.Name())
+		txid, err := b.Broadcast(ctx, c.httpClient, txHex)
+		if err == nil {
+			c.debug("broadcast successful via %s: %s", b.Name(), txid)
+			return txid, nil
 		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%w: status %d, body: %s", ErrBroadcastFailed, resp.StatusCode, string(body))
+		c.debug("broadcast failed via %s: %v", b.Name(), err)
+		lastErr = err
 	}
 
-	var result struct {
-		TxID string `json:"txid"`
+	if lastErr != nil {
+		return "", fmt.Errorf("%w: all providers failed: %w", ErrBroadcastFailed, lastErr)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding response: %w", err)
-	}
-
-	return result.TxID, nil
+	return "", fmt.Errorf("%w: no broadcast providers configured", ErrBroadcastFailed)
 }
 
 // ZeroPrivateKey zeros out a private key for security.

@@ -126,13 +126,15 @@ func mockMultiRouteServer(cfg mockServerConfig) *httptest.Server {
 			}
 			_ = json.NewEncoder(w).Encode(resp)
 
-		case strings.Contains(r.URL.Path, "/mapi/tx"):
+		case strings.Contains(r.URL.Path, "/tx/raw"):
 			if cfg.BroadcastFail {
+				w.Header().Set("Content-Type", "text/plain")
 				w.WriteHeader(http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed"})
+				_, _ = w.Write([]byte("broadcast error"))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"txid": cfg.BroadcastTxHash})
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(cfg.BroadcastTxHash))
 
 		case strings.Contains(r.URL.Path, "/feeQuote"):
 			feeRate := cfg.FeeRate

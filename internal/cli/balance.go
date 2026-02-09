@@ -576,7 +576,7 @@ func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.B
 	entries := make([]cache.BalanceCacheEntry, 0, 1)
 	var stale bool
 
-	client := bsv.NewClient(nil)
+	client := bsv.NewClient(ctx, nil)
 
 	// Fetch BSV balance
 	bsvBalance, err := client.GetNativeBalance(ctx, address)

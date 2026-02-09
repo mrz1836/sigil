@@ -374,11 +374,7 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	opts := &bsv.ClientOptions{
 		APIKey: cc.Cfg.GetBSVAPIKey(),
 	}
-	// Pass custom broadcast URL if configured (non-default value).
-	if b := cc.Cfg.GetBSVBroadcast(); b != "" && b != "taal" && b != "whatsonchain" {
-		opts.BroadcastURL = b
-	}
-	client := bsv.NewClient(opts)
+	client := bsv.NewClient(ctx, opts)
 
 	sweepAll := isAmountAll(txAmount)
 

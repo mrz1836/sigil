@@ -343,7 +343,7 @@ func runReceiveCheckETH(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 
 // runReceiveCheckBSV dispatches BSV UTXO checking for --check mode.
 func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, currentAddr *wallet.Address, chainID chain.ID) error {
-	client := bsv.NewClient(&bsv.ClientOptions{
+	client := bsv.NewClient(ctx, &bsv.ClientOptions{
 		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
 	})
 	adapter := &bsvRefreshAdapter{client: client}
@@ -459,7 +459,7 @@ func runReceiveCheckAllChains(cmd *cobra.Command, cmdCtx *CommandContext, wlt *w
 
 	// Check BSV addresses (UTXO-based)
 	if bsvAddrs, ok := wlt.Addresses[chain.BSV]; ok && len(bsvAddrs) > 0 {
-		client := bsv.NewClient(&bsv.ClientOptions{
+		client := bsv.NewClient(ctx, &bsv.ClientOptions{
 			APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
 		})
 		adapter := &bsvRefreshAdapter{client: client}

@@ -133,7 +133,7 @@ func scanWalletUTXOs(w *wallet.Wallet, cmd *cobra.Command) error {
 	outln(cmd.OutOrStdout(), "Scanning for UTXOs...")
 
 	// Scan BSV addresses (currently the only UTXO chain supported)
-	client := bsv.NewClient(&bsv.ClientOptions{
+	client := bsv.NewClient(scanCtx, &bsv.ClientOptions{
 		APIKey: ctx.Cfg.GetBSVAPIKey(),
 	})
 

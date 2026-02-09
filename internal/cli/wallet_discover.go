@@ -167,7 +167,7 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	defer wallet.ZeroBytes(seed)
 
 	// Create BSV client
-	client := bsv.NewClient(nil)
+	client := bsv.NewClient(cmd.Context(), nil)
 
 	// Create key deriver adapter
 	deriver := &walletKeyDeriver{}

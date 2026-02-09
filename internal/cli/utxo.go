@@ -237,7 +237,7 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Create BSV client
-	client := bsv.NewClient(&bsv.ClientOptions{
+	client := bsv.NewClient(ctx, &bsv.ClientOptions{
 		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
 	})
 

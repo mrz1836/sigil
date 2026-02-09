@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"net/http"
 	"regexp"
 	"sync"
 
@@ -65,6 +66,9 @@ var (
 type ClientOptions struct {
 	// ChainID overrides the default chain ID detection.
 	ChainID *big.Int
+	// Transport overrides the default HTTP transport for the underlying RPC client.
+	// Useful for sharing a transport across primary and fallback clients.
+	Transport *http.Transport
 }
 
 // Compile-time interface checks
@@ -78,6 +82,7 @@ type Client struct {
 	rpcURL    string
 	rpcClient *rpc.Client
 	chainID   *big.Int
+	transport *http.Transport
 	mu        sync.Mutex
 	initErr   error
 }
@@ -92,8 +97,13 @@ func NewClient(rpcURL string, opts *ClientOptions) (*Client, error) {
 		rpcURL: rpcURL,
 	}
 
-	if opts != nil && opts.ChainID != nil {
-		c.chainID = opts.ChainID
+	if opts != nil {
+		if opts.ChainID != nil {
+			c.chainID = opts.ChainID
+		}
+		if opts.Transport != nil {
+			c.transport = opts.Transport
+		}
 	}
 
 	return c, nil
@@ -260,7 +270,11 @@ func (c *Client) connect(ctx context.Context) error {
 		return nil
 	}
 
-	c.rpcClient = rpc.NewClient(c.rpcURL)
+	var rpcOpts *rpc.ClientOptions
+	if c.transport != nil {
+		rpcOpts = &rpc.ClientOptions{Transport: c.transport}
+	}
+	c.rpcClient = rpc.NewClientWithOptions(c.rpcURL, rpcOpts)
 
 	// Get chain ID if not set
 	if c.chainID == nil {

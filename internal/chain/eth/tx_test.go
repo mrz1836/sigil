@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 func TestBuildTransferData(t *testing.T) {
@@ -37,7 +39,8 @@ func TestBuildTransferData(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			data := BuildERC20TransferData(tc.to, tc.amount)
+			data, err := BuildERC20TransferData(tc.to, tc.amount)
+			require.NoError(t, err)
 			assert.Len(t, data, tc.expectLen)
 
 			// Verify selector is correct (transfer(address,uint256))
@@ -51,7 +54,8 @@ func TestBuildTransferData(t *testing.T) {
 
 func TestBuildERC20TransferData_Selector(t *testing.T) {
 	// transfer(address,uint256) = keccak256("transfer(address,uint256)")[0:4] = 0xa9059cbb
-	data := BuildERC20TransferData("0x0000000000000000000000000000000000000001", big.NewInt(1))
+	data, err := BuildERC20TransferData("0x0000000000000000000000000000000000000001", big.NewInt(1))
+	require.NoError(t, err)
 
 	expectedSelector := []byte{0xa9, 0x05, 0x9c, 0xbb}
 	assert.Equal(t, expectedSelector, data[:4])
@@ -60,7 +64,8 @@ func TestBuildERC20TransferData_Selector(t *testing.T) {
 func TestBuildERC20TransferData_AddressPadding(t *testing.T) {
 	// Address should be right-padded to 32 bytes (left-padded with zeros)
 	to := "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
-	data := BuildERC20TransferData(to, big.NewInt(1))
+	data, err := BuildERC20TransferData(to, big.NewInt(1))
+	require.NoError(t, err)
 
 	// First 12 bytes after selector should be zeros (padding)
 	for i := 4; i < 16; i++ {
@@ -71,7 +76,8 @@ func TestBuildERC20TransferData_AddressPadding(t *testing.T) {
 func TestBuildERC20TransferData_AmountEncoding(t *testing.T) {
 	// Amount is encoded as uint256 (32 bytes, big-endian)
 	amount := big.NewInt(1000000) // 1 USDC (6 decimals)
-	data := BuildERC20TransferData("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", amount)
+	data, err := BuildERC20TransferData("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", amount)
+	require.NoError(t, err)
 
 	// Extract amount from data (last 32 bytes)
 	amountBytes := data[36:68]
@@ -97,6 +103,8 @@ func TestTxParams(t *testing.T) {
 
 func TestTxParamsForERC20(t *testing.T) {
 	// ERC-20 transfer should have zero value and data
+	erc20Data, err := BuildERC20TransferData("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", big.NewInt(1000000))
+	require.NoError(t, err)
 	params := &TxParams{
 		From:         "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
 		To:           USDCMainnet, // USDC contract
@@ -105,7 +113,7 @@ func TestTxParamsForERC20(t *testing.T) {
 		GasPrice:     big.NewInt(20000000000),
 		Nonce:        5,
 		ChainID:      big.NewInt(1),
-		Data:         BuildERC20TransferData("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", big.NewInt(1000000)),
+		Data:         erc20Data,
 		TokenAddress: USDCMainnet,
 	}
 
@@ -130,18 +138,37 @@ func TestNewETHTransferParams(t *testing.T) {
 }
 
 func TestNewERC20TransferParams(t *testing.T) {
-	params := NewERC20TransferParams(
+	params, err := NewERC20TransferParams(
 		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
 		"0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
 		USDCMainnet,
 		big.NewInt(1000000),
 	)
+	require.NoError(t, err)
 
 	assert.Equal(t, "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", params.From)
 	assert.Equal(t, USDCMainnet, params.To) // To is the token contract
 	assert.Equal(t, int64(0), params.Value.Int64())
 	assert.NotEmpty(t, params.Data)
 	assert.Equal(t, USDCMainnet, params.TokenAddress)
+}
+
+func TestBuildERC20TransferData_InvalidAddress(t *testing.T) {
+	t.Parallel()
+	_, err := BuildERC20TransferData("not-an-address", big.NewInt(1))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid recipient address")
+}
+
+func TestNewERC20TransferParams_InvalidRecipient(t *testing.T) {
+	t.Parallel()
+	_, err := NewERC20TransferParams(
+		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+		"invalid-address",
+		USDCMainnet,
+		big.NewInt(1000000),
+	)
+	require.Error(t, err)
 }
 
 func TestValidateTxParams(t *testing.T) {
@@ -256,14 +283,14 @@ func TestValidateTxParams(t *testing.T) {
 	}
 }
 
-func TestZeroPrivateKey(t *testing.T) {
+func TestZeroBytes(t *testing.T) {
 	t.Parallel()
 
 	key := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	original := make([]byte, len(key))
 	copy(original, key)
 
-	ZeroPrivateKey(key)
+	wallet.ZeroBytes(key)
 
 	// Verify all bytes are zeroed
 	for i, b := range key {
@@ -271,11 +298,11 @@ func TestZeroPrivateKey(t *testing.T) {
 	}
 }
 
-func TestZeroPrivateKey_EmptySlice(t *testing.T) {
+func TestZeroBytes_EmptySlice(t *testing.T) {
 	t.Parallel()
 
 	key := []byte{}
-	ZeroPrivateKey(key) // Should not panic
+	wallet.ZeroBytes(key) // Should not panic
 	assert.Empty(t, key)
 }
 

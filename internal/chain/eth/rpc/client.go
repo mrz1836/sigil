@@ -15,9 +15,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
+
+const maxResponseBody = 10 << 20 // 10 MB
 
 var (
 	// ErrRPCRequest indicates an RPC request failed.
@@ -72,20 +75,38 @@ var (
 
 // Client is a minimal Ethereum JSON-RPC client.
 type Client struct {
-	url        string
-	httpClient *http.Client
-	idCounter  atomic.Uint64
+	url         string
+	httpClient  *http.Client
+	idCounter   atomic.Uint64
+	rateLimiter *chain.RateLimiter
+}
+
+// ClientOptions configures optional behavior for the RPC client.
+type ClientOptions struct {
+	// Transport overrides the default HTTP transport. Useful for sharing
+	// a transport across multiple clients (e.g., primary and fallback RPCs).
+	Transport *http.Transport
 }
 
 // NewClient creates a new RPC client with connection pooling.
 func NewClient(url string) *Client {
-	transport := &http.Transport{
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       20,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+	return NewClientWithOptions(url, nil)
+}
+
+// NewClientWithOptions creates a new RPC client with the given options.
+func NewClientWithOptions(url string, opts *ClientOptions) *Client {
+	var transport *http.Transport
+	if opts != nil && opts.Transport != nil {
+		transport = opts.Transport
+	} else {
+		transport = &http.Transport{
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			MaxConnsPerHost:       20,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
 	}
 	return &Client{
 		url: url,
@@ -93,6 +114,7 @@ func NewClient(url string) *Client {
 			Transport: transport,
 			Timeout:   45 * time.Second,
 		},
+		rateLimiter: chain.DefaultRateLimiter(),
 	}
 }
 
@@ -329,7 +351,15 @@ func (c *Client) Close() {
 }
 
 // callInternal performs the actual JSON-RPC call.
+//
+//nolint:gocognit,gocyclo // Rate limiting and error handling add necessary branches
 func (c *Client) callInternal(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx, c.url); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+	}
+
 	if params == nil {
 		params = []any{}
 	}
@@ -360,7 +390,7 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 	// connection is already broken, and there's no recovery action.
 	defer func() { _ = httpResp.Body.Close() }()
 
-	respBody, err := io.ReadAll(httpResp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBody))
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
@@ -375,7 +405,10 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 	}
 
 	if resp.Error != nil {
-		return nil, resp.Error
+		return nil, sigilerr.WithDetails(ErrRPCRequest, map[string]string{
+			"rpc_code":    strconv.Itoa(resp.Error.Code),
+			"rpc_message": resp.Error.Message,
+		})
 	}
 
 	return resp.Result, nil

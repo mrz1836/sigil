@@ -10,6 +10,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	ethcrypto "github.com/mrz1836/sigil/internal/chain/eth/crypto"
 	ethtypes "github.com/mrz1836/sigil/internal/chain/eth/types"
+	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -26,6 +27,7 @@ type TxParams struct {
 	GasLimit     uint64   // Gas limit
 	GasPrice     *big.Int // Gas price in wei
 	Nonce        uint64   // Transaction nonce
+	NonceSet     bool     // True if Nonce was explicitly set (distinguishes 0 from unset)
 	ChainID      *big.Int // Network chain ID
 	Data         []byte   // Transaction data (for contract calls)
 	TokenAddress string   // ERC-20 token address (empty for native ETH)
@@ -76,32 +78,39 @@ func NewETHTransferParams(from, to string, value *big.Int) *TxParams {
 // NewERC20TransferParams creates parameters for an ERC-20 token transfer.
 //
 //nolint:funcorder // Constructor grouped with related constructor
-func NewERC20TransferParams(from, recipient, tokenAddress string, amount *big.Int) *TxParams {
+func NewERC20TransferParams(from, recipient, tokenAddress string, amount *big.Int) (*TxParams, error) {
+	data, err := BuildERC20TransferData(recipient, amount)
+	if err != nil {
+		return nil, err
+	}
 	return &TxParams{
 		From:         from,
 		To:           tokenAddress, // Transaction is sent to the token contract
 		Value:        big.NewInt(0),
-		Data:         BuildERC20TransferData(recipient, amount),
+		Data:         data,
 		TokenAddress: tokenAddress,
-	}
+	}, nil
 }
 
 // BuildERC20TransferData builds the call data for an ERC-20 transfer.
 // transfer(address,uint256) = 0xa9059cbb
-func BuildERC20TransferData(to string, amount *big.Int) []byte {
+func BuildERC20TransferData(to string, amount *big.Int) ([]byte, error) {
 	// Function selector: transfer(address,uint256)
 	data := make([]byte, 68) // 4 + 32 + 32
 	copy(data[:4], erc20TransferSelector)
 
 	// Pad address to 32 bytes (left-pad with zeros)
-	toAddr, _ := ethcrypto.HexToAddress(to)
+	toAddr, err := ethcrypto.HexToAddress(to)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recipient address: %w", err)
+	}
 	copy(data[16:36], toAddr.Bytes())
 
 	// Pad amount to 32 bytes (left-pad with zeros)
 	amountBytes := amount.Bytes()
 	copy(data[68-len(amountBytes):68], amountBytes)
 
-	return data
+	return data, nil
 }
 
 // BuildTransaction creates an unsigned transaction from parameters.
@@ -110,13 +119,14 @@ func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*ethty
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 
-	// Get nonce if not set
-	if params.Nonce == 0 {
+	// Get nonce if not explicitly set
+	if !params.NonceSet {
 		nonce, err := c.GetNonce(ctx, params.From)
 		if err != nil {
 			return nil, fmt.Errorf("getting nonce: %w", err)
 		}
 		params.Nonce = nonce
+		params.NonceSet = true
 	}
 
 	// Get chain ID if not set
@@ -128,7 +138,10 @@ func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*ethty
 		params.ChainID = chainID
 	}
 
-	toAddr, _ := ethcrypto.HexToAddress(params.To)
+	toAddr, err := ethcrypto.HexToAddress(params.To)
+	if err != nil {
+		return nil, fmt.Errorf("invalid to address: %w", err)
+	}
 
 	// Create transaction
 	tx := ethtypes.NewLegacyTx(
@@ -151,7 +164,7 @@ func SignTransaction(tx *ethtypes.LegacyTx, privateKey []byte, chainID *big.Int)
 	copy(keyCopy, privateKey)
 
 	// Ensure we zero the key when done
-	defer ZeroPrivateKey(keyCopy)
+	defer wallet.ZeroBytes(keyCopy)
 
 	// Sign the transaction with EIP-155
 	if err := tx.Sign(keyCopy, chainID); err != nil {
@@ -199,7 +212,7 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	}
 
 	if len(req.PrivateKey) > 0 {
-		defer ZeroPrivateKey(req.PrivateKey)
+		defer wallet.ZeroBytes(req.PrivateKey)
 	}
 
 	// Determine if this is an ERC-20 or native transfer
@@ -208,7 +221,11 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 
 	if req.Token != "" {
 		// ERC-20 transfer
-		params = NewERC20TransferParams(req.From, req.To, req.Token, req.Amount)
+		var paramErr error
+		params, paramErr = NewERC20TransferParams(req.From, req.To, req.Token, req.Amount)
+		if paramErr != nil {
+			return nil, fmt.Errorf("building ERC-20 params: %w", paramErr)
+		}
 		tokenSymbol = "USDC" // Assume USDC for now, can be extended
 	} else {
 		// Native ETH transfer
@@ -273,13 +290,6 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	}
 
 	return result, nil
-}
-
-// ZeroPrivateKey zeros out a private key byte slice for security.
-func ZeroPrivateKey(key []byte) {
-	for i := range key {
-		key[i] = 0
-	}
 }
 
 // DeriveAddress derives an Ethereum address from a private key.

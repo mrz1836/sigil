@@ -333,6 +333,20 @@ func (s *Store) GetAddressesByLabel(chainID chain.ID, label string) []*AddressMe
 	return result
 }
 
+// IsSpent checks whether a UTXO is known-spent in the local store.
+// Returns false if the UTXO is not in the store (unknown, not known-spent).
+func (s *Store) IsSpent(chainID chain.ID, txid string, vout uint32) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := fmt.Sprintf("%s:%s:%d", chainID, txid, vout)
+	utxo, exists := s.data.UTXOs[key]
+	if !exists {
+		return false
+	}
+	return utxo.Spent
+}
+
 // filePath returns the full path to utxos.json
 func (s *Store) filePath() string {
 	return filepath.Join(s.walletPath, utxoFileName)

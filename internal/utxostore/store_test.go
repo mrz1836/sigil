@@ -321,6 +321,112 @@ func TestIsEmpty(t *testing.T) {
 	assert.False(t, store.IsEmpty())
 }
 
+func TestIsSpent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns true for spent UTXO", func(t *testing.T) {
+		t.Parallel()
+		store := New("/tmp/test")
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  5000,
+			Spent:   false,
+		})
+		store.MarkSpent(chain.BSV, "tx1", 0, "spending-tx")
+
+		assert.True(t, store.IsSpent(chain.BSV, "tx1", 0))
+	})
+
+	t.Run("returns false for unspent UTXO", func(t *testing.T) {
+		t.Parallel()
+		store := New("/tmp/test")
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  5000,
+			Spent:   false,
+		})
+
+		assert.False(t, store.IsSpent(chain.BSV, "tx1", 0))
+	})
+
+	t.Run("returns false for unknown UTXO", func(t *testing.T) {
+		t.Parallel()
+		store := New("/tmp/test")
+
+		assert.False(t, store.IsSpent(chain.BSV, "nonexistent", 0))
+	})
+
+	t.Run("different vout is independent", func(t *testing.T) {
+		t.Parallel()
+		store := New("/tmp/test")
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   false,
+		})
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    1,
+			Amount:  2000,
+			Spent:   false,
+		})
+		store.MarkSpent(chain.BSV, "tx1", 0, "spending-tx")
+
+		assert.True(t, store.IsSpent(chain.BSV, "tx1", 0))
+		assert.False(t, store.IsSpent(chain.BSV, "tx1", 1))
+	})
+
+	t.Run("different chain is independent", func(t *testing.T) {
+		t.Parallel()
+		store := New("/tmp/test")
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   true,
+		})
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BTC,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   false,
+		})
+
+		assert.True(t, store.IsSpent(chain.BSV, "tx1", 0))
+		assert.False(t, store.IsSpent(chain.BTC, "tx1", 0))
+	})
+
+	t.Run("round trip through save and load", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		store := New(tmpDir)
+		store.AddUTXO(&StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  5000,
+			Spent:   false,
+		})
+		store.MarkSpent(chain.BSV, "tx1", 0, "spending-tx")
+		require.NoError(t, store.Save())
+
+		store2 := New(tmpDir)
+		require.NoError(t, store2.Load())
+
+		assert.True(t, store2.IsSpent(chain.BSV, "tx1", 0))
+	})
+}
+
 func TestGetAddresses(t *testing.T) {
 	t.Parallel()
 	store := New("/tmp/test")

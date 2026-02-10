@@ -94,21 +94,27 @@ func NewClient(url string) *Client {
 	return NewClientWithOptions(url, nil)
 }
 
+// NewDefaultTransport creates a new HTTP transport with secure defaults.
+// Configures connection pooling and requires TLS 1.2+ for HTTPS connections.
+func NewDefaultTransport() *http.Transport {
+	return &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+}
+
 // NewClientWithOptions creates a new RPC client with the given options.
 func NewClientWithOptions(url string, opts *ClientOptions) *Client {
 	var transport *http.Transport
 	if opts != nil && opts.Transport != nil {
 		transport = opts.Transport
 	} else {
-		transport = &http.Transport{
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   10,
-			MaxConnsPerHost:       20,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-			TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
-		}
+		transport = NewDefaultTransport()
 	}
 	return &Client{
 		url: url,

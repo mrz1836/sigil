@@ -19,6 +19,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
+	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
 	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/utxostore"
@@ -340,16 +341,10 @@ var (
 
 // sharedETHTransport returns a shared HTTP transport for reuse across ETH clients.
 // The transport is created once and reused for proper connection pooling.
+// Uses rpc.NewDefaultTransport() for secure defaults including TLS 1.2+ requirement.
 func sharedETHTransport() *http.Transport {
 	ethTransportOnce.Do(func() {
-		ethTransport = &http.Transport{
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   10,
-			MaxConnsPerHost:       20,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		}
+		ethTransport = rpc.NewDefaultTransport()
 	})
 	return ethTransport
 }

@@ -4,6 +4,7 @@ package chain
 import (
 	"context"
 	"math/big"
+	"regexp"
 )
 
 // ID represents a supported blockchain.
@@ -238,4 +239,17 @@ func SupportedChains() []ID {
 // AllChains returns all known chain IDs.
 func AllChains() []ID {
 	return []ID{ETH, BSV, BTC, BCH}
+}
+
+// ValidateAddressWithRegex validates an address using a regex pattern.
+// Returns the provided error if validation fails.
+// This consolidates the common pattern: empty check + regex match.
+func ValidateAddressWithRegex(address string, regex *regexp.Regexp, err error) error {
+	if address == "" {
+		return err
+	}
+	if !regex.MatchString(address) {
+		return err
+	}
+	return nil
 }

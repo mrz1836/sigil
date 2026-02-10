@@ -219,15 +219,7 @@ func (c *Client) EstimateFee(ctx context.Context, from, to string, amount *big.I
 
 // ValidateAddress checks if an address is valid for Ethereum.
 func (c *Client) ValidateAddress(address string) error {
-	if address == "" {
-		return ErrInvalidAddress
-	}
-
-	if !addressRegex.MatchString(address) {
-		return ErrInvalidAddress
-	}
-
-	return nil
+	return chain.ValidateAddressWithRegex(address, addressRegex, ErrInvalidAddress)
 }
 
 // FormatAmount converts a big.Int (wei) to a human-readable ETH string.

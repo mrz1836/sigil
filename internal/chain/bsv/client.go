@@ -361,15 +361,7 @@ func (c *Client) EstimateFee(_ context.Context, _, _ string, _ *big.Int) (*big.I
 
 // ValidateAddress checks if an address is valid for BSV.
 func (c *Client) ValidateAddress(address string) error {
-	if address == "" {
-		return ErrInvalidAddress
-	}
-
-	if !base58Regex.MatchString(address) {
-		return ErrInvalidAddress
-	}
-
-	return nil
+	return chain.ValidateAddressWithRegex(address, base58Regex, ErrInvalidAddress)
 }
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BSV string.

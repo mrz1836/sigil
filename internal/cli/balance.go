@@ -21,6 +21,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -112,6 +113,14 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	}
 	wallet.ZeroBytes(seed)
 
+	// Load UTXO store for address metadata
+	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", balanceWalletName)
+	utxoStore := utxostore.New(walletDir)
+	if err = utxoStore.Load(); err != nil && cmdCtx.Log != nil {
+		cmdCtx.Log.Error("failed to load utxo store: %v", err)
+		// Continue without metadata (degrades to always-fetch behavior)
+	}
+
 	// Load or create cache
 	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
 	cacheStorage := cache.NewFileStorage(cachePath)
@@ -132,6 +141,12 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 			}
 			balanceCache = cache.NewBalanceCache()
 		}
+	}
+
+	// Initialize refresh policy (unless --refresh flag bypasses it)
+	var refreshPolicy *RefreshPolicy
+	if !balanceRefresh && utxoStore != nil {
+		refreshPolicy = NewRefreshPolicy(utxoStore, balanceCache)
 	}
 
 	// Fetch balances with overall timeout
@@ -182,7 +197,25 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	for _, task := range tasks {
 		wg.Add(1)
-		go func() {
+
+		// Check if we can use cached data (skip network fetch)
+		if refreshPolicy != nil {
+			decision := refreshPolicy.ShouldRefresh(task.chainID, task.address)
+			if decision == CacheOK {
+				// Use cached data directly without network call
+				cachedBalances := getCachedBalancesForAddress(task.chainID, task.address, balanceCache)
+				mu.Lock()
+				for _, bal := range cachedBalances {
+					response.Balances = append(response.Balances, balanceResultFromCache(bal))
+				}
+				mu.Unlock()
+				wg.Done()
+				continue
+			}
+		}
+
+		// Network fetch required
+		go func(t balanceTask) {
 			defer wg.Done()
 
 			select {
@@ -195,7 +228,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 			}()
 
 			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
-			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, task.chainID, task.address, balanceCache, cmdCtx.Cfg)
+			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, t.chainID, t.address, balanceCache, cmdCtx.Cfg)
 			addrCancel()
 
 			mu.Lock()
@@ -225,14 +258,14 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 			// Add placeholder for failed fetches with no cache data.
 			if fetchErr != nil && len(balances) == 0 {
 				response.Balances = append(response.Balances, BalanceResult{
-					Chain:   string(task.chainID),
-					Address: task.address,
+					Chain:   string(t.chainID),
+					Address: t.address,
 					Balance: "N/A",
-					Symbol:  getChainSymbol(task.chainID),
+					Symbol:  getChainSymbol(t.chainID),
 					Stale:   true,
 				})
 			}
-		}()
+		}(task)
 	}
 	wg.Wait()
 
@@ -645,6 +678,42 @@ func formatCacheAge(t time.Time) string {
 		return fmt.Sprintf("%dh ago", int(age.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(age.Hours()/24))
+}
+
+// getCachedBalancesForAddress retrieves all cached balances for an address.
+// Returns empty slice if no cache entries found.
+func getCachedBalancesForAddress(chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache) []cache.BalanceCacheEntry {
+	var results []cache.BalanceCacheEntry
+
+	// Check native balance
+	if entry, exists, _ := balanceCache.Get(chainID, address, ""); exists {
+		results = append(results, *entry)
+	}
+
+	// For ETH, also check USDC
+	if chainID == wallet.ChainETH {
+		if entry, exists, _ := balanceCache.Get(chainID, address, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"); exists {
+			results = append(results, *entry)
+		}
+	}
+
+	return results
+}
+
+// balanceResultFromCache converts a cached balance entry to a BalanceResult for output.
+func balanceResultFromCache(entry cache.BalanceCacheEntry) BalanceResult {
+	age := time.Since(entry.UpdatedAt)
+	return BalanceResult{
+		Chain:       string(entry.Chain),
+		Address:     entry.Address,
+		Balance:     entry.Balance,
+		Unconfirmed: entry.Unconfirmed,
+		Symbol:      entry.Symbol,
+		Token:       entry.Token,
+		Decimals:    entry.Decimals,
+		Stale:       age > cache.DefaultStaleness,
+		CacheAge:    formatCacheAge(entry.UpdatedAt),
+	}
 }
 
 // getChainSymbol returns the symbol for a given chain ID.

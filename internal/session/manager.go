@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -422,8 +423,11 @@ func (m *FileManager) sessionPath(wallet string) string {
 }
 
 // zeroBytes securely zeros a byte slice.
+// runtime.KeepAlive prevents the compiler from optimizing away the zeroing
+// as a dead store when the slice is not used afterward.
 func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+	runtime.KeepAlive(b)
 }

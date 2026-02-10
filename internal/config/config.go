@@ -19,6 +19,9 @@ type Config struct {
 	Security   SecurityConfig   `yaml:"security"`
 	Output     OutputConfig     `yaml:"output"`
 	Logging    LoggingConfig    `yaml:"logging"`
+
+	// Warnings collects non-fatal warnings from configuration loading/validation.
+	Warnings []string `yaml:"-"`
 }
 
 // EncryptionConfig defines encryption settings.

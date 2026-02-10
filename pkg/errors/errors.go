@@ -312,6 +312,55 @@ var (
 		Message:  "no UTXOs available",
 		ExitCode: ExitInput,
 	}
+
+	// Agent-specific errors.
+	ErrAgentTokenInvalid = &SigilError{
+		Code:     "AGENT_TOKEN_INVALID",
+		Message:  "agent token is invalid or does not match any agent",
+		ExitCode: ExitAuth,
+	}
+
+	ErrAgentTokenExpired = &SigilError{
+		Code:     "AGENT_TOKEN_EXPIRED",
+		Message:  "agent token has expired",
+		ExitCode: ExitAuth,
+	}
+
+	ErrAgentPolicyViolation = &SigilError{
+		Code:     "AGENT_POLICY_VIOLATION",
+		Message:  "transaction violates agent spending policy",
+		ExitCode: ExitPermission,
+	}
+
+	ErrAgentDailyLimit = &SigilError{
+		Code:     "AGENT_DAILY_LIMIT",
+		Message:  "daily spending limit reached",
+		ExitCode: ExitPermission,
+	}
+
+	ErrAgentChainDenied = &SigilError{
+		Code:     "AGENT_CHAIN_DENIED",
+		Message:  "agent not authorized for this chain",
+		ExitCode: ExitInput,
+	}
+
+	ErrAgentAddrDenied = &SigilError{
+		Code:     "AGENT_ADDR_DENIED",
+		Message:  "destination address not in agent allowlist",
+		ExitCode: ExitInput,
+	}
+
+	ErrAgentXpubInvalid = &SigilError{
+		Code:     "AGENT_XPUB_INVALID",
+		Message:  "xpub string is malformed or wrong format",
+		ExitCode: ExitInput,
+	}
+
+	ErrAgentXpubWriteDenied = &SigilError{
+		Code:     "AGENT_XPUB_WRITE_DENIED",
+		Message:  "spending operations require SIGIL_AGENT_TOKEN, not SIGIL_AGENT_XPUB",
+		ExitCode: ExitAuth,
+	}
 )
 
 // New creates a new SigilError with the given code and message.

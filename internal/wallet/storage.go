@@ -20,7 +20,8 @@ const (
 	walletFilePermissions = 0o600
 
 	// walletDirPermissions is the permission mode for the wallets directory.
-	walletDirPermissions = 0o750
+	// Owner-only access for crypto wallet data.
+	walletDirPermissions = 0o700
 )
 
 // ErrDecryptionFailed indicates decryption failed (wrong password or corrupted file).

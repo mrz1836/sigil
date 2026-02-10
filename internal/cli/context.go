@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
@@ -60,6 +61,26 @@ type CommandContext struct {
 
 	// SessionMgr provides session management for cached wallet credentials.
 	SessionMgr session.Manager
+
+	// AgentCred holds the active agent credential when authenticating via SIGIL_AGENT_TOKEN.
+	// Nil when not in agent mode.
+	AgentCred *agent.Credential
+
+	// AgentStore provides agent credential storage. Set during initialization.
+	AgentStore *agent.FileStore
+
+	// AgentCounterPath is the path to the daily spending counter for the active agent.
+	// Empty when not in agent mode.
+	AgentCounterPath string
+
+	// AgentToken is the raw agent token from the environment, used for counter HMAC.
+	// Empty when not in agent mode. Zeroed after use.
+	AgentToken string
+
+	// AgentXpub is the xpub string from SIGIL_AGENT_XPUB for read-only mode.
+	// When set, only balance/receive operations are allowed (no spending).
+	// Empty when not in xpub read-only mode.
+	AgentXpub string
 }
 
 // NewCommandContext creates a context with the given dependencies.
@@ -97,5 +118,11 @@ func (c *CommandContext) WithChainFactory(f chain.Factory) *CommandContext {
 // WithSessionManager sets the session manager.
 func (c *CommandContext) WithSessionManager(mgr session.Manager) *CommandContext {
 	c.SessionMgr = mgr
+	return c
+}
+
+// WithAgentStore sets the agent file store.
+func (c *CommandContext) WithAgentStore(store *agent.FileStore) *CommandContext {
+	c.AgentStore = store
 	return c
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"strings"
 
 	"github.com/decred/dcrd/hdkeychain/v3"
@@ -638,8 +639,11 @@ func deriveBIP44KeyWithCoinType(masterKey *hdkeychain.ExtendedKey, coinType, acc
 }
 
 // ZeroBytes zeros out a byte slice.
+// runtime.KeepAlive prevents the compiler from optimizing away the zeroing
+// as a dead store when the slice is not used afterward.
 func ZeroBytes(data []byte) {
 	for i := range data {
 		data[i] = 0
 	}
+	runtime.KeepAlive(data)
 }

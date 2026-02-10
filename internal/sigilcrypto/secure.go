@@ -75,6 +75,7 @@ func (s *SecureBytes) Destroy() {
 	for i := range s.data {
 		s.data[i] = 0
 	}
+	runtime.KeepAlive(s.data)
 
 	// Unlock if locked
 	if s.locked {

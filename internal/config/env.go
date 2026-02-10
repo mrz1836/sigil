@@ -1,12 +1,18 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/mrz1836/go-sanitize"
 )
+
+// ErrInsecureRPCURL indicates an RPC URL is using plaintext HTTP.
+var ErrInsecureRPCURL = errors.New("RPC URL must use HTTPS")
 
 // Environment variable names.
 const (
@@ -23,6 +29,8 @@ const (
 	EnvSessionTTL      = "SIGIL_SESSION_TTL"
 	EnvBSVFeeStrategy  = "SIGIL_BSV_FEE_STRATEGY"
 	EnvBSVMinMiners    = "SIGIL_BSV_MIN_MINERS"
+	EnvAgentToken      = "SIGIL_AGENT_TOKEN" //nolint:gosec // G101 -- false positive, this is a const name not a credential
+	EnvAgentXpub       = "SIGIL_AGENT_XPUB"
 )
 
 // ApplyEnvironment applies environment variable overrides to the configuration.
@@ -34,7 +42,13 @@ func ApplyEnvironment(cfg *Config) {
 	}
 
 	if v := os.Getenv(EnvETHRPC); v != "" {
-		cfg.Networks.ETH.RPC = SanitizeURL(v)
+		sanitized := SanitizeURL(v)
+		if err := ValidateRPCURL(sanitized); err != nil {
+			// Log warning but still set the URL — validation errors are
+			// surfaced at connection time via the ETH client.
+			cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("SIGIL_ETH_RPC: %v", err))
+		}
+		cfg.Networks.ETH.RPC = sanitized
 	}
 
 	if v := os.Getenv(EnvETHProvider); v != "" {
@@ -111,6 +125,31 @@ func parseBool(s string) bool {
 
 // SanitizeURL cleans a URL string by removing invalid characters and trimming whitespace.
 // This is useful for cleaning user-provided RPC URLs that may contain copy-paste artifacts.
-func SanitizeURL(url string) string {
-	return sanitize.URL(strings.TrimSpace(url))
+func SanitizeURL(rawURL string) string {
+	return sanitize.URL(strings.TrimSpace(rawURL))
+}
+
+// ValidateRPCURL validates that an RPC URL uses HTTPS (or localhost for development).
+// Returns an error if the URL scheme is not https and the host is not localhost.
+func ValidateRPCURL(rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid RPC URL: %w", err)
+	}
+
+	if u.Scheme == "https" || u.Scheme == "wss" {
+		return nil
+	}
+
+	// Allow plaintext for localhost/loopback development
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+
+	return fmt.Errorf("%w (got %s://%s): plaintext HTTP exposes signed transactions to network attackers", ErrInsecureRPCURL, u.Scheme, u.Host)
 }

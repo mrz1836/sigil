@@ -73,6 +73,12 @@ func (p *RefreshPolicy) ShouldRefresh(chainID chain.ID, address string) RefreshD
 		return RefreshRequired
 	}
 
+	// If UTXO store was scanned more recently than cache was updated,
+	// this indicates a synchronization gap (e.g., from receive --check)
+	if p.isMetadataFresherThanCache(addressMeta, nativeEntry) {
+		return RefreshRequired
+	}
+
 	// Check if address is newly created - always fetch fresh
 	if p.isNewlyCreatedAddress(addressMeta) {
 		return RefreshRequired
@@ -83,6 +89,24 @@ func (p *RefreshPolicy) ShouldRefresh(chainID chain.ID, address string) RefreshD
 
 	// Determine refresh based on priority tier
 	return p.shouldRefreshBasedOnPriority(addressMeta.HasActivity, hasBalance, nativeAge)
+}
+
+// isMetadataFresherThanCache checks if the address was scanned more recently
+// than the balance cache was updated, indicating a possible synchronization gap.
+// This can occur when operations like "receive --check" update the UTXO store
+// without updating the balance cache, leaving stale balance data.
+func (p *RefreshPolicy) isMetadataFresherThanCache(metadata *AddressMetadata, cacheEntry *CacheEntry) bool {
+	if metadata == nil || metadata.LastScanned.IsZero() {
+		return false
+	}
+
+	// Use a small tolerance window (10 seconds) to account for minor timing
+	// differences during normal operations where both stores update together
+	const syncTolerance = 10 * time.Second
+
+	// If metadata was scanned significantly after cache was updated,
+	// there's likely new activity that cache doesn't reflect
+	return metadata.LastScanned.After(cacheEntry.UpdatedAt.Add(syncTolerance))
 }
 
 // isNewlyCreatedAddress checks if an address is newly created (within 24 hours).

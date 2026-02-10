@@ -2,11 +2,16 @@ package balance
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/cache"
 )
+
+// ErrNoCachedBalance is returned when no cached balance exists for an address.
+var ErrNoCachedBalance = errors.New("no cached balance for address")
 
 // Config holds the configuration for the balance service.
 type Config struct {
@@ -97,47 +102,47 @@ func (s *Service) FetchBalance(ctx context.Context, req *FetchRequest) (*FetchRe
 }
 
 // FetchBalances fetches balances for multiple addresses concurrently.
+// Uses bulk API for BSV addresses and individual calls for other chains.
 //
-//nolint:gocognit // Complex business logic for concurrent batch fetching
+//nolint:gocognit,gocyclo // Complex business logic for concurrent batch fetching
 func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*FetchBatchResult, error) {
+	// Group addresses by chain for bulk operations
+	bsvAddresses := make([]string, 0)
+	otherAddresses := make([]AddressInput, 0)
+
+	for _, addr := range req.Addresses {
+		if addr.ChainID == "bsv" {
+			bsvAddresses = append(bsvAddresses, addr.Address)
+		} else {
+			otherAddresses = append(otherAddresses, addr)
+		}
+	}
+
 	batchResult := &FetchBatchResult{
 		Results: make([]*FetchResult, 0, len(req.Addresses)),
 	}
 
-	maxConcurrent := req.MaxConcurrent
-	if maxConcurrent <= 0 {
-		maxConcurrent = 8
-	}
-
-	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, addr := range req.Addresses {
-		wg.Add(1)
+	// Apply refresh policy to BSV addresses before bulk fetch
+	bsvAddressesToFetch := make([]string, 0, len(bsvAddresses))
+	for _, addr := range bsvAddresses {
+		needsFetch, cachedResult := s.processBSVAddress(addr, req.ForceRefresh)
+		if needsFetch {
+			bsvAddressesToFetch = append(bsvAddressesToFetch, addr)
+		} else if cachedResult != nil {
+			batchResult.Results = append(batchResult.Results, cachedResult)
+		}
+	}
 
-		go func(input AddressInput) {
+	// Fetch BSV addresses that need refresh (if any)
+	if len(bsvAddressesToFetch) > 0 {
+		wg.Add(1)
+		go func() {
 			defer wg.Done()
 
-			// Acquire semaphore
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() {
-				<-sem
-			}()
-
-			// Fetch balance
-			fetchReq := &FetchRequest{
-				ChainID:      input.ChainID,
-				Address:      input.Address,
-				ForceRefresh: req.ForceRefresh,
-				Timeout:      req.Timeout,
-			}
-
-			result, err := s.FetchBalance(ctx, fetchReq)
+			bulkResults, err := s.fetcher.fetchBSVBulk(ctx, bsvAddressesToFetch)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -145,15 +150,142 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 			if err != nil {
 				batchResult.Errors = append(batchResult.Errors, err)
 			}
-			if result != nil {
+
+			for addr, entries := range bulkResults {
+				result := &FetchResult{
+					ChainID:  "bsv",
+					Address:  addr,
+					Balances: make([]BalanceEntry, len(entries)),
+				}
+				for i, entry := range entries {
+					result.Balances[i] = cacheEntryToBalanceEntry(entry)
+				}
 				batchResult.Results = append(batchResult.Results, result)
 			}
-		}(addr)
+		}()
+	}
+
+	// Fetch other chain addresses individually with concurrency control
+	if len(otherAddresses) > 0 {
+		maxConcurrent := req.MaxConcurrent
+		if maxConcurrent <= 0 {
+			maxConcurrent = 8
+		}
+
+		sem := make(chan struct{}, maxConcurrent)
+
+		for _, addr := range otherAddresses {
+			wg.Add(1)
+
+			go func(input AddressInput) {
+				defer wg.Done()
+
+				// Acquire semaphore
+				select {
+				case sem <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+				defer func() {
+					<-sem
+				}()
+
+				// Fetch balance
+				fetchReq := &FetchRequest{
+					ChainID:      input.ChainID,
+					Address:      input.Address,
+					ForceRefresh: req.ForceRefresh,
+					Timeout:      req.Timeout,
+				}
+
+				result, err := s.FetchBalance(ctx, fetchReq)
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				if err != nil {
+					batchResult.Errors = append(batchResult.Errors, err)
+				}
+				if result != nil {
+					batchResult.Results = append(batchResult.Results, result)
+				}
+			}(addr)
+		}
 	}
 
 	wg.Wait()
 
 	return batchResult, nil
+}
+
+// FetchCachedBalances fetches balances from cache only, without network calls.
+// Returns cached data with stale markers. Returns error if no cache exists for any address.
+func (s *Service) FetchCachedBalances(_ context.Context, req *FetchBatchRequest) (*FetchBatchResult, error) {
+	batchResult := &FetchBatchResult{
+		Results: make([]*FetchResult, 0, len(req.Addresses)),
+	}
+
+	for _, addr := range req.Addresses {
+		result := &FetchResult{
+			ChainID: addr.ChainID,
+			Address: addr.Address,
+		}
+
+		// Get cached balances
+		cachedBalances := getCachedBalancesForAddress(addr.ChainID, addr.Address, s.cache)
+
+		if len(cachedBalances) == 0 {
+			// No cache for this address
+			batchResult.Errors = append(batchResult.Errors,
+				fmt.Errorf("%w: %s:%s", ErrNoCachedBalance, addr.ChainID, addr.Address))
+			continue
+		}
+
+		// Convert to balance entries and mark as stale
+		for _, cached := range cachedBalances {
+			entry := cacheEntryToBalanceEntry(cached)
+			entry.Stale = true // Always mark cached-only data as potentially stale
+			result.Balances = append(result.Balances, entry)
+		}
+
+		result.Stale = true
+		batchResult.Results = append(batchResult.Results, result)
+	}
+
+	return batchResult, nil
+}
+
+// processBSVAddress determines if a BSV address needs fetching or can use cached data.
+// Returns (needsFetch, cachedResult).
+func (s *Service) processBSVAddress(addr string, forceRefresh bool) (bool, *FetchResult) {
+	// Skip policy check if forcing refresh or no policy configured
+	if s.policy == nil || forceRefresh || s.force {
+		return true, nil
+	}
+
+	// Consult refresh policy
+	decision := s.policy.ShouldRefresh("bsv", addr)
+	if decision != CacheOK {
+		// RefreshRequired
+		return true, nil
+	}
+
+	// Use cached data
+	cachedBalances := getCachedBalancesForAddress("bsv", addr, s.cache)
+	if len(cachedBalances) == 0 {
+		// No cache exists, need to fetch
+		return true, nil
+	}
+
+	result := &FetchResult{
+		ChainID:  "bsv",
+		Address:  addr,
+		Balances: make([]BalanceEntry, len(cachedBalances)),
+	}
+	for i, cached := range cachedBalances {
+		result.Balances[i] = cacheEntryToBalanceEntry(cached)
+	}
+	return false, result
 }
 
 // cacheEntryToBalanceEntry converts a CacheEntry to a BalanceEntry.

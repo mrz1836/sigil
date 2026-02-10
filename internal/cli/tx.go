@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -379,6 +380,15 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	}
 	client := bsv.NewClient(ctx, opts)
 
+	// Load local UTXO store for spent-UTXO filtering and post-broadcast marking.
+	walletPath := filepath.Join(cc.Cfg.GetHome(), "wallets", txWallet)
+	utxoStore := utxostore.New(walletPath)
+	if err := utxoStore.Load(); err != nil {
+		logTxError(cc, "bsv send: failed to load utxo store: %v", err)
+		// Non-fatal: proceed without local filtering (API-only UTXOs)
+		utxoStore = nil
+	}
+
 	sweepAll := isAmountAll(txAmount)
 	logTxDebug(cc, "bsv send: to=%s amount=%s sweep=%v", txTo, txAmount, sweepAll)
 
@@ -409,7 +419,11 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		logTxError(cc, "bsv send: utxo aggregation failed: %v", utxoErr)
 		return fmt.Errorf("listing UTXOs: %w", utxoErr)
 	}
-	logTxDebug(cc, "bsv send: %d UTXOs from %d addresses", len(allUTXOs), len(addresses))
+	// Filter out UTXOs that are known-spent in the local store (prevents double-spend)
+	if utxoStore != nil {
+		allUTXOs = filterSpentBSVUTXOs(allUTXOs, utxoStore)
+	}
+	logTxDebug(cc, "bsv send: %d UTXOs from %d addresses (after spent filtering)", len(allUTXOs), len(addresses))
 
 	var displayAmount string
 	var estimatedFee uint64
@@ -530,6 +544,9 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		return fmt.Errorf("sending transaction: %w", err)
 	}
 	logTxDebug(cc, "bsv send: success hash=%s", result.Hash)
+
+	// Mark spent UTXOs in the local store to prevent double-spend on subsequent sends
+	markSpentBSVUTXOs(cc, utxoStore, sendUTXOs, result.Hash)
 
 	// Invalidate balance cache for all addresses that contributed UTXOs
 	involvedAddrs := uniqueUTXOAddrs(sendUTXOs)
@@ -970,4 +987,43 @@ func uniqueUTXOAddrs(utxos []chain.UTXO) map[string]struct{} {
 		addrs[u.Address] = struct{}{}
 	}
 	return addrs
+}
+
+// filterSpentBSVUTXOs removes UTXOs that are marked as spent in the local store.
+// UTXOs not present in the store are kept (unknown is not known-spent).
+func filterSpentBSVUTXOs(utxos []chain.UTXO, store *utxostore.Store) []chain.UTXO {
+	filtered := make([]chain.UTXO, 0, len(utxos))
+	for _, u := range utxos {
+		if !store.IsSpent(chain.BSV, u.TxID, u.Vout) {
+			filtered = append(filtered, u)
+		}
+	}
+	return filtered
+}
+
+// markSpentBSVUTXOs records spent UTXOs in the local store after a successful broadcast.
+// Errors are logged but never returned — the broadcast already succeeded.
+func markSpentBSVUTXOs(cc *CommandContext, store *utxostore.Store, utxos []chain.UTXO, spentTxID string) {
+	if store == nil {
+		return
+	}
+
+	for _, u := range utxos {
+		// Ensure the UTXO exists in the store before marking it spent.
+		// The API may return UTXOs not yet tracked locally.
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID:       chain.BSV,
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			ScriptPubKey:  u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+		})
+		store.MarkSpent(chain.BSV, u.TxID, u.Vout, spentTxID)
+	}
+
+	if err := store.Save(); err != nil {
+		logTxError(cc, "bsv send: failed to save utxo store: %v", err)
+	}
 }

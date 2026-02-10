@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -1227,5 +1228,223 @@ func TestUniqueUTXOAddrs(t *testing.T) {
 		result := uniqueUTXOAddrs([]chain.UTXO{{Address: "only_one"}})
 		assert.Len(t, result, 1)
 		assert.Contains(t, result, "only_one")
+	})
+}
+
+// TestFilterSpentBSVUTXOs tests that locally-spent UTXOs are excluded from the API result set.
+func TestFilterSpentBSVUTXOs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("filters out spent UTXOs", func(t *testing.T) {
+		t.Parallel()
+
+		store := utxostore.New(t.TempDir())
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   false,
+		})
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx2",
+			Vout:    0,
+			Amount:  2000,
+			Spent:   false,
+		})
+		store.MarkSpent(chain.BSV, "tx1", 0, "spending-tx")
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+			{TxID: "tx2", Vout: 0, Amount: 2000},
+			{TxID: "tx3", Vout: 0, Amount: 3000}, // not in store at all
+		}
+
+		filtered := filterSpentBSVUTXOs(utxos, store)
+
+		assert.Len(t, filtered, 2)
+		assert.Equal(t, "tx2", filtered[0].TxID)
+		assert.Equal(t, "tx3", filtered[1].TxID)
+	})
+
+	t.Run("keeps all UTXOs when none are spent", func(t *testing.T) {
+		t.Parallel()
+
+		store := utxostore.New(t.TempDir())
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+			{TxID: "tx2", Vout: 1, Amount: 2000},
+		}
+
+		filtered := filterSpentBSVUTXOs(utxos, store)
+
+		assert.Len(t, filtered, 2)
+	})
+
+	t.Run("returns empty slice when all are spent", func(t *testing.T) {
+		t.Parallel()
+
+		store := utxostore.New(t.TempDir())
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   true,
+		})
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx2",
+			Vout:    0,
+			Amount:  2000,
+			Spent:   true,
+		})
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+			{TxID: "tx2", Vout: 0, Amount: 2000},
+		}
+
+		filtered := filterSpentBSVUTXOs(utxos, store)
+
+		assert.Empty(t, filtered)
+	})
+
+	t.Run("empty input returns empty slice", func(t *testing.T) {
+		t.Parallel()
+
+		store := utxostore.New(t.TempDir())
+
+		filtered := filterSpentBSVUTXOs([]chain.UTXO{}, store)
+
+		assert.Empty(t, filtered)
+	})
+
+	t.Run("distinguishes by vout", func(t *testing.T) {
+		t.Parallel()
+
+		store := utxostore.New(t.TempDir())
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  1000,
+			Spent:   true,
+		})
+		store.AddUTXO(&utxostore.StoredUTXO{
+			ChainID: chain.BSV,
+			TxID:    "tx1",
+			Vout:    1,
+			Amount:  2000,
+			Spent:   false,
+		})
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+			{TxID: "tx1", Vout: 1, Amount: 2000},
+		}
+
+		filtered := filterSpentBSVUTXOs(utxos, store)
+
+		require.Len(t, filtered, 1)
+		assert.Equal(t, uint32(1), filtered[0].Vout)
+	})
+}
+
+// TestMarkSpentBSVUTXOs tests that UTXOs are marked spent in the store after broadcast.
+func TestMarkSpentBSVUTXOs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("marks all UTXOs as spent and persists", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		store := utxostore.New(tmpDir)
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000, ScriptPubKey: "76a914...", Address: "addr1"},
+			{TxID: "tx2", Vout: 1, Amount: 2000, ScriptPubKey: "76a914...", Address: "addr2"},
+		}
+
+		cc := &CommandContext{Log: nil}
+		markSpentBSVUTXOs(cc, store, utxos, "broadcast-txid")
+
+		// Verify UTXOs are marked spent in memory
+		assert.True(t, store.IsSpent(chain.BSV, "tx1", 0))
+		assert.True(t, store.IsSpent(chain.BSV, "tx2", 1))
+
+		// Verify persisted to disk
+		store2 := utxostore.New(tmpDir)
+		require.NoError(t, store2.Load())
+		assert.True(t, store2.IsSpent(chain.BSV, "tx1", 0))
+		assert.True(t, store2.IsSpent(chain.BSV, "tx2", 1))
+
+		// Verify balance is zero (all spent)
+		assert.Equal(t, uint64(0), store2.GetBalance(chain.BSV))
+	})
+
+	t.Run("handles nil store gracefully", func(t *testing.T) {
+		t.Parallel()
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+		}
+
+		cc := &CommandContext{Log: nil}
+		assert.NotPanics(t, func() {
+			markSpentBSVUTXOs(cc, nil, utxos, "broadcast-txid")
+		})
+	})
+
+	t.Run("adds unknown UTXOs before marking spent", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		store := utxostore.New(tmpDir)
+		// Store is empty — UTXOs from API are not in the local store
+
+		utxos := []chain.UTXO{
+			{TxID: "api-tx1", Vout: 0, Amount: 5000, Address: "addr1"},
+		}
+
+		cc := &CommandContext{Log: nil}
+		markSpentBSVUTXOs(cc, store, utxos, "broadcast-txid")
+
+		// Should be added and marked spent
+		assert.True(t, store.IsSpent(chain.BSV, "api-tx1", 0))
+		assert.Equal(t, uint64(0), store.GetBalance(chain.BSV))
+	})
+
+	t.Run("handles empty UTXOs slice", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		store := utxostore.New(tmpDir)
+
+		cc := &CommandContext{Log: nil}
+		assert.NotPanics(t, func() {
+			markSpentBSVUTXOs(cc, store, []chain.UTXO{}, "broadcast-txid")
+		})
+	})
+
+	t.Run("logs error on save failure but does not panic", func(t *testing.T) {
+		t.Parallel()
+
+		// Use a path that will fail on save (directory doesn't allow write)
+		store := utxostore.New("/dev/null/invalid")
+
+		utxos := []chain.UTXO{
+			{TxID: "tx1", Vout: 0, Amount: 1000},
+		}
+
+		logger := &txTestLogWriter{}
+		cc := &CommandContext{Log: logger}
+
+		assert.NotPanics(t, func() {
+			markSpentBSVUTXOs(cc, store, utxos, "broadcast-txid")
+		})
+		assert.NotEmpty(t, logger.errorCalls, "should log an error on save failure")
 	})
 }

@@ -52,10 +52,8 @@ var receiveCmd = &cobra.Command{
 	Long: `Display a receiving address for your wallet.
 
 By default, shows the first unused address. Use --new to force generation
-of a new address even if the current one hasn't been used yet.
-
-Examples:
-  # Show next unused BSV receiving address
+of a new address even if the current one hasn't been used yet.`,
+	Example: `  # Show next unused BSV receiving address
   sigil receive --wallet main --chain bsv
 
   # Generate a new address with a label
@@ -77,6 +75,7 @@ Examples:
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	receiveCmd.GroupID = "wallet"
 	rootCmd.AddCommand(receiveCmd)
 
 	receiveCmd.Flags().StringVarP(&receiveWallet, "wallet", "w", "", "wallet name (required)")
@@ -89,6 +88,10 @@ func init() {
 	receiveCmd.Flags().BoolVar(&receiveAll, "all", false, "check all receiving addresses (use with --check)")
 
 	_ = receiveCmd.MarkFlagRequired("wallet")
+
+	// Declarative flag constraints (Cobra generates clear error messages)
+	receiveCmd.MarkFlagsMutuallyExclusive("check", "new")
+	receiveCmd.MarkFlagsMutuallyExclusive("address", "all")
 }
 
 //nolint:gocognit,gocyclo // CLI flow involves multiple validation and setup steps
@@ -96,12 +99,8 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
 
 	// Validate flag combinations
-	if receiveCheck && receiveNew {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			"--check and --new cannot be used together (a new address has no funds to check)",
-		)
-	}
+	// --check/--new and --address/--all mutual exclusivity is handled
+	// by Cobra's MarkFlagsMutuallyExclusive in init().
 	if receiveAddress != "" && !receiveCheck {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
@@ -112,12 +111,6 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			"--all requires --check",
-		)
-	}
-	if receiveAddress != "" && receiveAll {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			"--address and --all cannot be used together",
 		)
 	}
 

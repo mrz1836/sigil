@@ -19,7 +19,10 @@ import (
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage configuration",
-	Long:  `View and modify Sigil configuration settings.`,
+	Long: `View and modify Sigil configuration settings.
+
+Configuration is stored in ~/.sigil/config.yaml and controls network endpoints,
+output format, logging, and session behavior. Use dot notation for nested paths.`,
 }
 
 // configInitCmd initializes the configuration.
@@ -31,10 +34,8 @@ var configInitCmd = &cobra.Command{
 	Long: `Create a default configuration file at ~/.sigil/config.yaml.
 
 If a configuration file already exists, this command will not overwrite it
-unless --force is specified.
-
-Example:
-  sigil config init
+unless --force is specified.`,
+	Example: `  sigil config init
   sigil config init --force`,
 	RunE: runConfigInit,
 }
@@ -45,10 +46,8 @@ Example:
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show current configuration",
-	Long: `Display the current configuration settings.
-
-Example:
-  sigil config show
+	Long:  `Display the current configuration settings.`,
+	Example: `  sigil config show
   sigil config show -o json`,
 	RunE: runConfigShow,
 }
@@ -61,10 +60,8 @@ var configGetCmd = &cobra.Command{
 	Short: "Get a configuration value",
 	Long: `Get a specific configuration value by its path.
 
-The path uses dot notation to navigate the configuration tree.
-
-Examples:
-  sigil config get networks.eth.rpc
+The path uses dot notation to navigate the configuration tree.`,
+	Example: `  sigil config get networks.eth.rpc
   sigil config get output.default_format
   sigil config get logging.level`,
 	Args: cobra.ExactArgs(1),
@@ -80,10 +77,8 @@ var configSetCmd = &cobra.Command{
 	Long: `Set a specific configuration value by its path.
 
 The path uses dot notation to navigate the configuration tree.
-The configuration file will be updated immediately.
-
-Examples:
-  sigil config set networks.eth.rpc https://mainnet.infura.io/v3/YOUR_KEY
+The configuration file will be updated immediately.`,
+	Example: `  sigil config set networks.eth.rpc https://mainnet.infura.io/v3/YOUR_KEY
   sigil config set output.default_format json
   sigil config set logging.level debug`,
 	Args: cobra.ExactArgs(2),
@@ -95,6 +90,7 @@ var configForce bool
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	configCmd.GroupID = "config"
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configInitCmd)
 	configCmd.AddCommand(configShowCmd)

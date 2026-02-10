@@ -34,13 +34,11 @@ prompted for your password each time.`,
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
 var sessionStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show active sessions and remaining time",
-	Long: `Show all active authentication sessions and their remaining time until expiry.
-
-Example:
-  sigil session status`,
-	RunE: runSessionStatus,
+	Use:     "status",
+	Short:   "Show active sessions and remaining time",
+	Long:    `Show all active authentication sessions and their remaining time until expiry.`,
+	Example: `  sigil session status`,
+	RunE:    runSessionStatus,
 }
 
 // sessionLockCmd ends all sessions.
@@ -52,15 +50,14 @@ var sessionLockCmd = &cobra.Command{
 	Long: `End all active authentication sessions immediately.
 
 Use this when stepping away from your computer to ensure wallet
-credentials are not cached.
-
-Example:
-  sigil session lock`,
-	RunE: runSessionLock,
+credentials are not cached.`,
+	Example: `  sigil session lock`,
+	RunE:    runSessionLock,
 }
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	sessionCmd.GroupID = "security"
 	rootCmd.AddCommand(sessionCmd)
 	sessionCmd.AddCommand(sessionStatusCmd)
 	sessionCmd.AddCommand(sessionLockCmd)

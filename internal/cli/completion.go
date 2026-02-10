@@ -48,6 +48,10 @@ PowerShell:
   PS> sigil completion powershell > sigil.ps1
   # and source this file from your PowerShell profile.
 `,
+	Example: `  sigil completion bash
+  sigil completion zsh
+  sigil completion fish
+  sigil completion powershell`,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
@@ -68,5 +72,6 @@ PowerShell:
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	completionCmd.GroupID = "config"
 	rootCmd.AddCommand(completionCmd)
 }

@@ -28,7 +28,10 @@ var (
 var backupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Manage wallet backups",
-	Long:  `Create, verify, and restore encrypted wallet backups.`,
+	Long: `Create, verify, and restore encrypted wallet backups.
+
+Backups are encrypted with your wallet password and stored in ~/.sigil/backups/.
+Each backup includes the wallet seed and all metadata.`,
 }
 
 // backupCreateCmd creates a backup.
@@ -40,11 +43,9 @@ var backupCreateCmd = &cobra.Command{
 	Long: `Create an encrypted backup of a wallet.
 
 The backup file will be created in ~/.sigil/backups/ with a timestamped name.
-The backup includes the wallet seed and all metadata, encrypted with your password.
-
-Example:
-  sigil backup create --wallet main`,
-	RunE: runBackupCreate,
+The backup includes the wallet seed and all metadata, encrypted with your password.`,
+	Example: `  sigil backup create --wallet main`,
+	RunE:    runBackupCreate,
 }
 
 // backupVerifyCmd verifies a backup.
@@ -56,11 +57,9 @@ var backupVerifyCmd = &cobra.Command{
 	Long: `Verify the integrity of a backup file.
 
 This checks the backup structure and SHA256 checksum. Optionally tests
-decryption by providing your wallet password.
-
-Example:
-  sigil backup verify --input ~/.sigil/backups/main-2024-01-15.sigil`,
-	RunE: runBackupVerify,
+decryption by providing your wallet password.`,
+	Example: `  sigil backup verify --input ~/.sigil/backups/main-2024-01-15.sigil`,
+	RunE:    runBackupVerify,
 }
 
 // backupRestoreCmd restores a wallet from backup.
@@ -72,10 +71,8 @@ var backupRestoreCmd = &cobra.Command{
 	Long: `Restore a wallet from an encrypted backup file.
 
 You will need the password used when creating the backup.
-Optionally specify a new name for the restored wallet.
-
-Example:
-  sigil backup restore --input ~/.sigil/backups/main-2024-01-15.sigil
+Optionally specify a new name for the restored wallet.`,
+	Example: `  sigil backup restore --input ~/.sigil/backups/main-2024-01-15.sigil
   sigil backup restore --input backup.sigil --name restored_wallet`,
 	RunE: runBackupRestore,
 }
@@ -84,18 +81,17 @@ Example:
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
 var backupListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available backups",
-	Long: `List all backup files in the backups directory.
-
-Example:
-  sigil backup list`,
+	Use:     "list",
+	Short:   "List available backups",
+	Long:    `List all backup files in the backups directory.`,
+	Example: `  sigil backup list`,
 	Aliases: []string{"ls"},
 	RunE:    runBackupList,
 }
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	backupCmd.GroupID = "security"
 	rootCmd.AddCommand(backupCmd)
 	backupCmd.AddCommand(backupCreateCmd)
 	backupCmd.AddCommand(backupVerifyCmd)

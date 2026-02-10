@@ -43,7 +43,10 @@ var (
 var walletCmd = &cobra.Command{
 	Use:   "wallet",
 	Short: "Manage wallets",
-	Long:  `Create, restore, list, and manage HD wallets.`,
+	Long: `Create, restore, list, and manage HD wallets.
+
+Sigil uses BIP39 mnemonics and BIP32/BIP44 hierarchical deterministic key derivation.
+Wallets support multiple chains (BSV, ETH) from a single seed phrase.`,
 }
 
 // walletCreateCmd creates a new wallet.
@@ -55,10 +58,8 @@ var walletCreateCmd = &cobra.Command{
 	Long: `Create a new HD wallet with a BIP39 mnemonic phrase.
 
 The mnemonic will be displayed once - write it down and store it securely.
-You will be prompted for a password to encrypt the wallet file.
-
-Example:
-  sigil wallet create main
+You will be prompted for a password to encrypt the wallet file.`,
+	Example: `  sigil wallet create main
   sigil wallet create main --words 24
   sigil wallet create main --passphrase`,
 	Args: cobra.ExactArgs(1),
@@ -71,10 +72,8 @@ Example:
 var walletListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all wallets",
-	Long: `List all wallets in the sigil data directory.
-
-Example:
-  sigil wallet list
+	Long:  `List all wallets in the sigil data directory.`,
+	Example: `  sigil wallet list
   sigil wallet list -o json`,
 	Aliases: []string{"ls"},
 	RunE:    runWalletList,
@@ -88,12 +87,10 @@ var walletShowCmd = &cobra.Command{
 	Short: "Show wallet details",
 	Long: `Show details for a specific wallet including all derived addresses.
 
-You will be prompted for the wallet password to decrypt and display addresses.
-
-Example:
-  sigil wallet show main`,
-	Args: cobra.ExactArgs(1),
-	RunE: runWalletShow,
+You will be prompted for the wallet password to decrypt and display addresses.`,
+	Example: `  sigil wallet show main`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runWalletShow,
 }
 
 // walletRestoreCmd restores a wallet from a mnemonic, WIF, or hex key.
@@ -105,10 +102,8 @@ var walletRestoreCmd = &cobra.Command{
 	Long: `Restore a wallet from a BIP39 mnemonic phrase, WIF private key, or hex private key.
 
 The input format is automatically detected. You can provide the seed material
-via the --input flag or be guided through interactive prompts.
-
-Examples:
-  sigil wallet restore backup --input "abandon abandon ... about"
+via the --input flag or be guided through interactive prompts.`,
+	Example: `  sigil wallet restore backup --input "abandon abandon ... about"
   sigil wallet restore imported --input "5HueCGU8rMjxEXxiPuD5BDku..."
   sigil wallet restore backup  # Interactive mode`,
 	Args: cobra.ExactArgs(1),
@@ -117,6 +112,7 @@ Examples:
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	walletCmd.GroupID = "wallet"
 	rootCmd.AddCommand(walletCmd)
 	walletCmd.AddCommand(walletCreateCmd)
 	walletCmd.AddCommand(walletListCmd)

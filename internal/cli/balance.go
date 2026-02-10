@@ -41,7 +41,10 @@ var (
 var balanceCmd = &cobra.Command{
 	Use:   "balance",
 	Short: "Check balances",
-	Long:  `Check cryptocurrency balances across chains.`,
+	Long: `Check cryptocurrency balances across supported chains.
+
+Balances are cached locally and refreshed from the network on demand.
+Supports ETH, USDC (on Ethereum), and BSV.`,
 }
 
 // balanceShowCmd shows balances for a wallet.
@@ -54,10 +57,8 @@ var balanceShowCmd = &cobra.Command{
 
 Displays ETH, USDC (on Ethereum), and BSV balances for all addresses.
 Supports filtering by chain with the --chain flag.
-Use --refresh to bypass the cache and force a fresh fetch from the network.
-
-Example:
-  sigil balance show --wallet main
+Use --refresh to bypass the cache and force a fresh fetch from the network.`,
+	Example: `  sigil balance show --wallet main
   sigil balance show --wallet main --chain eth
   sigil balance show --wallet main --refresh
   sigil balance show --wallet main -o json`,
@@ -87,6 +88,7 @@ type BalanceShowResponse struct {
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	balanceCmd.GroupID = "wallet"
 	rootCmd.AddCommand(balanceCmd)
 	balanceCmd.AddCommand(balanceShowCmd)
 

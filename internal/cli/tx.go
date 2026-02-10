@@ -48,7 +48,10 @@ var (
 var txCmd = &cobra.Command{
 	Use:   "tx",
 	Short: "Manage transactions",
-	Long:  `Send transactions and manage transaction history.`,
+	Long: `Send cryptocurrency transactions across supported chains.
+
+Supports native ETH, ERC-20 tokens (USDC), and BSV.
+Use --amount all to sweep the entire balance.`,
 }
 
 // txSendCmd sends a transaction.
@@ -62,10 +65,8 @@ var txSendCmd = &cobra.Command{
 For Ethereum transactions, you can send native ETH or ERC-20 tokens like USDC.
 For BSV transactions, only native BSV is supported.
 
-Use --amount all to send the entire balance (fees are deducted automatically).
-
-Examples:
-  # Send ETH
+Use --amount all to send the entire balance (fees are deducted automatically).`,
+	Example: `  # Send ETH
   sigil tx send --wallet main --to 0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0 --amount 0.1 --chain eth
 
   # Send all ETH
@@ -84,6 +85,7 @@ Examples:
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	txCmd.GroupID = "wallet"
 	rootCmd.AddCommand(txCmd)
 	txCmd.AddCommand(txSendCmd)
 

@@ -55,10 +55,8 @@ Supported wallet schemes:
 
 Known limitations:
   - HandCash 2.0 uses proprietary non-exportable keys (cannot be imported)
-  - Centbee uses 4-digit PIN as BIP39 passphrase (use --passphrase flag)
-
-Examples:
-  sigil wallet discover --input "abandon abandon ... about"
+  - Centbee uses 4-digit PIN as BIP39 passphrase (use --passphrase flag)`,
+	Example: `  sigil wallet discover --input "abandon abandon ... about"
   sigil wallet discover --passphrase
   sigil wallet discover --gap 50
   sigil wallet discover -o json

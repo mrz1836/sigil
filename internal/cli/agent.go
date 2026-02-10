@@ -85,10 +85,8 @@ agents can be created for the same wallet with different policies.
 Amount format: use 'sat' suffix for satoshis (e.g., 50000sat),
 decimal BSV (e.g., 0.0005), or 0 for unlimited.
 ETH limits can be set explicitly with --max-per-tx-eth and
---max-daily-eth, or left at 0 for unlimited.
-
-Examples:
-  # BSV-only agent with spending limits
+--max-daily-eth, or left at 0 for unlimited.`,
+	Example: `  # BSV-only agent with spending limits
   sigil agent create --wallet main --chains bsv --max-per-tx 50000sat --max-daily 500000sat --expires 30d --label "payment-bot"
 
   # Multi-chain agent
@@ -111,10 +109,8 @@ var agentListCmd = &cobra.Command{
 	Short:   "List agent tokens for a wallet",
 	Long: `List all agent tokens for a wallet with their ID, label, allowed
 chains, expiration status, and remaining daily spending limit.
-Does not require the wallet password.
-
-Examples:
-  sigil agent list --wallet main
+Does not require the wallet password.`,
+	Example: `  sigil agent list --wallet main
   sigil agent list --wallet main -o json`,
 	RunE: runAgentList,
 }
@@ -127,10 +123,8 @@ var agentInfoCmd = &cobra.Command{
 	Short: "Show detailed agent token information",
 	Long: `Show full details for a specific agent token including policy,
 daily spending status, xpub for read-only access, and creation
-metadata. Does not require the wallet password.
-
-Examples:
-  sigil agent info --wallet main --id agt_7f3a2b
+metadata. Does not require the wallet password.`,
+	Example: `  sigil agent info --wallet main --id agt_7f3a2b
   sigil agent info --wallet main --id agt_7f3a2b -o json`,
 	RunE: runAgentInfo,
 }
@@ -144,10 +138,8 @@ var agentRevokeCmd = &cobra.Command{
 	Long: `Revoke one or all agent tokens for a wallet. Revoked tokens are
 immediately deleted and can no longer authenticate. This is
 irreversible — a new token must be created to restore access.
-Does not require the wallet password.
-
-Examples:
-  # Revoke a specific agent
+Does not require the wallet password.`,
+	Example: `  # Revoke a specific agent
   sigil agent revoke --wallet main --id agt_7f3a2b
 
   # Revoke all agents for a wallet
@@ -157,6 +149,7 @@ Examples:
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	agentCmd.GroupID = "security"
 	rootCmd.AddCommand(agentCmd)
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -194,6 +187,10 @@ func init() {
 	agentRevokeCmd.Flags().StringVar(&agentID, "id", "", "agent ID to revoke")
 	agentRevokeCmd.Flags().BoolVar(&agentRevokeAll, "all", false, "revoke all agents for this wallet")
 	_ = agentRevokeCmd.MarkFlagRequired("wallet")
+
+	// Declarative flag constraints for revoke
+	agentRevokeCmd.MarkFlagsOneRequired("id", "all")
+	agentRevokeCmd.MarkFlagsMutuallyExclusive("id", "all")
 }
 
 //nolint:gocognit,gocyclo // Agent creation involves multiple validation and setup steps
@@ -558,12 +555,8 @@ func runAgentRevoke(cmd *cobra.Command, _ []string) error {
 	cc := GetCmdContext(cmd)
 	w := cmd.OutOrStdout()
 
-	if !agentRevokeAll && agentID == "" {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidInput,
-			"specify --id to revoke a specific agent, or --all to revoke all agents",
-		)
-	}
+	// --id/--all one-required and mutual exclusivity is handled
+	// by Cobra's MarkFlagsOneRequired/MarkFlagsMutuallyExclusive in init().
 
 	agentStore := agent.NewFileStore(filepath.Join(cc.Cfg.GetHome(), "agents"))
 

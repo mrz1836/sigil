@@ -81,10 +81,8 @@ var rootCmd = &cobra.Command{
 	Long: `Sigil is a terminal-based multi-chain cryptocurrency wallet for power users.
 
 It supports HD wallet creation with BIP39 mnemonics, balance checking, and
-transactions across Ethereum (ETH/USDC) and Bitcoin SV (BSV) networks.
-
-Example:
-  sigil wallet create main --words 24
+transactions across Ethereum (ETH/USDC) and Bitcoin SV (BSV) networks.`,
+	Example: `  sigil wallet create main --words 24
   sigil balance show --wallet main
   sigil tx send --wallet main --to 0x... --amount 0.1 --chain eth`,
 	SilenceUsage:  true,
@@ -229,9 +227,10 @@ func cleanup() {
 //
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version information",
-	Long:  `Display the version, build commit, and build date.`,
+	Use:     "version",
+	Short:   "Show version information",
+	Long:    `Display the version, build commit, and build date.`,
+	Example: `  sigil version`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		v, c, d := resolvedBuildInfo(buildInfo)
 		if formatter != nil && formatter.Format() == output.FormatJSON {
@@ -250,6 +249,14 @@ var versionCmd = &cobra.Command{
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for flag registration
 func init() {
+	// Command groups for organized help output
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "wallet", Title: "Wallet Operations:"},
+		&cobra.Group{ID: "security", Title: "Security & Access:"},
+		&cobra.Group{ID: "config", Title: "Configuration:"},
+	)
+
+	versionCmd.GroupID = "config"
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.PersistentFlags().StringVar(&homeDir, "home", "", "sigil data directory (default: ~/.sigil)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "auto", "output format: text, json, auto")

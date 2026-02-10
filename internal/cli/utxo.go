@@ -33,7 +33,10 @@ var (
 var utxoCmd = &cobra.Command{
 	Use:   "utxo",
 	Short: "Manage UTXOs",
-	Long:  `List and manage unspent transaction outputs (UTXOs) for BSV wallets.`,
+	Long: `List and manage unspent transaction outputs (UTXOs) for BSV wallets.
+
+UTXOs are stored locally after scanning and used for transaction construction.
+Use 'utxo refresh' to re-scan from the network.`,
 }
 
 // utxoListCmd lists UTXOs for a wallet.
@@ -42,10 +45,8 @@ var utxoCmd = &cobra.Command{
 var utxoListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List UTXOs for a wallet",
-	Long: `List all unspent transaction outputs (UTXOs) for a BSV wallet address.
-
-Example:
-  sigil utxo list --wallet main
+	Long:  `List all unspent transaction outputs (UTXOs) for a BSV wallet address.`,
+	Example: `  sigil utxo list --wallet main
   sigil utxo list --wallet main -o json`,
 	RunE: runUTXOList,
 }
@@ -59,10 +60,8 @@ var utxoRefreshCmd = &cobra.Command{
 	Long: `Re-scan all known addresses and update stored UTXOs.
 New UTXOs are added; spent UTXOs are marked as spent.
 
-Use --address to refresh specific addresses instead of all.
-
-Example:
-  sigil utxo refresh --wallet main
+Use --address to refresh specific addresses instead of all.`,
+	Example: `  sigil utxo refresh --wallet main
   sigil utxo refresh --wallet main --address 1ABC...
   sigil utxo refresh --wallet main --address 1ABC... --address 1XYZ...`,
 	RunE: runUTXORefresh,
@@ -75,15 +74,14 @@ var utxoBalanceCmd = &cobra.Command{
 	Use:   "balance",
 	Short: "Show offline balance from stored UTXOs",
 	Long: `Display balance calculated from locally stored UTXOs.
-No network connection required after initial scan.
-
-Example:
-  sigil utxo balance --wallet main`,
-	RunE: runUTXOBalance,
+No network connection required after initial scan.`,
+	Example: `  sigil utxo balance --wallet main`,
+	RunE:    runUTXOBalance,
 }
 
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	utxoCmd.GroupID = "wallet"
 	rootCmd.AddCommand(utxoCmd)
 	utxoCmd.AddCommand(utxoListCmd)
 	utxoCmd.AddCommand(utxoRefreshCmd)

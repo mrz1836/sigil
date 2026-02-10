@@ -372,11 +372,15 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 
 	// Create BSV client
 	opts := &bsv.ClientOptions{
-		APIKey: cc.Cfg.GetBSVAPIKey(),
+		APIKey:      cc.Cfg.GetBSVAPIKey(),
+		Logger:      cc.Log,
+		FeeStrategy: bsv.FeeStrategy(cc.Cfg.GetBSVFeeStrategy()),
+		MinMiners:   cc.Cfg.GetBSVMinMiners(),
 	}
 	client := bsv.NewClient(ctx, opts)
 
 	sweepAll := isAmountAll(txAmount)
+	logTxDebug(cc, "bsv send: to=%s amount=%s sweep=%v", txTo, txAmount, sweepAll)
 
 	// Parse amount (skip for sweep — amount is calculated from balance minus fees)
 	var amount *big.Int
@@ -397,12 +401,15 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		// Use default if fee quote fails
 		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
 	}
+	logTxDebug(cc, "bsv send: fee rate=%d sat/KB source=%s", feeQuote.StandardRate, feeQuote.Source)
 
 	// Aggregate UTXOs from ALL wallet addresses for this chain
 	allUTXOs, utxoErr := aggregateBSVUTXOs(ctx, client, addresses)
 	if utxoErr != nil {
+		logTxError(cc, "bsv send: utxo aggregation failed: %v", utxoErr)
 		return fmt.Errorf("listing UTXOs: %w", utxoErr)
 	}
+	logTxDebug(cc, "bsv send: %d UTXOs from %d addresses", len(allUTXOs), len(addresses))
 
 	var displayAmount string
 	var estimatedFee uint64
@@ -469,6 +476,7 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		estimatedFee = bsv.EstimateFeeForTx(len(selected), 2, feeQuote.StandardRate)
 		displayAmount = txAmount
 	}
+	logTxDebug(cc, "bsv send: using %d UTXOs, estimated fee=%d sat", len(sendUTXOs), estimatedFee)
 
 	// Display transaction details and confirm
 	if !txConfirm {
@@ -518,8 +526,10 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	// Send transaction
 	result, err := client.Send(ctx, req)
 	if err != nil {
+		logTxError(cc, "bsv send failed: %v", err)
 		return fmt.Errorf("sending transaction: %w", err)
 	}
+	logTxDebug(cc, "bsv send: success hash=%s", result.Hash)
 
 	// Invalidate balance cache for all addresses that contributed UTXOs
 	involvedAddrs := uniqueUTXOAddrs(sendUTXOs)
@@ -865,6 +875,18 @@ func buildPostSendEntry(bc *cache.BalanceCache, chainID chain.ID, address, token
 }
 
 func logCacheError(cc *CommandContext, format string, args ...any) {
+	if cc.Log != nil {
+		cc.Log.Error(format, args...)
+	}
+}
+
+func logTxDebug(cc *CommandContext, format string, args ...any) {
+	if cc.Log != nil {
+		cc.Log.Debug(format, args...)
+	}
+}
+
+func logTxError(cc *CommandContext, format string, args ...any) {
 	if cc.Log != nil {
 		cc.Log.Error(format, args...)
 	}

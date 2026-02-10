@@ -36,6 +36,12 @@ type ConfigProvider interface {
 	// GetBSVBroadcast returns the BSV broadcast provider or custom URL.
 	GetBSVBroadcast() string
 
+	// GetBSVFeeStrategy returns the BSV fee strategy (economy, normal, priority).
+	GetBSVFeeStrategy() string
+
+	// GetBSVMinMiners returns the minimum number of miners for the normal fee strategy.
+	GetBSVMinMiners() int
+
 	// GetLoggingLevel returns the configured logging level.
 	GetLoggingLevel() string
 

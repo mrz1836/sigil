@@ -73,12 +73,12 @@ func TestFormatDecimalAmount(t *testing.T) {
 		decimals int
 		want     string
 	}{
-		{"1.5 ETH", big.NewInt(0).SetUint64(1500000000000000000), 18, "1.500000000000000000"},
-		{"0.1 BTC", big.NewInt(10000000), 8, "0.10000000"},
-		{"nil amount", nil, 18, "0.000000000000000000"},
-		{"zero", big.NewInt(0), 8, "0.00000000"},
+		{"1.5 ETH", big.NewInt(0).SetUint64(1500000000000000000), 18, "1.5"},
+		{"0.1 BTC", big.NewInt(10000000), 8, "0.1"},
+		{"nil amount", nil, 18, "0"},
+		{"zero", big.NewInt(0), 8, "0.0"},
 		{"small value", big.NewInt(1), 18, "0.000000000000000001"},
-		{"large value", mustBigInt("123456789012345678901234567890"), 18, "123456789012.345678901234567890"},
+		{"large value", mustBigInt("123456789012345678901234567890"), 18, "123456789012.34567890123456789"},
 		{"no decimals", big.NewInt(100), 0, "100."},
 	}
 
@@ -87,6 +87,32 @@ func TestFormatDecimalAmount(t *testing.T) {
 			got := FormatDecimalAmount(tt.amount, tt.decimals)
 			if got != tt.want {
 				t.Errorf("FormatDecimalAmount() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSignedDecimalAmount(t *testing.T) {
+	tests := []struct {
+		name     string
+		amount   *big.Int
+		decimals int
+		want     string
+	}{
+		{"positive amount", big.NewInt(1500000000000000000), 18, "1.5"},
+		{"negative amount", big.NewInt(-1500000000000000000), 18, "-1.5"},
+		{"zero", big.NewInt(0), 8, "0.0"},
+		{"nil", nil, 18, "0"},
+		{"positive delegates to FormatDecimalAmount", big.NewInt(10000000), 8, "0.1"},
+		{"negative with trailing zeros", big.NewInt(-10000000), 8, "-0.1"},
+		{"small negative", big.NewInt(-1), 18, "-0.000000000000000001"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatSignedDecimalAmount(tt.amount, tt.decimals)
+			if got != tt.want {
+				t.Errorf("FormatSignedDecimalAmount() = %q, want %q", got, tt.want)
 			}
 		})
 	}

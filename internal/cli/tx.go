@@ -333,7 +333,7 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 	displayAmount := txAmount
 	if sweepAll {
 		if tokenAddress != "" {
-			displayAmount = eth.FormatBalanceAmount(amount, decimals) + " (sweep all)"
+			displayAmount = chain.FormatDecimalAmount(amount, decimals) + " (sweep all)"
 		} else {
 			displayAmount = client.FormatAmount(amount) + " (sweep all)"
 		}
@@ -822,8 +822,8 @@ func checkETHBalance(ctx context.Context, client *eth.Client, address string, am
 			return sigilerr.WithDetails(
 				sigilerr.ErrInsufficientFunds,
 				map[string]string{
-					"required":  eth.FormatBalanceAmount(amount, eth.USDCDecimals),
-					"available": eth.FormatBalanceAmount(tokenBalance, eth.USDCDecimals),
+					"required":  chain.FormatDecimalAmount(amount, eth.USDCDecimals),
+					"available": chain.FormatDecimalAmount(tokenBalance, eth.USDCDecimals),
 					"symbol":    "USDC",
 				},
 			)
@@ -866,7 +866,7 @@ func displayTxDetails(cmd *cobra.Command, from, to, amount, token string, estima
 
 	out(w, "  Gas Limit: %d\n", estimate.GasLimit)
 	out(w, "  Gas Price: %s\n", eth.FormatGasPrice(estimate.GasPrice))
-	out(w, "  Est. Fee:  %s ETH\n", eth.FormatBalanceAmount(estimate.Total, 18))
+	out(w, "  Est. Fee:  %s ETH\n", chain.FormatDecimalAmount(estimate.Total, 18))
 
 	outln(w)
 	outln(w, "═══════════════════════════════════════════════════════════════")

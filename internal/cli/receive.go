@@ -12,7 +12,6 @@ import (
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
-	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/utxostore"
@@ -550,7 +549,7 @@ func runReceiveCheckAllETH(ctx context.Context, w io.Writer, cmdCtx *CommandCont
 
 		results = append(results, ethCheckResult{
 			Addr:       addr,
-			ETHBalance: eth.FormatBalanceAmount(balance.Amount, balance.Decimals),
+			ETHBalance: chain.FormatDecimalAmount(balance.Amount, balance.Decimals),
 		})
 	}
 
@@ -590,7 +589,7 @@ func runReceiveCheckSingleETH(ctx context.Context, w io.Writer, cmdCtx *CommandC
 	out(w, "  Path:    %s\n", addr.Path)
 	out(w, "  Index:   %d\n", addr.Index)
 	outln(w)
-	out(w, "  Balance: %s ETH\n", eth.FormatBalanceAmount(balance.Amount, balance.Decimals))
+	out(w, "  Balance: %s ETH\n", chain.FormatDecimalAmount(balance.Amount, balance.Decimals))
 	outln(w)
 	outln(w, "View on Etherscan:")
 	out(w, "  https://etherscan.io/address/%s\n", addr.Address)

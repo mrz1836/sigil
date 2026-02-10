@@ -479,7 +479,7 @@ func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCa
 	ethEntry := cache.BalanceCacheEntry{
 		Chain:    chain.ETH,
 		Address:  address,
-		Balance:  eth.FormatBalanceAmount(ethBalance.Amount, ethBalance.Decimals),
+		Balance:  chain.FormatDecimalAmount(ethBalance.Amount, ethBalance.Decimals),
 		Symbol:   ethBalance.Symbol,
 		Decimals: ethBalance.Decimals,
 	}
@@ -492,7 +492,7 @@ func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCa
 		usdcEntry := cache.BalanceCacheEntry{
 			Chain:    chain.ETH,
 			Address:  address,
-			Balance:  eth.FormatBalanceAmount(usdcBalance.Amount, usdcBalance.Decimals),
+			Balance:  chain.FormatDecimalAmount(usdcBalance.Amount, usdcBalance.Decimals),
 			Symbol:   usdcBalance.Symbol,
 			Token:    usdcBalance.Token,
 			Decimals: usdcBalance.Decimals,
@@ -539,14 +539,14 @@ func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *c
 	// Format unconfirmed (only set if non-zero)
 	var ethUnconfirmedStr string
 	if ethBalance.Unconfirmed != nil && ethBalance.Unconfirmed.Sign() != 0 {
-		ethUnconfirmedStr = eth.FormatSignedBalanceAmount(ethBalance.Unconfirmed, ethBalance.Decimals)
+		ethUnconfirmedStr = chain.FormatSignedDecimalAmount(ethBalance.Unconfirmed, ethBalance.Decimals)
 	}
 
 	// Store in cache
 	ethEntry := cache.BalanceCacheEntry{
 		Chain:       chain.ETH,
 		Address:     address,
-		Balance:     eth.FormatBalanceAmount(ethBalance.Amount, ethBalance.Decimals),
+		Balance:     chain.FormatDecimalAmount(ethBalance.Amount, ethBalance.Decimals),
 		Unconfirmed: ethUnconfirmedStr,
 		Symbol:      ethBalance.Symbol,
 		Decimals:    ethBalance.Decimals,
@@ -560,7 +560,7 @@ func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *c
 		usdcEntry := cache.BalanceCacheEntry{
 			Chain:    chain.ETH,
 			Address:  address,
-			Balance:  eth.FormatBalanceAmount(usdcBalance.Amount, usdcBalance.Decimals),
+			Balance:  chain.FormatDecimalAmount(usdcBalance.Amount, usdcBalance.Decimals),
 			Symbol:   usdcBalance.Symbol,
 			Token:    usdcBalance.Token,
 			Decimals: usdcBalance.Decimals,
@@ -636,14 +636,14 @@ func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.B
 	// Format unconfirmed (only set if non-zero)
 	var unconfirmedStr string
 	if bsvBalance.Unconfirmed != nil && bsvBalance.Unconfirmed.Sign() != 0 {
-		unconfirmedStr = bsv.FormatSignedBalanceAmount(bsvBalance.Unconfirmed, bsvBalance.Decimals)
+		unconfirmedStr = chain.FormatSignedDecimalAmount(bsvBalance.Unconfirmed, bsvBalance.Decimals)
 	}
 
 	// Store in cache
 	entry := cache.BalanceCacheEntry{
 		Chain:       chain.BSV,
 		Address:     address,
-		Balance:     bsv.FormatBalanceAmount(bsvBalance.Amount, bsvBalance.Decimals),
+		Balance:     chain.FormatDecimalAmount(bsvBalance.Amount, bsvBalance.Decimals),
 		Unconfirmed: unconfirmedStr,
 		Symbol:      bsvBalance.Symbol,
 		Decimals:    bsvBalance.Decimals,

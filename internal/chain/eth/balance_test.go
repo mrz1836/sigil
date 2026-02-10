@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
-func TestFormatBalanceAmount(t *testing.T) {
+func TestFormatDecimalAmount(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -105,13 +107,13 @@ func TestFormatBalanceAmount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := FormatBalanceAmount(tt.amount, tt.decimals)
+			result := chain.FormatDecimalAmount(tt.amount, tt.decimals)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestFormatSignedBalanceAmount(t *testing.T) {
+func TestFormatSignedDecimalAmount(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -133,7 +135,7 @@ func TestFormatSignedBalanceAmount(t *testing.T) {
 			expected: "0.0",
 		},
 		{
-			name:     "positive delegates to FormatBalanceAmount",
+			name:     "positive delegates to chain.FormatDecimalAmount",
 			amount:   big.NewInt(1_000_000_000_000_000_000),
 			decimals: 18,
 			expected: "1.0",
@@ -161,7 +163,7 @@ func TestFormatSignedBalanceAmount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := FormatSignedBalanceAmount(tt.amount, tt.decimals)
+			result := chain.FormatSignedDecimalAmount(tt.amount, tt.decimals)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

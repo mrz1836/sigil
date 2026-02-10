@@ -77,15 +77,13 @@ func AmountToBigInt(amount uint64) *big.Int {
 }
 
 // FormatDecimalAmount converts a big.Int to a human-readable string with the given decimal places.
-// For example, 1500000000000000000 with 18 decimals returns "1.500000000000000000".
+// Trailing zeros after the decimal point are removed.
+// For example, 1500000000000000000 with 18 decimals returns "1.5".
 func FormatDecimalAmount(amount *big.Int, decimalPlaces int) string {
 	if amount == nil {
-		// Build zero string with proper decimal places
-		zeros := strings.Repeat("0", decimalPlaces)
-		return "0." + zeros
+		return "0"
 	}
 
-	// Convert to string with all digits
 	str := amount.String()
 
 	// Pad with leading zeros if necessary
@@ -95,5 +93,28 @@ func FormatDecimalAmount(amount *big.Int, decimalPlaces int) string {
 
 	// Insert decimal point
 	decimalPos := len(str) - decimalPlaces
-	return str[:decimalPos] + "." + str[decimalPos:]
+
+	// Trim trailing zeros after decimal point
+	result := str[:decimalPos] + "." + str[decimalPos:]
+
+	// Remove unnecessary trailing zeros
+	for len(result) > 1 && result[len(result)-1] == '0' && result[len(result)-2] != '.' {
+		result = result[:len(result)-1]
+	}
+
+	return result
+}
+
+// FormatSignedDecimalAmount formats a possibly-negative amount with the correct decimals.
+// For negative values, it formats the absolute value then prepends "-".
+// Trailing zeros after the decimal point are removed.
+func FormatSignedDecimalAmount(amount *big.Int, decimalPlaces int) string {
+	if amount == nil {
+		return "0"
+	}
+	if amount.Sign() >= 0 {
+		return FormatDecimalAmount(amount, decimalPlaces)
+	}
+	abs := new(big.Int).Abs(amount)
+	return "-" + FormatDecimalAmount(abs, decimalPlaces)
 }

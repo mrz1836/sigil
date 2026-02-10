@@ -58,6 +58,8 @@ func Defaults() *Config {
 			FallbackSatsPerByte: 1,
 			MaxSatsPerByte:      100,
 			ETHGasStrategy:      "medium",
+			BSVFeeStrategy:      "normal",
+			BSVMinMiners:        3,
 		},
 		Derivation: DerivationConfig{
 			DefaultAccount: 0,

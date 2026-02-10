@@ -488,6 +488,38 @@ func TestConfig_GetETHEtherscanAPIKey(t *testing.T) {
 	assert.Equal(t, "my-key", cfg.GetETHEtherscanAPIKey())
 }
 
+func TestApplyEnvironment_WOCAPIKeyFallback(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-env-key")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "woc-env-key", cfg.Networks.BSV.APIKey)
+}
+
+func TestApplyEnvironment_WOCAPIKeyFallback_Trimmed(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("WHATS_ON_CHAIN_API_KEY", "  woc-env-key  ")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "woc-env-key", cfg.Networks.BSV.APIKey)
+}
+
+func TestApplyEnvironment_SigilBSVAPIKeyTakesPrecedence(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_BSV_API_KEY", "sigil-key")
+	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-key")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "sigil-key", cfg.Networks.BSV.APIKey)
+}
+
+func TestApplyEnvironment_WOCAPIKeyNotUsedWhenSigilKeySet(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Networks.BSV.APIKey = "config-file-key"
+	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-key")
+	config.ApplyEnvironment(cfg)
+	// Config file key should remain since SIGIL_BSV_API_KEY is not set
+	// but the config already has a key, so WOC fallback should not override it
+	assert.Equal(t, "config-file-key", cfg.Networks.BSV.APIKey)
+}
+
 func TestApplyEnvironment_EtherscanAPIKey(t *testing.T) {
 	cfg := config.Defaults()
 	t.Setenv("ETHERSCAN_API_KEY", "env-key")
@@ -530,6 +562,100 @@ func TestApplyEnvironment_ETHProvider_Invalid(t *testing.T) {
 	config.ApplyEnvironment(cfg)
 	// Should not change from default since "invalid" is not "rpc" or "etherscan"
 	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
+}
+
+func TestDefaults_BSVFeeStrategy(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
+}
+
+func TestDefaults_BSVMinMiners(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	assert.Equal(t, 3, cfg.Fees.BSVMinMiners)
+}
+
+func TestLoadSave_RoundTrip_WithFeeStrategy(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := config.Defaults()
+	cfg.Fees.BSVFeeStrategy = "priority"
+	cfg.Fees.BSVMinMiners = 5
+
+	err := config.Save(cfg, path)
+	require.NoError(t, err)
+
+	loaded, err := config.Load(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, "priority", loaded.Fees.BSVFeeStrategy)
+	assert.Equal(t, 5, loaded.Fees.BSVMinMiners)
+}
+
+func TestApplyEnvironment_BSVFeeStrategy(t *testing.T) {
+	tests := []struct {
+		value    string
+		expected string
+	}{
+		{"economy", "economy"},
+		{"normal", "normal"},
+		{"priority", "priority"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			cfg := config.Defaults()
+			t.Setenv("SIGIL_BSV_FEE_STRATEGY", tt.value)
+			config.ApplyEnvironment(cfg)
+			assert.Equal(t, tt.expected, cfg.Fees.BSVFeeStrategy)
+		})
+	}
+}
+
+func TestApplyEnvironment_BSVFeeStrategy_CaseInsensitive(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_BSV_FEE_STRATEGY", "NORMAL")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
+}
+
+func TestApplyEnvironment_BSVFeeStrategy_Invalid(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_BSV_FEE_STRATEGY", "invalid")
+	config.ApplyEnvironment(cfg)
+	// Should not change from default since "invalid" is not a valid strategy
+	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
+}
+
+func TestApplyEnvironment_BSVMinMiners(t *testing.T) {
+	cfg := config.Defaults()
+	t.Setenv("SIGIL_BSV_MIN_MINERS", "5")
+	config.ApplyEnvironment(cfg)
+	assert.Equal(t, 5, cfg.Fees.BSVMinMiners)
+}
+
+func TestApplyEnvironment_BSVMinMiners_InvalidValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected int
+	}{
+		{"zero", "0", 3},
+		{"negative", "-5", 3},
+		{"non-numeric", "abc", 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Defaults()
+			t.Setenv("SIGIL_BSV_MIN_MINERS", tt.value)
+			config.ApplyEnvironment(cfg)
+			assert.Equal(t, tt.expected, cfg.Fees.BSVMinMiners)
+		})
+	}
 }
 
 func TestLoadSave_RoundTrip_WithEtherscan(t *testing.T) {

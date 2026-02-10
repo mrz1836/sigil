@@ -13,13 +13,16 @@ const (
 	EnvHome            = "SIGIL_HOME"
 	EnvETHRPC          = "SIGIL_ETH_RPC"
 	EnvETHProvider     = "SIGIL_ETH_PROVIDER"
-	EnvEtherscanAPIKey = "ETHERSCAN_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
-	EnvBSVAPIKey       = "SIGIL_BSV_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
+	EnvEtherscanAPIKey = "ETHERSCAN_API_KEY"      // #nosec G101 -- false positive, this is a const name not a credential
+	EnvBSVAPIKey       = "SIGIL_BSV_API_KEY"      // #nosec G101 -- false positive, this is a const name not a credential
+	EnvWOCAPIKey       = "WHATS_ON_CHAIN_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
 	EnvOutputFormat    = "SIGIL_OUTPUT_FORMAT"
 	EnvVerbose         = "SIGIL_VERBOSE"
 	EnvLogLevel        = "SIGIL_LOG_LEVEL"
 	EnvNoColor         = "NO_COLOR"
 	EnvSessionTTL      = "SIGIL_SESSION_TTL"
+	EnvBSVFeeStrategy  = "SIGIL_BSV_FEE_STRATEGY"
+	EnvBSVMinMiners    = "SIGIL_BSV_MIN_MINERS"
 )
 
 // ApplyEnvironment applies environment variable overrides to the configuration.
@@ -47,6 +50,28 @@ func ApplyEnvironment(cfg *Config) {
 
 	if v := os.Getenv(EnvBSVAPIKey); v != "" {
 		cfg.Networks.BSV.APIKey = v
+	}
+
+	// SIGIL_BSV_FEE_STRATEGY overrides fee strategy (silently ignore invalid values)
+	if v := os.Getenv(EnvBSVFeeStrategy); v != "" {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "economy" || v == "normal" || v == "priority" {
+			cfg.Fees.BSVFeeStrategy = v
+		}
+	}
+
+	// SIGIL_BSV_MIN_MINERS overrides minimum miners for normal strategy
+	if v := os.Getenv(EnvBSVMinMiners); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Fees.BSVMinMiners = n
+		}
+	}
+
+	// Fallback: accept the standard WhatsOnChain env var if sigil-specific one is not set
+	if cfg.Networks.BSV.APIKey == "" {
+		if v := os.Getenv(EnvWOCAPIKey); v != "" {
+			cfg.Networks.BSV.APIKey = strings.TrimSpace(v)
+		}
 	}
 
 	if v := os.Getenv(EnvOutputFormat); v != "" {

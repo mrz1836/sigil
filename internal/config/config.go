@@ -80,6 +80,8 @@ type FeesConfig struct {
 	FallbackSatsPerByte int    `yaml:"fallback_sats_per_byte"`
 	MaxSatsPerByte      int    `yaml:"max_sats_per_byte"`
 	ETHGasStrategy      string `yaml:"eth_gas_strategy"`
+	BSVFeeStrategy      string `yaml:"bsv_fee_strategy"`
+	BSVMinMiners        int    `yaml:"bsv_min_miners"`
 }
 
 // DerivationConfig defines key derivation settings.
@@ -171,6 +173,16 @@ func (c *Config) GetBSVAPIKey() string {
 // GetBSVBroadcast returns the BSV broadcast provider or custom URL.
 func (c *Config) GetBSVBroadcast() string {
 	return c.Networks.BSV.Broadcast
+}
+
+// GetBSVFeeStrategy returns the BSV fee strategy (economy, normal, priority).
+func (c *Config) GetBSVFeeStrategy() string {
+	return c.Fees.BSVFeeStrategy
+}
+
+// GetBSVMinMiners returns the minimum number of miners for the normal fee strategy.
+func (c *Config) GetBSVMinMiners() int {
+	return c.Fees.BSVMinMiners
 }
 
 // GetLoggingLevel returns the configured logging level.

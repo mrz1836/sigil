@@ -554,3 +554,214 @@ func TestFormatSignedDecimalAmount(t *testing.T) {
 		})
 	}
 }
+
+func TestGetBulkNativeBalance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("fetches balances for multiple addresses", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			bulkConfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: &whatsonchain.AddressBalance{Confirmed: 100000000}, // 1 BSV
+					},
+					{
+						Address: "1XYZ",
+						Balance: &whatsonchain.AddressBalance{Confirmed: 50000000}, // 0.5 BSV
+					},
+				}, nil
+			},
+			bulkUnconfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: &whatsonchain.AddressBalance{Unconfirmed: 10000000}, // 0.1 BSV
+					},
+					{
+						Address: "1XYZ",
+						Balance: &whatsonchain.AddressBalance{Unconfirmed: 0},
+					},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		addresses := []string{"1ABC", "1XYZ"}
+		results, err := client.GetBulkNativeBalance(ctx, addresses)
+		require.NoError(t, err)
+
+		// Check that both addresses were returned
+		assert.Len(t, results, 2)
+
+		// Check first address
+		bal1, ok := results["1ABC"]
+		require.True(t, ok, "expected result for 1ABC")
+		assert.Equal(t, big.NewInt(100000000), bal1.Amount)
+		assert.Equal(t, big.NewInt(10000000), bal1.Unconfirmed)
+		assert.Equal(t, "BSV", bal1.Symbol)
+		assert.Equal(t, 8, bal1.Decimals)
+
+		// Check second address
+		bal2, ok := results["1XYZ"]
+		require.True(t, ok, "expected result for 1XYZ")
+		assert.Equal(t, big.NewInt(50000000), bal2.Amount)
+		assert.Nil(t, bal2.Unconfirmed) // Should be nil since unconfirmed is 0
+	})
+
+	t.Run("handles empty address list", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{}
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		results, err := client.GetBulkNativeBalance(ctx, []string{})
+		require.NoError(t, err)
+		assert.Empty(t, results)
+	})
+
+	t.Run("skips addresses with nil balance for fallback", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			bulkConfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: nil, // Nil balance
+					},
+				}, nil
+			},
+			bulkUnconfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: nil,
+					},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		results, err := client.GetBulkNativeBalance(ctx, []string{"1ABC"})
+		require.NoError(t, err)
+
+		// NEW EXPECTED BEHAVIOR: Address should NOT be in results
+		// This allows fetcher.go fallback logic to kick in
+		_, ok := results["1ABC"]
+		require.False(t, ok, "Address with nil Balance should not be in results to trigger fallback")
+	})
+
+	t.Run("handles mixed nil and valid balances", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			bulkConfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: &whatsonchain.AddressBalance{Confirmed: 100000000}, // Valid - 1 BSV
+					},
+					{
+						Address: "1XYZ",
+						Balance: nil, // Nil - should trigger fallback
+					},
+				}, nil
+			},
+			bulkUnconfirmedFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				return whatsonchain.AddressBalances{
+					{
+						Address: "1ABC",
+						Balance: &whatsonchain.AddressBalance{Unconfirmed: 0},
+					},
+					{
+						Address: "1XYZ",
+						Balance: nil,
+					},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		results, err := client.GetBulkNativeBalance(ctx, []string{"1ABC", "1XYZ"})
+		require.NoError(t, err)
+
+		// Valid address should be present
+		bal1, ok := results["1ABC"]
+		require.True(t, ok, "Address with valid Balance should be in results")
+		assert.Equal(t, big.NewInt(100000000), bal1.Amount)
+		assert.Equal(t, "BSV", bal1.Symbol)
+		assert.Equal(t, 8, bal1.Decimals)
+
+		// Nil balance address should be absent (triggers fallback in fetcher)
+		_, ok = results["1XYZ"]
+		require.False(t, ok, "Address with nil Balance should not be in bulk results")
+	})
+
+	t.Run("handles large batches (more than 20 addresses)", func(t *testing.T) {
+		t.Parallel()
+
+		// Create 30 test addresses (will be split into 2 batches of 20 and 10)
+		addresses := make([]string, 30)
+		for i := 0; i < 30; i++ {
+			addresses[i] = string(rune('A' + i))
+		}
+
+		mock := &mockWOCClient{
+			bulkConfirmedFunc: func(_ context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				results := make(whatsonchain.AddressBalances, len(list.Addresses))
+				for i, addr := range list.Addresses {
+					results[i] = &whatsonchain.AddressBalanceRecord{
+						Address: addr,
+						Balance: &whatsonchain.AddressBalance{Confirmed: int64((i + 1) * 1000000)},
+					}
+				}
+				return results, nil
+			},
+			bulkUnconfirmedFunc: func(_ context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error) {
+				results := make(whatsonchain.AddressBalances, len(list.Addresses))
+				for i, addr := range list.Addresses {
+					results[i] = &whatsonchain.AddressBalanceRecord{
+						Address: addr,
+						Balance: &whatsonchain.AddressBalance{Unconfirmed: 0},
+					}
+				}
+				return results, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{WOCClient: mock})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		results, err := client.GetBulkNativeBalance(ctx, addresses)
+		require.NoError(t, err)
+
+		// All 30 addresses should be present
+		assert.Len(t, results, 30)
+
+		// Verify all addresses are present
+		for _, addr := range addresses {
+			_, ok := results[addr]
+			assert.True(t, ok, "missing result for address %s", addr)
+		}
+	})
+}

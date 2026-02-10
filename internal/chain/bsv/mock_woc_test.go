@@ -8,12 +8,16 @@ import (
 
 // mockWOCClient implements WOCClient for testing.
 type mockWOCClient struct {
-	balanceFunc         func(ctx context.Context, address string) (*whatsonchain.AddressBalance, error)
-	utxoFunc            func(ctx context.Context, address string) (whatsonchain.AddressHistory, error)
-	feeFunc             func(ctx context.Context, from, to int64) ([]*whatsonchain.MinerFeeStats, error)
-	broadcastFunc       func(ctx context.Context, txHex string) (string, error)
-	bulkConfirmedFunc   func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
-	bulkUnconfirmedFunc func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
+	balanceFunc              func(ctx context.Context, address string) (*whatsonchain.AddressBalance, error)
+	utxoFunc                 func(ctx context.Context, address string) (whatsonchain.AddressHistory, error)
+	feeFunc                  func(ctx context.Context, from, to int64) ([]*whatsonchain.MinerFeeStats, error)
+	broadcastFunc            func(ctx context.Context, txHex string) (string, error)
+	bulkConfirmedFunc        func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
+	bulkUnconfirmedFunc      func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
+	bulkHistoryFunc          func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error)
+	bulkConfirmedUTXOsFunc   func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error)
+	bulkUnconfirmedUTXOsFunc func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error)
+	bulkSpentOutputsFunc     func(ctx context.Context, req *whatsonchain.BulkSpentOutputRequest) (whatsonchain.BulkSpentOutputResponse, error)
 }
 
 func (m *mockWOCClient) AddressBalance(ctx context.Context, address string) (*whatsonchain.AddressBalance, error) {
@@ -56,6 +60,34 @@ func (m *mockWOCClient) BulkAddressUnconfirmedBalance(ctx context.Context, list 
 		return m.bulkUnconfirmedFunc(ctx, list)
 	}
 	return whatsonchain.AddressBalances{}, nil
+}
+
+func (m *mockWOCClient) BulkAddressHistory(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error) {
+	if m.bulkHistoryFunc != nil {
+		return m.bulkHistoryFunc(ctx, list)
+	}
+	return whatsonchain.BulkAddressHistoryResponse{}, nil
+}
+
+func (m *mockWOCClient) BulkAddressConfirmedUTXOs(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error) {
+	if m.bulkConfirmedUTXOsFunc != nil {
+		return m.bulkConfirmedUTXOsFunc(ctx, list)
+	}
+	return whatsonchain.BulkUnspentResponse{}, nil
+}
+
+func (m *mockWOCClient) BulkAddressUnconfirmedUTXOs(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error) {
+	if m.bulkUnconfirmedUTXOsFunc != nil {
+		return m.bulkUnconfirmedUTXOsFunc(ctx, list)
+	}
+	return whatsonchain.BulkUnspentResponse{}, nil
+}
+
+func (m *mockWOCClient) BulkSpentOutputs(ctx context.Context, req *whatsonchain.BulkSpentOutputRequest) (whatsonchain.BulkSpentOutputResponse, error) {
+	if m.bulkSpentOutputsFunc != nil {
+		return m.bulkSpentOutputsFunc(ctx, req)
+	}
+	return whatsonchain.BulkSpentOutputResponse{}, nil
 }
 
 // toHistoryRecords converts a slice of UTXO to whatsonchain.AddressHistory for test mocks.

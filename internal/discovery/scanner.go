@@ -13,6 +13,28 @@ type Scanner struct {
 	client  ChainClient
 	deriver KeyDeriver
 	opts    *Options
+	bulkOps BulkOperations // Optional bulk operations for efficiency
+}
+
+// BulkOperations defines the interface for bulk blockchain operations.
+type BulkOperations interface {
+	BulkAddressActivityCheck(ctx context.Context, addresses []string) ([]AddressActivity, error)
+	BulkAddressUTXOFetch(ctx context.Context, addresses []string) ([]BulkUTXOResult, error)
+}
+
+// AddressActivity represents activity status for an address (from bulk operations).
+type AddressActivity struct {
+	Address    string
+	HasHistory bool
+	Error      error
+}
+
+// BulkUTXOResult represents UTXOs for an address (from bulk operations).
+type BulkUTXOResult struct {
+	Address          string
+	ConfirmedUTXOs   []UTXO
+	UnconfirmedUTXOs []UTXO
+	Error            error
 }
 
 // NewScanner creates a new discovery scanner.
@@ -24,6 +46,19 @@ func NewScanner(client ChainClient, deriver KeyDeriver, opts *Options) *Scanner 
 		client:  client,
 		deriver: deriver,
 		opts:    opts,
+	}
+}
+
+// NewScannerWithBulk creates a new discovery scanner with bulk operations.
+func NewScannerWithBulk(client ChainClient, deriver KeyDeriver, opts *Options, bulkOps BulkOperations) *Scanner {
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+	return &Scanner{
+		client:  client,
+		deriver: deriver,
+		opts:    opts,
+		bulkOps: bulkOps,
 	}
 }
 
@@ -153,9 +188,154 @@ func (s *Scanner) scanScheme(ctx context.Context, seed []byte, scheme PathScheme
 }
 
 // scanChain scans a single chain (external or internal) within a scheme.
+func (s *Scanner) scanChain(ctx context.Context, seed []byte, scheme PathScheme, account, change uint32, gapLimit int) (*schemeResult, error) {
+	// Use bulk scanning if available
+	if s.bulkOps != nil {
+		return s.scanChainBulk(ctx, seed, scheme, account, change, gapLimit)
+	}
+
+	// Fall back to individual scanning
+	return s.scanChainIndividual(ctx, seed, scheme, account, change, gapLimit)
+}
+
+// scanChainBulk scans a chain using bulk operations (three-phase approach).
+//
+//nolint:gocognit,gocyclo,nestif,funcorder // Three-phase bulk scanning requires complexity; grouped with scanChain
+func (s *Scanner) scanChainBulk(ctx context.Context, seed []byte, scheme PathScheme, account, change uint32, gapLimit int) (*schemeResult, error) {
+	result := &schemeResult{}
+	consecutiveEmpty := 0
+	index := uint32(0)
+
+	// Phase 1: Quick activity detection in batches
+	for consecutiveEmpty < gapLimit {
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+
+		// Generate batch of addresses
+		batchSize := 20 // Match bulk API limit
+		addresses := make([]string, 0, batchSize)
+		paths := make([]string, 0, batchSize)
+		indices := make([]uint32, 0, batchSize)
+
+		for i := 0; i < batchSize && consecutiveEmpty < gapLimit; i++ {
+			var address, path string
+			var err error
+
+			if scheme.IsLegacy {
+				address, path, err = s.deriver.DeriveLegacyAddress(seed, index)
+			} else {
+				address, path, err = s.deriver.DeriveAddress(seed, scheme.CoinType, account, change, index)
+			}
+
+			if err != nil {
+				return result, fmt.Errorf("deriving address at index %d: %w", index, err)
+			}
+
+			addresses = append(addresses, address)
+			paths = append(paths, path)
+			indices = append(indices, index)
+			index++
+			result.scanned++
+		}
+
+		// Phase 2: Check activity for batch
+		activities, err := s.bulkOps.BulkAddressActivityCheck(ctx, addresses)
+		if err != nil {
+			// Fall back to individual scanning for this batch
+			for i, addr := range addresses {
+				utxos, utxoErr := s.client.ListUTXOs(ctx, addr)
+				if utxoErr == nil && len(utxos) > 0 {
+					consecutiveEmpty = 0
+					s.processFoundAddress(addr, paths[i], indices[i], scheme.Name, account, change, scheme.CoinType, utxos, result)
+				} else {
+					consecutiveEmpty++
+				}
+			}
+			continue
+		}
+
+		// Collect active addresses
+		activeAddresses := make([]string, 0)
+		activeIndices := make([]int, 0)
+		batchHasActivity := false
+
+		for i, activity := range activities {
+			if activity.HasHistory {
+				activeAddresses = append(activeAddresses, activity.Address)
+				activeIndices = append(activeIndices, i)
+				batchHasActivity = true
+			}
+		}
+
+		// Phase 3: Fetch UTXOs for active addresses
+		if len(activeAddresses) > 0 {
+			utxoResults, err := s.bulkOps.BulkAddressUTXOFetch(ctx, activeAddresses)
+			if err != nil {
+				// Fall back to individual fetching
+				for _, addr := range activeAddresses {
+					utxos, utxoErr := s.client.ListUTXOs(ctx, addr)
+					if utxoErr == nil && len(utxos) > 0 {
+						// Find original index
+						originalIdx := -1
+						for i, a := range addresses {
+							if a == addr {
+								originalIdx = i
+								break
+							}
+						}
+						if originalIdx >= 0 {
+							consecutiveEmpty = 0
+							s.processFoundAddress(addr, paths[originalIdx], indices[originalIdx], scheme.Name, account, change, scheme.CoinType, utxos, result)
+						}
+					}
+				}
+			} else {
+				// Process bulk UTXO results
+				for j, utxoResult := range utxoResults {
+					if utxoResult.Error != nil {
+						continue
+					}
+
+					originalIdx := activeIndices[j]
+					allUTXOs := s.convertBulkUTXOs(utxoResult)
+
+					if len(allUTXOs) > 0 {
+						consecutiveEmpty = 0
+						s.processFoundAddress(
+							addresses[originalIdx],
+							paths[originalIdx],
+							indices[originalIdx],
+							scheme.Name,
+							account,
+							change,
+							scheme.CoinType,
+							allUTXOs,
+							result,
+						)
+					}
+				}
+			}
+		}
+
+		// Update consecutive empty counter for addresses without activity
+		if !batchHasActivity {
+			consecutiveEmpty += len(addresses)
+		} else {
+			// Reset if we found any activity in this batch
+			if consecutiveEmpty > 0 {
+				consecutiveEmpty = 0
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// scanChainIndividual scans a chain using individual API calls (fallback).
 //
 //nolint:gocognit,funcorder // Address iteration with gap limit logic is inherently complex; grouped with caller
-func (s *Scanner) scanChain(ctx context.Context, seed []byte, scheme PathScheme, account, change uint32, gapLimit int) (*schemeResult, error) {
+func (s *Scanner) scanChainIndividual(ctx context.Context, seed []byte, scheme PathScheme, account, change uint32, gapLimit int) (*schemeResult, error) {
 	result := &schemeResult{}
 	consecutiveEmpty := 0
 
@@ -210,41 +390,64 @@ func (s *Scanner) scanChain(ctx context.Context, seed []byte, scheme PathScheme,
 
 		// Found UTXOs - reset gap counter and record address
 		consecutiveEmpty = 0
-
-		var balance uint64
-		for _, utxo := range utxos {
-			balance += utxo.Amount
-		}
-
-		discovered := DiscoveredAddress{
-			Address:    address,
-			Path:       path,
-			SchemeName: scheme.Name,
-			Balance:    balance,
-			UTXOCount:  len(utxos),
-			IsChange:   change == 1,
-			Index:      index,
-			Account:    account,
-			CoinType:   scheme.CoinType,
-		}
-
-		result.addresses = append(result.addresses, discovered)
-		result.balance += balance
-		result.utxoCount += len(utxos)
-
-		// Report found funds
-		s.reportProgress(ProgressUpdate{
-			Phase:            "found",
-			SchemeName:       scheme.Name,
-			AddressesScanned: result.scanned,
-			UTXOsFound:       result.utxoCount,
-			BalanceFound:     result.balance,
-			CurrentAddress:   address,
-			Message:          fmt.Sprintf("Found %d satoshis at %s", balance, address),
-		})
+		s.processFoundAddress(address, path, index, scheme.Name, account, change, scheme.CoinType, utxos, result)
 	}
 
 	return result, nil
+}
+
+// processFoundAddress processes a discovered address with UTXOs.
+//
+//nolint:funcorder // Helper method grouped with scanners
+func (s *Scanner) processFoundAddress(
+	address, path string,
+	index uint32,
+	schemeName string,
+	account, change, coinType uint32,
+	utxos []UTXO,
+	result *schemeResult,
+) {
+	var balance uint64
+	for _, utxo := range utxos {
+		balance += utxo.Amount
+	}
+
+	discovered := DiscoveredAddress{
+		Address:    address,
+		Path:       path,
+		SchemeName: schemeName,
+		Balance:    balance,
+		UTXOCount:  len(utxos),
+		IsChange:   change == 1,
+		Index:      index,
+		Account:    account,
+		CoinType:   coinType,
+	}
+
+	result.addresses = append(result.addresses, discovered)
+	result.balance += balance
+	result.utxoCount += len(utxos)
+
+	// Report found funds
+	s.reportProgress(ProgressUpdate{
+		Phase:            "found",
+		SchemeName:       schemeName,
+		AddressesScanned: result.scanned,
+		UTXOsFound:       result.utxoCount,
+		BalanceFound:     result.balance,
+		CurrentAddress:   address,
+		Message:          fmt.Sprintf("Found %d satoshis at %s", balance, address),
+	})
+}
+
+// convertBulkUTXOs converts bulk UTXO results to standard UTXO format.
+//
+//nolint:funcorder // Helper method grouped with scanners
+func (s *Scanner) convertBulkUTXOs(result BulkUTXOResult) []UTXO {
+	utxos := make([]UTXO, 0, len(result.ConfirmedUTXOs)+len(result.UnconfirmedUTXOs))
+	utxos = append(utxos, result.ConfirmedUTXOs...)
+	utxos = append(utxos, result.UnconfirmedUTXOs...)
+	return utxos
 }
 
 // reportProgress safely calls the progress callback if configured.

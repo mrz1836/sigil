@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/cache"
+	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/service/balance"
 	"github.com/mrz1836/sigil/internal/utxostore"
@@ -42,6 +44,8 @@ var (
 	balanceCachedOnly bool
 	// balanceAsync shows cached data immediately and refreshes in background.
 	balanceAsync bool
+	// balanceValidate validates cached UTXOs are still unspent (BSV only).
+	balanceValidate bool
 )
 
 // balanceCmd is the parent command for balance operations.
@@ -115,6 +119,7 @@ func init() {
 	balanceShowCmd.Flags().BoolVar(&balanceRefresh, "refresh", false, "force fresh fetch, ignore cache")
 	balanceShowCmd.Flags().BoolVar(&balanceCachedOnly, "cached", false, "show cached data only, skip network")
 	balanceShowCmd.Flags().BoolVar(&balanceAsync, "async", false, "show cached data immediately, refresh in background")
+	balanceShowCmd.Flags().BoolVar(&balanceValidate, "validate", false, "validate cached UTXOs are still unspent (BSV only)")
 
 	_ = balanceShowCmd.MarkFlagRequired("wallet")
 }
@@ -219,6 +224,16 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 		// Save cache after network fetch
 		saveBalanceCache(cmdCtx, balanceCache)
+	}
+
+	// 4.5. Validate BSV UTXOs if requested
+	if balanceValidate && balanceChainFilter == "bsv" {
+		if validateErr := validateBSVUTXOs(ctx, cmdCtx, balanceWalletName, cmd.ErrOrStderr()); validateErr != nil {
+			// Log but don't fail - validation is optional
+			if cmdCtx.Log != nil {
+				cmdCtx.Log.Error("UTXO validation failed: %v", validateErr)
+			}
+		}
 	}
 
 	// 5. Convert and output results
@@ -497,6 +512,43 @@ func truncateAddress(addr string) string {
 		return addr[:20] + "..." + addr[len(addr)-17:]
 	}
 	return addr
+}
+
+// validateBSVUTXOs validates cached UTXOs for a BSV wallet.
+func validateBSVUTXOs(ctx context.Context, cmdCtx *CommandContext, walletName string, w io.Writer) error {
+	// Load UTXO store
+	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", walletName)
+	utxoStore := utxostore.New(walletDir)
+	if err := utxoStore.Load(); err != nil {
+		return fmt.Errorf("loading UTXO store: %w", err)
+	}
+
+	// Create BSV client with bulk operations
+	bsvOpts := &bsv.ClientOptions{
+		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+	}
+	client := bsv.NewClient(ctx, bsvOpts)
+
+	bulkOpts := &bsv.BulkOperationsOptions{
+		RateLimit: 3.0,
+		RateBurst: 5,
+	}
+	bulkOps := bsv.NewBulkOperations(client.GetWOCClient(), bulkOpts)
+
+	// Validate UTXOs
+	outln(w, "\nValidating cached UTXOs...")
+	report, err := utxoStore.ValidateUTXOs(ctx, chain.BSV, bulkOps)
+	if err != nil {
+		return err
+	}
+
+	// Display validation results
+	if report.TotalChecked > 0 {
+		outln(w, fmt.Sprintf("Validated %d UTXOs: %d still unspent, %d spent",
+			report.TotalChecked, report.StillUnspent, report.NowSpent))
+	}
+
+	return nil
 }
 
 // refreshBalancesAsync refreshes balances in a background goroutine.

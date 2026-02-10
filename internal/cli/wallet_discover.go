@@ -33,6 +33,12 @@ var (
 	discoverWallet string
 	// discoverScheme is a specific path scheme to scan.
 	discoverScheme string
+	// discoverRecoveryMode enables extended gap limits for old wallets.
+	discoverRecoveryMode bool
+	// discoverParallel enables parallel scheme scanning.
+	discoverParallel bool
+	// discoverValidateCache validates cached UTXOs before displaying.
+	discoverValidateCache bool
 )
 
 // walletDiscoverCmd discovers funds across multiple derivation paths.
@@ -75,6 +81,9 @@ func init() {
 	walletDiscoverCmd.Flags().BoolVar(&discoverMigrate, "migrate", false, "consolidate funds to sigil wallet")
 	walletDiscoverCmd.Flags().StringVar(&discoverWallet, "wallet", "", "target wallet name for migration")
 	walletDiscoverCmd.Flags().StringVar(&discoverScheme, "scheme", "", "scan only a specific scheme (e.g., 'BSV Standard')")
+	walletDiscoverCmd.Flags().BoolVar(&discoverRecoveryMode, "recovery-mode", false, "use extended gap limits (100) for old wallets")
+	walletDiscoverCmd.Flags().BoolVar(&discoverParallel, "parallel", false, "scan schemes concurrently for faster discovery")
+	walletDiscoverCmd.Flags().BoolVar(&discoverValidateCache, "validate-cache", false, "validate cached UTXOs are still unspent")
 }
 
 // DiscoverResponse is the JSON response for the discover command.
@@ -173,6 +182,13 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	// Configure options
 	opts := discovery.DefaultOptions()
 	opts.GapLimit = discoverGap
+
+	// Apply recovery mode settings
+	if discoverRecoveryMode {
+		opts.GapLimit = discovery.RecoveryGapLimit                 // 100
+		opts.ExtendedGapLimit = discovery.ExtendedRecoveryGapLimit // 200
+	}
+
 	if discoverScheme != "" {
 		scheme := discovery.SchemeByName(discoverScheme)
 		if scheme == nil {
@@ -189,8 +205,15 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 		opts.ProgressCallback = createProgressCallback(cmd.OutOrStderr())
 	}
 
-	// Create scanner
-	scanner := discovery.NewScanner(&discoveryClientAdapter{client}, deriver, opts)
+	// Create bulk operations for faster scanning
+	bulkOpts := &bsv.BulkOperationsOptions{
+		RateLimit: 3.0,
+		RateBurst: 5,
+	}
+	bulkOps := bsv.NewBulkOperations(client.GetWOCClient(), bulkOpts)
+
+	// Create scanner with bulk operations
+	scanner := discovery.NewScannerWithBulk(&discoveryClientAdapter{client}, deriver, opts, &bulkOperationsAdapter{bulkOps})
 
 	// Run discovery
 	outln(cmd.OutOrStderr(), "\nScanning derivation paths...")
@@ -201,6 +224,10 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	if discoverPath != "" {
 		// Custom path scan - use BSV coin type by default
 		result, err = scanner.ScanCustomPath(ctx, seed, discoverPath, discovery.CoinTypeBSV)
+	} else if discoverParallel {
+		// Parallel scheme scanning
+		parallelScanner := discovery.NewParallelScanner(&discoveryClientAdapter{client}, deriver, opts, 3)
+		result, err = parallelScanner.ScanParallel(ctx, seed)
 	} else {
 		result, err = scanner.Scan(ctx, seed)
 	}
@@ -476,6 +503,68 @@ func (a *discoveryClientAdapter) ListUTXOs(ctx context.Context, address string) 
 
 func (a *discoveryClientAdapter) ValidateAddress(address string) error {
 	return a.client.ValidateAddress(address)
+}
+
+// bulkOperationsAdapter adapts bsv.BulkOperations to discovery.BulkOperations interface.
+type bulkOperationsAdapter struct {
+	bulkOps *bsv.BulkOperations
+}
+
+func (a *bulkOperationsAdapter) BulkAddressActivityCheck(ctx context.Context, addresses []string) ([]discovery.AddressActivity, error) {
+	activities, err := a.bulkOps.BulkAddressActivityCheck(ctx, addresses)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]discovery.AddressActivity, len(activities))
+	for i, act := range activities {
+		result[i] = discovery.AddressActivity{
+			Address:    act.Address,
+			HasHistory: act.HasHistory,
+			Error:      act.Error,
+		}
+	}
+	return result, nil
+}
+
+func (a *bulkOperationsAdapter) BulkAddressUTXOFetch(ctx context.Context, addresses []string) ([]discovery.BulkUTXOResult, error) {
+	results, err := a.bulkOps.BulkAddressUTXOFetch(ctx, addresses)
+	if err != nil {
+		return nil, err
+	}
+
+	converted := make([]discovery.BulkUTXOResult, len(results))
+	for i, res := range results {
+		confirmedUTXOs := make([]discovery.UTXO, len(res.ConfirmedUTXOs))
+		for j, u := range res.ConfirmedUTXOs {
+			confirmedUTXOs[j] = discovery.UTXO{
+				TxID:         u.TxID,
+				Vout:         u.Vout,
+				Amount:       u.Amount,
+				ScriptPubKey: u.ScriptPubKey,
+				Address:      u.Address,
+			}
+		}
+
+		unconfirmedUTXOs := make([]discovery.UTXO, len(res.UnconfirmedUTXOs))
+		for j, u := range res.UnconfirmedUTXOs {
+			unconfirmedUTXOs[j] = discovery.UTXO{
+				TxID:         u.TxID,
+				Vout:         u.Vout,
+				Amount:       u.Amount,
+				ScriptPubKey: u.ScriptPubKey,
+				Address:      u.Address,
+			}
+		}
+
+		converted[i] = discovery.BulkUTXOResult{
+			Address:          res.Address,
+			ConfirmedUTXOs:   confirmedUTXOs,
+			UnconfirmedUTXOs: unconfirmedUTXOs,
+			Error:            res.Error,
+		}
+	}
+	return converted, nil
 }
 
 // walletKeyDeriver adapts wallet derivation to the discovery.KeyDeriver interface.

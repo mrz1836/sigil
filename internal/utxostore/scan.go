@@ -21,6 +21,20 @@ type ChainClient interface {
 	ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error)
 }
 
+// BulkChainClient defines the interface for bulk UTXO operations.
+type BulkChainClient interface {
+	ChainClient
+	BulkAddressUTXOFetch(ctx context.Context, addresses []string) ([]BulkUTXOResult, error)
+}
+
+// BulkUTXOResult represents UTXOs for an address from bulk operations.
+type BulkUTXOResult struct {
+	Address          string
+	ConfirmedUTXOs   []chain.UTXO
+	UnconfirmedUTXOs []chain.UTXO
+	Error            error
+}
+
 // ScanResult contains the results of a wallet scan.
 type ScanResult struct {
 	// AddressesScanned is the number of addresses checked.
@@ -299,4 +313,170 @@ func (s *Store) markMissingAsSpent(chainID chain.ID, seenUTXOs map[string]bool) 
 			utxo.LastUpdated = time.Now()
 		}
 	}
+}
+
+// ScanWalletBulk scans a wallet's addresses using bulk operations.
+// Significantly faster than ScanWallet for wallets with many addresses.
+//
+//nolint:gocognit,gocyclo // Bulk scanning logic inherently complex
+func (s *Store) ScanWalletBulk(ctx context.Context, w *wallet.Wallet, chainID chain.ID, bulkClient BulkChainClient) (*ScanResult, error) {
+	addresses, ok := w.Addresses[chainID]
+	if !ok || len(addresses) == 0 {
+		return &ScanResult{}, nil
+	}
+
+	result := &ScanResult{}
+	consecutiveEmpty := 0
+
+	// Extract address strings
+	addrStrings := make([]string, 0, len(addresses))
+	addrMap := make(map[string]wallet.Address)
+	for _, addr := range addresses {
+		addrStrings = append(addrStrings, addr.Address)
+		addrMap[addr.Address] = addr
+	}
+
+	// Fetch UTXOs using bulk operations
+	bulkResults, err := bulkClient.BulkAddressUTXOFetch(ctx, addrStrings)
+	if err != nil {
+		// Fall back to individual scanning
+		return s.ScanWallet(ctx, w, chainID, bulkClient)
+	}
+
+	// Process bulk results
+	for _, bulkResult := range bulkResults {
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+
+		if bulkResult.Error != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("address %s: %w", bulkResult.Address, bulkResult.Error))
+			consecutiveEmpty++
+			continue
+		}
+
+		addr := addrMap[bulkResult.Address]
+		result.AddressesScanned++
+
+		// Combine confirmed and unconfirmed UTXOs
+		allUTXOs := append(bulkResult.ConfirmedUTXOs, bulkResult.UnconfirmedUTXOs...)
+
+		// Track address metadata
+		s.trackAddress(addr, chainID, len(allUTXOs) > 0)
+
+		if len(allUTXOs) == 0 {
+			consecutiveEmpty++
+		} else {
+			consecutiveEmpty = 0
+			// Store UTXOs
+			s.storeUTXOs(allUTXOs, chainID, result)
+		}
+
+		// Check gap limit
+		if consecutiveEmpty >= DefaultGapLimit {
+			break
+		}
+	}
+
+	// Save after scan
+	if err := s.Save(); err != nil {
+		return result, fmt.Errorf("saving UTXOs: %w", err)
+	}
+
+	return result, nil
+}
+
+// RefreshBulk re-scans addresses using bulk operations.
+// Much faster than Refresh for many addresses.
+//
+//nolint:gocognit // Bulk refresh logic inherently complex
+func (s *Store) RefreshBulk(ctx context.Context, chainID chain.ID, bulkClient BulkChainClient) (*ScanResult, error) {
+	// Get addresses to scan (copy under lock)
+	addresses := s.getAddressesForChain(chainID)
+	if len(addresses) == 0 {
+		return &ScanResult{}, nil
+	}
+
+	result := &ScanResult{}
+	seenUTXOs := make(map[string]bool)
+
+	// Extract address strings
+	addrStrings := make([]string, len(addresses))
+	addrMap := make(map[string]*AddressMetadata)
+	for i, addr := range addresses {
+		addrStrings[i] = addr.Address
+		addrMap[addr.Address] = addr
+	}
+
+	// Fetch UTXOs using bulk operations
+	bulkResults, err := bulkClient.BulkAddressUTXOFetch(ctx, addrStrings)
+	if err != nil {
+		// Fall back to individual refresh
+		return s.Refresh(ctx, chainID, bulkClient)
+	}
+
+	// Process bulk results
+	for _, bulkResult := range bulkResults {
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+
+		if bulkResult.Error != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("address %s: %w", bulkResult.Address, bulkResult.Error))
+			continue
+		}
+
+		addr := addrMap[bulkResult.Address]
+		result.AddressesScanned++
+
+		// Update address metadata
+		updatedAddr := &AddressMetadata{
+			Address:        addr.Address,
+			ChainID:        addr.ChainID,
+			DerivationPath: addr.DerivationPath,
+			Index:          addr.Index,
+			Label:          addr.Label,
+			LastScanned:    time.Now(),
+			HasActivity:    addr.HasActivity,
+		}
+
+		// Combine confirmed and unconfirmed UTXOs
+		allUTXOs := append(bulkResult.ConfirmedUTXOs, bulkResult.UnconfirmedUTXOs...)
+
+		if len(allUTXOs) > 0 {
+			updatedAddr.HasActivity = true
+		}
+
+		s.AddAddress(updatedAddr)
+
+		// Process and track UTXOs
+		for _, u := range allUTXOs {
+			key := fmt.Sprintf("%s:%s:%d", chainID, u.TxID, u.Vout)
+			seenUTXOs[key] = true
+
+			stored := &StoredUTXO{
+				ChainID:       chainID,
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				ScriptPubKey:  u.ScriptPubKey,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+				Spent:         false,
+			}
+			s.AddUTXO(stored)
+			result.UTXOsFound++
+			result.TotalBalance += u.Amount
+		}
+	}
+
+	// Mark UTXOs not seen in this scan as spent
+	s.markMissingAsSpent(chainID, seenUTXOs)
+
+	// Save changes
+	if err := s.Save(); err != nil {
+		return result, fmt.Errorf("saving UTXOs: %w", err)
+	}
+
+	return result, nil
 }

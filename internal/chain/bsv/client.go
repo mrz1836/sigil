@@ -75,6 +75,12 @@ type WOCClient interface {
 	// Bulk operations (max 20 addresses per call)
 	BulkAddressConfirmedBalance(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
 	BulkAddressUnconfirmedBalance(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
+
+	// Bulk UTXO operations (max 20 items per call)
+	BulkAddressHistory(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error)
+	BulkAddressConfirmedUTXOs(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error)
+	BulkAddressUnconfirmedUTXOs(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkUnspentResponse, error)
+	BulkSpentOutputs(ctx context.Context, req *whatsonchain.BulkSpentOutputRequest) (whatsonchain.BulkSpentOutputResponse, error)
 }
 
 // Compile-time check that the real SDK client satisfies WOCClient.
@@ -167,6 +173,12 @@ func (c *Client) initializeWOCClient(ctx context.Context, opts *ClientOptions) {
 		wocClient, _ = whatsonchain.NewClient(ctx)
 	}
 	c.woc = wocClient
+}
+
+// GetWOCClient returns the underlying WhatsOnChain client for direct API access.
+// This is useful for bulk operations and advanced use cases.
+func (c *Client) GetWOCClient() WOCClient {
+	return c.woc
 }
 
 // initializeBroadcasters sets up broadcast providers if not already configured.

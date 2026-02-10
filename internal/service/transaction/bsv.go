@@ -88,8 +88,54 @@ func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, e
 	if utxoStore != nil {
 		allUTXOs = filterSpentBSVUTXOs(allUTXOs, utxoStore)
 	}
+
+	// Validate UTXOs if requested (for sweep transactions)
+	if req.ValidateUTXOs && sweepAll {
+		bulkOpts := &bsv.BulkOperationsOptions{
+			RateLimit: 3.0,
+			RateBurst: 5,
+		}
+		bulkOps := bsv.NewBulkOperations(client.GetWOCClient(), bulkOpts)
+
+		// Convert to bsv.UTXO format
+		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
+		for i, u := range allUTXOs {
+			bsvUTXOs[i] = bsv.UTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+			}
+		}
+
+		// Validate
+		statuses, validateErr := bulkOps.BulkUTXOValidation(ctx, bsvUTXOs)
+		if validateErr != nil {
+			if s.logger != nil {
+				s.logger.Error("bsv send: UTXO validation failed: %v", validateErr)
+			}
+			// Continue without validation
+		} else {
+			// Filter out spent UTXOs
+			validUTXOs := make([]chain.UTXO, 0, len(allUTXOs))
+			spentCount := 0
+			for i, status := range statuses {
+				if !status.Spent && status.Error == nil {
+					validUTXOs = append(validUTXOs, allUTXOs[i])
+				} else {
+					spentCount++
+				}
+			}
+			allUTXOs = validUTXOs
+			if s.logger != nil {
+				s.logger.Debug("bsv send: validated %d UTXOs, filtered %d spent", len(allUTXOs), spentCount)
+			}
+		}
+	}
+
 	if s.logger != nil {
-		s.logger.Debug("bsv send: %d UTXOs from %d addresses (after spent filtering)", len(allUTXOs), len(req.Addresses))
+		s.logger.Debug("bsv send: %d UTXOs from %d addresses (after filtering)", len(allUTXOs), len(req.Addresses))
 	}
 
 	var displayAmount string

@@ -25,7 +25,8 @@ type SendRequest struct {
 	Addresses []wallet.Address // All wallet addresses for BSV multi-address support
 
 	// Flags
-	Confirm bool // If false, prompt user for confirmation
+	Confirm       bool // If false, prompt user for confirmation
+	ValidateUTXOs bool // If true, validate UTXOs before sweep (BSV only)
 
 	// Agent mode fields (optional)
 	AgentCredID      string

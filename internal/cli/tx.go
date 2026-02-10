@@ -39,7 +39,21 @@ var (
 	txGasSpeed string
 	// txConfirm skips confirmation prompt if false.
 	txConfirm bool
+	// txValidate enables UTXO validation before sweep transactions.
+	txValidate bool
 )
+
+// bsvConfirmationDetails holds computed details for BSV transaction confirmation.
+type bsvConfirmationDetails struct {
+	To              string
+	AmountSats      uint64         // Actual satoshi amount (computed for sweep)
+	IsSweep         bool           // Whether this is a sweep-all transaction
+	EstimatedFee    uint64         // Estimated fee in satoshis
+	FeeRate         uint64         // Fee rate in sat/KB
+	TotalUTXOs      int            // Total number of UTXOs being spent
+	AddressUTXOs    map[string]int // Address -> UTXO count
+	SourceAddresses []string       // Ordered list of addresses with UTXOs
+}
 
 // txCmd is the parent command for transaction operations.
 //
@@ -95,6 +109,7 @@ func init() {
 	txSendCmd.Flags().StringVar(&txToken, "token", "", "ERC-20 token symbol (e.g., USDC) - ETH only")
 	txSendCmd.Flags().StringVar(&txGasSpeed, "gas", "medium", "gas speed: slow, medium, fast")
 	txSendCmd.Flags().BoolVar(&txConfirm, "yes", false, "skip confirmation prompt")
+	txSendCmd.Flags().BoolVar(&txValidate, "validate", false, "validate UTXOs before sweep (BSV only)")
 
 	_ = txSendCmd.MarkFlagRequired("wallet")
 	_ = txSendCmd.MarkFlagRequired("to")
@@ -186,16 +201,17 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 
 	// Build send request
 	req := &transaction.SendRequest{
-		ChainID:     chainID,
-		To:          txTo,
-		AmountStr:   txAmount,
-		Wallet:      txWallet,
-		FromAddress: addresses[0].Address,
-		Token:       txToken,
-		GasSpeed:    txGasSpeed,
-		Addresses:   addresses, // For BSV multi-address
-		Confirm:     txConfirm,
-		Seed:        seed,
+		ChainID:       chainID,
+		To:            txTo,
+		AmountStr:     txAmount,
+		Wallet:        txWallet,
+		FromAddress:   addresses[0].Address,
+		Token:         txToken,
+		GasSpeed:      txGasSpeed,
+		Addresses:     addresses, // For BSV multi-address
+		Confirm:       txConfirm,
+		Seed:          seed,
+		ValidateUTXOs: txValidate, // Enable UTXO validation if requested
 	}
 
 	// Set agent fields if in agent mode
@@ -300,9 +316,32 @@ func promptETHConfirmation(ctx context.Context, cmd *cobra.Command, req *transac
 
 // promptBSVConfirmation handles BSV transaction confirmation prompt.
 func promptBSVConfirmation(ctx context.Context, cmd *cobra.Command, req *transaction.SendRequest, addresses []wallet.Address) (bool, error) {
+	// Fetch UTXOs and calculate actual amounts for display
+	details, err := prepareBSVConfirmation(ctx, cmd, req, addresses)
+	if err != nil {
+		return false, err
+	}
+
+	// Display transaction details with actual computed values
+	displayBSVTxDetailsEnhanced(cmd, details)
+
+	// Prompt for confirmation
+	return promptConfirmFn(), nil
+}
+
+// prepareBSVConfirmation fetches UTXOs and calculates actual amounts for confirmation display.
+// This runs BEFORE the user confirmation prompt, so they see accurate values.
+//
+//nolint:gocognit // BSV confirmation flow inherently complex with multiple validations
+func prepareBSVConfirmation(
+	ctx context.Context,
+	cmd *cobra.Command,
+	req *transaction.SendRequest,
+	addresses []wallet.Address,
+) (*bsvConfirmationDetails, error) {
 	cc := GetCmdContext(cmd)
 
-	// Estimate BSV fees for display
+	// Create BSV client
 	opts := &bsv.ClientOptions{
 		APIKey:      cc.Cfg.GetBSVAPIKey(),
 		Logger:      cc.Log,
@@ -311,31 +350,130 @@ func promptBSVConfirmation(ctx context.Context, cmd *cobra.Command, req *transac
 	}
 	bsvClient := bsv.NewClient(ctx, opts)
 
+	// Get fee quote
 	feeQuote, err := bsvClient.GetFeeQuote(ctx)
 	if err != nil {
 		// Use default if fee quote fails (same as service does)
 		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
 	}
 
-	// Estimate fee based on UTXO count
-	numInputs := len(addresses)
-	numOutputs := 2 // Recipient + change
-	if req.SweepAll() {
-		numOutputs = 1 // Only recipient for sweep all
-	}
-	estimatedFee := bsv.EstimateFeeForTx(numInputs, numOutputs, feeQuote.StandardRate)
-
-	// Format display amount
-	displayAmount := txAmount
-	if req.SweepAll() {
-		displayAmount = txAmount + " (sweep all)"
+	// Load UTXO store for spent filtering
+	walletPath := filepath.Join(cc.Cfg.GetHome(), "wallets", req.Wallet)
+	utxoStore := utxostore.New(walletPath)
+	if loadErr := utxoStore.Load(); loadErr != nil {
+		if cc.Log != nil {
+			cc.Log.Error("failed to load utxo store for confirmation: %v", loadErr)
+		}
+		utxoStore = nil // Non-fatal
 	}
 
-	// Display transaction details
-	displayBSVTxDetails(cmd, req.FromAddress, req.To, displayAmount, estimatedFee, feeQuote.StandardRate)
+	// Fetch UTXOs from all addresses
+	allUTXOs, err := transaction.AggregateBSVUTXOs(ctx, bsvClient, addresses)
+	if err != nil {
+		return nil, fmt.Errorf("fetching UTXOs for confirmation: %w", err)
+	}
 
-	// Prompt for confirmation
-	return promptConfirmFn(), nil
+	// Filter spent UTXOs
+	if utxoStore != nil {
+		allUTXOs = transaction.FilterSpentBSVUTXOs(allUTXOs, utxoStore)
+	}
+
+	// Group UTXOs by address
+	addressUTXOs := make(map[string]int)
+	var sourceAddresses []string
+	for _, u := range allUTXOs {
+		if _, exists := addressUTXOs[u.Address]; !exists {
+			sourceAddresses = append(sourceAddresses, u.Address)
+		}
+		addressUTXOs[u.Address]++
+	}
+
+	details := &bsvConfirmationDetails{
+		To:              req.To,
+		FeeRate:         feeQuote.StandardRate,
+		IsSweep:         req.SweepAll(),
+		AddressUTXOs:    addressUTXOs,
+		SourceAddresses: sourceAddresses,
+	}
+
+	//nolint:nestif // Sweep flow with validation has nested conditional checks
+	if req.SweepAll() {
+		// Sweep all: calculate actual amount after fees
+		if len(allUTXOs) == 0 {
+			return nil, sigilerr.WithSuggestion(
+				sigilerr.ErrInsufficientFunds,
+				"no UTXOs found for sweep transaction",
+			)
+		}
+
+		var totalInputs uint64
+		for _, u := range allUTXOs {
+			totalInputs += u.Amount
+		}
+
+		// Calculate sweep amount (total - fees)
+		sweepAmount, err := bsv.CalculateSweepAmount(totalInputs, len(allUTXOs), feeQuote.StandardRate)
+		if err != nil {
+			return nil, err
+		}
+
+		details.AmountSats = sweepAmount
+		details.EstimatedFee = totalInputs - sweepAmount
+		details.TotalUTXOs = len(allUTXOs)
+	} else {
+		// Normal send: parse amount and estimate fee
+		amount, err := bsvClient.ParseAmount(req.AmountStr)
+		if err != nil {
+			return nil, sigilerr.WithSuggestion(
+				sigilerr.ErrInvalidInput,
+				fmt.Sprintf("invalid amount: %s", req.AmountStr),
+			)
+		}
+
+		if len(allUTXOs) == 0 {
+			return nil, sigilerr.WithSuggestion(
+				sigilerr.ErrInsufficientFunds,
+				"no UTXOs found for transaction",
+			)
+		}
+
+		// Convert to bsv.UTXO for selection
+		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
+		for i, u := range allUTXOs {
+			bsvUTXOs[i] = bsv.UTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				ScriptPubKey:  u.ScriptPubKey,
+				Address:       u.Address,
+				Confirmations: u.Confirmations,
+			}
+		}
+
+		// Select UTXOs needed for this transaction
+		selected, _, err := bsvClient.SelectUTXOs(bsvUTXOs, amount.Uint64(), feeQuote.StandardRate)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update source addresses to only include those with selected UTXOs
+		selectedAddresses := make(map[string]int)
+		var selectedSourceAddrs []string
+		for _, u := range selected {
+			if _, exists := selectedAddresses[u.Address]; !exists {
+				selectedSourceAddrs = append(selectedSourceAddrs, u.Address)
+			}
+			selectedAddresses[u.Address]++
+		}
+
+		details.AmountSats = amount.Uint64()
+		details.EstimatedFee = bsv.EstimateFeeForTx(len(selected), 2, feeQuote.StandardRate)
+		details.TotalUTXOs = len(selected)
+		details.AddressUTXOs = selectedAddresses
+		details.SourceAddresses = selectedSourceAddrs
+	}
+
+	return details, nil
 }
 
 // convertToETHTransactionResult converts service result to chain.TransactionResult for display.
@@ -395,6 +533,54 @@ func displayBSVTxDetails(cmd *cobra.Command, from, to, amount string, fee, feeRa
 	out(w, "  Amount:    %s BSV\n", amount)
 	out(w, "  Fee Rate:  %d sat/KB\n", feeRate)
 	out(w, "  Est. Fee:  %d satoshis\n", fee)
+
+	outln(w)
+	outln(w, "═══════════════════════════════════════════════════════════════")
+}
+
+// displayBSVTxDetailsEnhanced shows BSV transaction details with computed values.
+func displayBSVTxDetailsEnhanced(cmd *cobra.Command, details *bsvConfirmationDetails) {
+	w := cmd.OutOrStdout()
+	outln(w)
+	outln(w, "═══════════════════════════════════════════════════════════════")
+	outln(w, "                    TRANSACTION DETAILS")
+	outln(w, "═══════════════════════════════════════════════════════════════")
+	outln(w)
+
+	// From field handling
+	if len(details.SourceAddresses) == 1 {
+		// Single address: show it directly
+		out(w, "  From:      %s\n", details.SourceAddresses[0])
+	} else {
+		// Multiple addresses: show count + list with UTXO breakdown
+		out(w, "  From:      %d addresses with UTXOs:\n", len(details.SourceAddresses))
+		for _, addr := range details.SourceAddresses {
+			count := details.AddressUTXOs[addr]
+			out(w, "             • %s (%d UTXO%s)\n", addr, count, pluralize(count))
+		}
+	}
+
+	out(w, "  To:        %s\n", details.To)
+
+	// Amount with sweep indicator
+	if details.IsSweep {
+		out(w, "  Amount:    %s sats (sweep all) BSV\n", formatSatsWithCommas(details.AmountSats))
+	} else {
+		out(w, "  Amount:    %s sats BSV\n", formatSatsWithCommas(details.AmountSats))
+	}
+
+	// UTXO count
+	if len(details.SourceAddresses) > 1 {
+		// For multi-address, use "Total:" label
+		out(w, "  Total:     %d UTXO%s\n", details.TotalUTXOs, pluralize(details.TotalUTXOs))
+	} else {
+		// For single address, use "UTXOs:" label
+		out(w, "  UTXOs:     %d\n", details.TotalUTXOs)
+	}
+
+	// Fee details
+	out(w, "  Fee Rate:  %d sat/KB\n", details.FeeRate)
+	out(w, "  Est. Fee:  %s satoshis\n", formatSatsWithCommas(details.EstimatedFee))
 
 	outln(w)
 	outln(w, "═══════════════════════════════════════════════════════════════")
@@ -757,4 +943,26 @@ func markSpentBSVUTXOs(cc *CommandContext, store *utxostore.Store, utxos []chain
 	if err := store.Save(); err != nil {
 		logTxError(cc, "bsv send: failed to save utxo store: %v", err)
 	}
+}
+
+// formatSatsWithCommas formats satoshis with thousands separators.
+// Example: 1234567 -> "1,234,567"
+func formatSatsWithCommas(sats uint64) string {
+	str := fmt.Sprintf("%d", sats)
+	var result strings.Builder
+	for i, digit := range str {
+		if i > 0 && (len(str)-i)%3 == 0 {
+			result.WriteRune(',')
+		}
+		result.WriteRune(digit)
+	}
+	return result.String()
+}
+
+// pluralize returns "s" if count != 1, empty string otherwise.
+func pluralize(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }

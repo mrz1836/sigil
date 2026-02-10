@@ -1,7 +1,11 @@
 package chain
 
 import (
+	"errors"
+	"regexp"
 	"testing"
+
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 func TestID_DerivationPath(t *testing.T) {
@@ -174,5 +178,49 @@ func TestAllChains(t *testing.T) {
 		if !expected[c] {
 			t.Errorf("AllChains() contains unexpected chain %q", c)
 		}
+	}
+}
+
+// assertIsSigilError is a test helper that validates an error is properly structured as a SigilError.
+// Use this in tests to ensure user-facing errors follow the documented conventions.
+//
+// Example usage:
+//
+//	err := client.ValidateAddress("")
+//	assertIsSigilError(t, err, "address validation should return SigilError")
+func assertIsSigilError(t *testing.T, err error, context string) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("%s: expected SigilError, got nil", context)
+		return
+	}
+
+	var sigilErr *sigilerr.SigilError
+	if !errors.As(err, &sigilErr) {
+		t.Errorf("%s: error is not a SigilError: %v (type: %T)", context, err, err)
+	}
+}
+
+// TestValidateAddressWithRegex_ErrorTypes verifies that validation errors are SigilErrors.
+func TestValidateAddressWithRegex_ErrorTypes(t *testing.T) {
+	testErr := &sigilerr.SigilError{
+		Code:    "TEST_ERROR",
+		Message: "test validation failed",
+	}
+
+	testRegex := regexp.MustCompile(`^valid$`)
+
+	// Empty address should return error
+	result := ValidateAddressWithRegex("", testRegex, testErr)
+	assertIsSigilError(t, result, "empty address validation")
+
+	// Invalid format should return error
+	result = ValidateAddressWithRegex("invalid", testRegex, testErr)
+	assertIsSigilError(t, result, "invalid format validation")
+
+	// Valid address should return nil
+	result = ValidateAddressWithRegex("valid", testRegex, testErr)
+	if result != nil {
+		t.Errorf("ValidateAddressWithRegex('valid') should return nil, got %v", result)
 	}
 }

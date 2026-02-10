@@ -1,4 +1,35 @@
 // Package chain provides blockchain interface definitions and common utilities.
+//
+// # Error Handling Conventions
+//
+// This package follows consistent error wrapping patterns:
+//
+// **User-facing errors** use sigilerr.SigilError for structured, actionable error messages:
+//   - Network errors: wrap with sigilerr.ErrNetworkError
+//   - Validation errors: return chain-specific errors (e.g., ErrInvalidAddress)
+//   - Configuration errors: wrap with appropriate SigilError
+//
+// Example network error:
+//
+//	if err := client.Call(ctx); err != nil {
+//	    return fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
+//	}
+//
+// Example validation error:
+//
+//	if !isValidFormat(address) {
+//	    return ErrInvalidAddress  // Already a SigilError
+//	}
+//
+// **Internal context wrapping** uses fmt.Errorf for debugging context:
+//
+//	balance, err := parseBalance(data)
+//	if err != nil {
+//	    return fmt.Errorf("parsing balance: %w", err)
+//	}
+//
+// Chain-specific packages (eth/, bsv/) should define their own SigilError types
+// for domain-specific errors and wrap them appropriately.
 package chain
 
 import (

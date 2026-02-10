@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
@@ -99,7 +100,7 @@ func init() {
 	_ = txSendCmd.MarkFlagRequired("amount")
 }
 
-//nolint:gocyclo // CLI flow involves validation and routing
+//nolint:gocyclo,gocognit // CLI flow involves validation and routing
 func runTxSend(cmd *cobra.Command, _ []string) error {
 	cc := GetCmdContext(cmd)
 	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
@@ -130,6 +131,14 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
+	// xpub read-only mode: deny spending operations
+	if cc.AgentXpub != "" {
+		return sigilerr.WithSuggestion(
+			sigilerr.ErrAgentXpubWriteDenied,
+			"SIGIL_AGENT_XPUB provides read-only access. Use SIGIL_AGENT_TOKEN for spending operations",
+		)
+	}
+
 	// Get the addresses for this chain
 	addresses, ok := wlt.Addresses[chainID]
 	if !ok || len(addresses) == 0 {
@@ -137,6 +146,22 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 			sigilerr.ErrInvalidInput,
 			fmt.Sprintf("wallet '%s' has no addresses for chain %s", txWallet, chainID),
 		)
+	}
+
+	// Agent mode: enforce chain authorization
+	if cc.AgentCred != nil {
+		if !cc.AgentCred.HasChain(chainID) {
+			return sigilerr.WithSuggestion(
+				sigilerr.ErrAgentChainDenied,
+				fmt.Sprintf("agent '%s' is not authorized for chain %s (allowed: %v)",
+					cc.AgentCred.ID, chainID, cc.AgentCred.Chains),
+			)
+		}
+	}
+
+	// Agent mode: skip confirmation prompt (non-interactive)
+	if cc.AgentCred != nil {
+		txConfirm = true
 	}
 
 	// Execute chain-specific send
@@ -297,6 +322,11 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 		}
 	}
 
+	// Agent policy enforcement (after amount is finalized)
+	if policyErr := enforceAgentPolicy(cmd, chain.ETH, txTo, amount); policyErr != nil {
+		return policyErr
+	}
+
 	// Display transaction details and confirm
 	displayAmount := txAmount
 	if sweepAll {
@@ -352,6 +382,9 @@ func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, see
 			invalidateBalanceCache(cc, chain.ETH, fromAddress, tokenAddress, "")
 		}
 	}
+
+	// Record agent spending (after successful send)
+	recordAgentSpend(cmd, chain.ETH, amount)
 
 	// Display result
 	displayTxResult(cmd, result)
@@ -493,6 +526,11 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 	}
 	logTxDebug(cc, "bsv send: using %d UTXOs, estimated fee=%d sat", len(sendUTXOs), estimatedFee)
 
+	// Agent policy enforcement (after amount is finalized)
+	if policyErr := enforceAgentPolicy(cmd, chain.BSV, txTo, amount); policyErr != nil {
+		return policyErr
+	}
+
 	// Display transaction details and confirm
 	if !txConfirm {
 		displayBSVTxDetails(cmd, primaryAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
@@ -563,10 +601,55 @@ func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, sto
 		}
 	}
 
+	// Record agent spending (after successful send)
+	recordAgentSpend(cmd, chain.BSV, amount)
+
 	// Display result
 	displayBSVTxResult(cmd, result)
 
 	return nil
+}
+
+// enforceAgentPolicy checks per-transaction and daily limits when running in agent mode.
+// Returns nil if not in agent mode or if the transaction is within policy limits.
+func enforceAgentPolicy(cmd *cobra.Command, chainID chain.ID, to string, amount *big.Int) error {
+	cc := GetCmdContext(cmd)
+	if cc.AgentCred == nil {
+		return nil // Not in agent mode
+	}
+
+	// Per-transaction limit and address allowlist check
+	if err := agent.ValidateTransaction(cc.AgentCred, chainID, to, amount); err != nil {
+		return sigilerr.WithSuggestion(
+			sigilerr.ErrAgentPolicyViolation,
+			err.Error(),
+		)
+	}
+
+	// Daily limit check
+	if err := agent.CheckDailyLimit(cc.AgentCounterPath, cc.AgentToken, cc.AgentCred, chainID, amount); err != nil {
+		return sigilerr.WithSuggestion(
+			sigilerr.ErrAgentDailyLimit,
+			err.Error(),
+		)
+	}
+
+	return nil
+}
+
+// recordAgentSpend records a completed transaction in the agent's daily spending counter.
+// No-op if not in agent mode.
+func recordAgentSpend(cmd *cobra.Command, chainID chain.ID, amount *big.Int) {
+	cc := GetCmdContext(cmd)
+	if cc.AgentCred == nil {
+		return
+	}
+
+	if err := agent.RecordSpend(cc.AgentCounterPath, cc.AgentToken, chainID, amount); err != nil {
+		if cc.Log != nil {
+			cc.Log.Debug("failed to record agent spending: %v", err)
+		}
+	}
 }
 
 // displayBSVTxDetails shows BSV transaction details before confirmation.

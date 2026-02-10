@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/session"
@@ -196,6 +197,17 @@ func initGlobals(cmd *cobra.Command) error {
 	sessionsPath := filepath.Join(cfg.Home, "sessions")
 	sessionMgr := session.NewManager(sessionsPath, nil)
 	cmdCtx.SessionMgr = sessionMgr
+
+	// Initialize agent store for agent token authentication
+	agentsPath := filepath.Join(cfg.Home, "agents")
+	cmdCtx.AgentStore = agent.NewFileStore(agentsPath)
+
+	// Auto-JSON output when SIGIL_AGENT_TOKEN is set (agents need machine-readable output)
+	if os.Getenv(config.EnvAgentToken) != "" && outputFormat == "" {
+		detectedFormat = output.FormatJSON
+		formatter = output.NewFormatter(detectedFormat, os.Stdout)
+		cmdCtx.Fmt = formatter
+	}
 
 	// Also store in cobra context for context-based access
 	// This allows commands to use GetCmdContext(cmd) instead of globals

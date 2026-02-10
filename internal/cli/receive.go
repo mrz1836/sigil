@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -18,6 +19,9 @@ import (
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
+
+// errMaxAddresses is returned when xpub address derivation hits the limit.
+var errMaxAddresses = errors.New("would exceed maximum address derivation limit")
 
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level flag variables
 var (
@@ -154,7 +158,7 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	//nolint:nestif // Address derivation logic requires conditional nesting
 	if receiveNew {
 		// Force derive a new address
-		addr, err = wlt.DeriveNextReceiveAddress(seed, chainID)
+		addr, err = deriveNextAddress(wlt, seed, cmdCtx, chainID)
 		if err != nil {
 			return fmt.Errorf("deriving new address: %w", err)
 		}
@@ -164,7 +168,7 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 		addr = findUnusedReceiveAddress(wlt, chainID, store)
 		if addr == nil {
 			// All addresses are used, derive a new one
-			addr, err = wlt.DeriveNextReceiveAddress(seed, chainID)
+			addr, err = deriveNextAddress(wlt, seed, cmdCtx, chainID)
 			if err != nil {
 				return fmt.Errorf("deriving new address: %w", err)
 			}
@@ -234,6 +238,36 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// deriveNextAddress derives the next receive address using either seed or xpub.
+// When seed is nil and xpub is available (SIGIL_AGENT_XPUB mode), addresses are
+// derived from the xpub without any private key material.
+func deriveNextAddress(wlt *wallet.Wallet, seed []byte, cmdCtx *CommandContext, chainID chain.ID) (*wallet.Address, error) {
+	// Standard seed-based derivation
+	if seed != nil {
+		return wlt.DeriveNextReceiveAddress(seed, chainID)
+	}
+
+	// xpub read-only derivation
+	if cmdCtx != nil && cmdCtx.AgentXpub != "" {
+		nextIndex := wlt.GetReceiveAddressCount(chainID)
+		if nextIndex >= wallet.MaxAddressDerivation {
+			return nil, fmt.Errorf("%w: %d", errMaxAddresses, wallet.MaxAddressDerivation)
+		}
+		//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
+		addr, err := wallet.DeriveAddressFromXpub(cmdCtx.AgentXpub, chainID, wallet.ExternalChain, uint32(nextIndex))
+		if err != nil {
+			return nil, fmt.Errorf("deriving address from xpub: %w", err)
+		}
+		wlt.Addresses[chainID] = append(wlt.Addresses[chainID], *addr)
+		return addr, nil
+	}
+
+	return nil, sigilerr.WithSuggestion(
+		sigilerr.ErrAgentXpubInvalid,
+		"no seed or xpub available for address derivation",
+	)
 }
 
 // findUnusedReceiveAddress returns the first receiving address with no activity.

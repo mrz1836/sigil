@@ -3,12 +3,14 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
@@ -141,8 +143,9 @@ func displayWalletJSON(wlt *wallet.Wallet, cmd *cobra.Command) {
 
 // loadWalletWithSession loads a wallet using cached session if available.
 // If no valid session exists, it prompts for password and starts a new session.
+// When SIGIL_AGENT_TOKEN is set, uses agent token authentication instead.
 //
-//nolint:gocognit,gocyclo,nestif // Session handling requires multiple branches
+//nolint:gocognit,gocyclo,nestif // Session/agent handling requires multiple branches
 func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
 	// Check if wallet exists
 	exists, existsErr := storage.Exists(name)
@@ -157,6 +160,17 @@ func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.
 	}
 
 	ctx := GetCmdContext(cmd)
+
+	// Agent token authentication (non-interactive)
+	if token := os.Getenv(config.EnvAgentToken); token != "" {
+		return loadWalletWithAgentToken(name, token, storage, cmd)
+	}
+
+	// xpub read-only mode (no seed, no secrets)
+	if xpub := os.Getenv(config.EnvAgentXpub); xpub != "" {
+		return loadWalletWithXpub(name, xpub, storage, cmd)
+	}
+
 	mgr := ctx.SessionMgr
 	cfgProvider := ctx.Cfg
 	log := ctx.Log
@@ -211,4 +225,88 @@ func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.
 	}
 
 	return wlt, seed, nil
+}
+
+// loadWalletWithAgentToken authenticates using an agent token from SIGIL_AGENT_TOKEN.
+// Finds the matching agent file, decrypts the seed, validates expiry and policy,
+// and stores the agent credential in the command context for downstream policy enforcement.
+func loadWalletWithAgentToken(name, token string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
+	ctx := GetCmdContext(cmd)
+
+	if ctx.AgentStore == nil {
+		return nil, nil, sigilerr.WithSuggestion(
+			sigilerr.ErrAgentTokenInvalid,
+			"agent store not initialized",
+		)
+	}
+
+	// Load and decrypt using the agent token
+	seed, cred, err := ctx.AgentStore.LoadByToken(name, token)
+	if err != nil {
+		return nil, nil, sigilerr.WithSuggestion(
+			sigilerr.ErrAgentTokenInvalid,
+			fmt.Sprintf("agent token does not match any agent for wallet '%s'. "+
+				"Create one with: sigil agent create --wallet %s", name, name),
+		)
+	}
+
+	// Check expiry
+	if cred.IsExpired() {
+		wallet.ZeroBytes(seed)
+		return nil, nil, sigilerr.WithSuggestion(
+			sigilerr.ErrAgentTokenExpired,
+			fmt.Sprintf("agent '%s' expired at %s. Create a new agent with: sigil agent create --wallet %s",
+				cred.ID, cred.ExpiresAt.Format(time.RFC3339), name),
+		)
+	}
+
+	// Load wallet metadata (doesn't require password)
+	wlt, loadErr := storage.LoadMetadata(name)
+	if loadErr != nil {
+		wallet.ZeroBytes(seed)
+		return nil, nil, loadErr
+	}
+
+	// Store agent credential in context for downstream policy enforcement
+	ctx.AgentCred = cred
+	ctx.AgentToken = token
+	ctx.AgentCounterPath = ctx.AgentStore.CounterPath(name, cred.ID)
+
+	out(cmd.ErrOrStderr(), "[Agent '%s' (%s), expires in %s]\n", cred.Label, cred.ID, formatDuration(cred.TTL()))
+
+	return wlt, seed, nil
+}
+
+// loadWalletWithXpub creates a read-only wallet context using an xpub from SIGIL_AGENT_XPUB.
+// Returns the wallet metadata with a nil seed — only balance and receive operations are supported.
+// Spending operations must detect the nil seed and return ErrAgentXpubWriteDenied.
+//
+//nolint:unparam // nil seed return is intentional (read-only mode, no private key access)
+func loadWalletWithXpub(name, xpub string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
+	// Check if wallet exists
+	exists, existsErr := storage.Exists(name)
+	if existsErr != nil {
+		return nil, nil, existsErr
+	}
+	if !exists {
+		return nil, nil, sigilerr.WithSuggestion(
+			wallet.ErrWalletNotFound,
+			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
+		)
+	}
+
+	// Load wallet metadata (doesn't require password)
+	wlt, loadErr := storage.LoadMetadata(name)
+	if loadErr != nil {
+		return nil, nil, loadErr
+	}
+
+	// Store xpub in context for downstream address derivation
+	ctx := GetCmdContext(cmd)
+	ctx.AgentXpub = xpub
+
+	out(cmd.ErrOrStderr(), "[xpub read-only mode — spending operations disabled]\n")
+
+	// Return nil seed (read-only mode — no private key access)
+	return wlt, nil, nil
 }

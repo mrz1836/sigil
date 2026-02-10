@@ -752,6 +752,240 @@ Ended 2 session(s)
 
 <br>
 
+### agent
+
+Manage agent tokens for programmatic wallet access. Agent tokens allow AI agents and bots to use wallets non-interactively with policy-limited access — spending caps, chain restrictions, address allowlists, and expiration.
+
+**Two access tiers:**
+
+| Mode | Env Variable | Capabilities | Secrets on Disk? |
+|------|-------------|--------------|------------------|
+| Agent Token | `SIGIL_AGENT_TOKEN` | Send, receive, balance | Encrypted seed in agent file |
+| xpub Read-Only | `SIGIL_AGENT_XPUB` | Balance, receive, addresses | None (xpub is public) |
+
+```bash
+sigil agent <subcommand>
+```
+
+#### agent create
+
+Create a new agent token with spending policy. You will be prompted for the wallet password once. A random token is generated and displayed — store it securely, it will not be shown again.
+
+```bash
+sigil agent create [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+| `--chains` | - | Comma-separated chain list: `bsv`, `eth` (required) |
+| `--max-per-tx` | `0` | Max amount per transaction in satoshis (e.g., `50000sat` or `0.0005`) |
+| `--max-daily` | `0` | Max daily aggregate spend in satoshis (e.g., `500000sat` or `0.005`) |
+| `--max-per-tx-eth` | - | Max per-tx ETH in wei or decimal (e.g., `0.001`) |
+| `--max-daily-eth` | - | Max daily ETH in wei or decimal (e.g., `0.01`) |
+| `--allowed-addrs` | - | Comma-separated address allowlist (empty = any destination) |
+| `--expires` | - | Token lifetime: e.g., `1d`, `7d`, `30d`, `90d`, `365d` (required) |
+| `--label` | - | Human-readable label for this agent (required) |
+
+**Examples:**
+```bash
+# BSV-only agent with spending limits
+sigil agent create --wallet main --chains bsv --max-per-tx 50000sat --max-daily 500000sat --expires 30d --label "payment-bot"
+
+# Multi-chain agent
+sigil agent create --wallet main --chains bsv,eth --max-per-tx 50000sat --max-daily 500000sat --expires 7d --label "trading-bot"
+
+# Agent restricted to specific addresses
+sigil agent create --wallet main --chains bsv --max-per-tx 100000sat --max-daily 1000000sat --allowed-addrs "1ABC...,1DEF..." --expires 90d --label "payroll"
+
+# Unlimited (use with caution)
+sigil agent create --wallet main --chains bsv,eth --expires 1d --label "test-bot"
+```
+
+**Sample output:**
+```
+Agent created for wallet 'main':
+  ID:           agt_7f3a2b
+  Label:        payment-bot
+  Chains:       bsv, eth
+  Per-tx limit: 50,000 sat
+  Daily limit:  500,000 sat
+  Expires:      2026-03-11
+
+  Token (store securely, shown once):
+  SIGIL_AGENT_TOKEN=sigil_agt_K7x9mP...base64...==
+
+  xpub (BSV): xpub6D4BDPc...
+  xpub (ETH): xpub6CzR1Hq...
+
+  Read-only env var (no spending ability):
+  SIGIL_AGENT_XPUB=xpub6D4BDPc...
+```
+
+#### agent list
+
+List all agent tokens for a wallet with their ID, label, allowed chains, and expiration status. Does not require the wallet password.
+
+```bash
+sigil agent list [flags]
+sigil agent ls    # alias
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+
+**Examples:**
+```bash
+sigil agent list --wallet main
+sigil agent list --wallet main -o json
+```
+
+**JSON output schema:**
+```json
+{
+  "agents": [
+    {
+      "id": "agt_7f3a2b",
+      "label": "payment-bot",
+      "wallet": "main",
+      "chains": ["bsv", "eth"],
+      "created_at": "2026-02-09T12:00:00Z",
+      "expires_at": "2026-03-11T12:00:00Z",
+      "expired": false,
+      "policy": {
+        "max_per_tx_sat": 50000,
+        "max_daily_sat": 500000
+      }
+    }
+  ]
+}
+```
+
+#### agent info
+
+Show detailed agent token information including policy, daily spending status, and xpub for read-only access. Does not require the wallet password.
+
+```bash
+sigil agent info [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+| `--id` | - | Agent ID (required, e.g., `agt_7f3a2b`) |
+
+**Examples:**
+```bash
+sigil agent info --wallet main --id agt_7f3a2b
+sigil agent info --wallet main --id agt_7f3a2b -o json
+```
+
+#### agent revoke
+
+Revoke one or all agent tokens for a wallet. Revoked tokens are immediately deleted and can no longer authenticate. This is irreversible. Does not require the wallet password.
+
+```bash
+sigil agent revoke [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wallet` | - | Wallet name (required) |
+| `--id` | - | Agent ID to revoke (required unless `--all`) |
+| `--all` | `false` | Revoke all agents for this wallet |
+
+**Examples:**
+```bash
+# Revoke a specific agent
+sigil agent revoke --wallet main --id agt_7f3a2b
+
+# Revoke all agents for a wallet
+sigil agent revoke --wallet main --all
+```
+
+#### Agent Usage (Non-Interactive)
+
+Once created, the agent sets the token in its environment and uses normal sigil commands:
+
+```bash
+# Spending operations (requires SIGIL_AGENT_TOKEN)
+SIGIL_AGENT_TOKEN=sigil_agt_... sigil tx send --wallet main --to 1ABC... --amount 5000sat --chain bsv
+
+# Balance check (xpub only, zero secrets)
+SIGIL_AGENT_XPUB=xpub6D4BDPc... sigil balance show --wallet main --chain bsv
+
+# Generate receive address (xpub only)
+SIGIL_AGENT_XPUB=xpub6D4BDPc... sigil receive --wallet main --chain bsv
+```
+
+When `SIGIL_AGENT_TOKEN` is set, output defaults to JSON (machine-readable) and confirmation prompts are skipped automatically.
+
+#### Spending Policy
+
+Agent tokens enforce spending limits at two levels:
+
+- **Per-transaction limit**: Maximum amount for a single `tx send` command
+- **Daily limit**: Maximum aggregate spend per UTC day (resets at midnight UTC)
+
+Additional restrictions:
+- **Chain authorization**: Agent can only transact on chains specified at creation
+- **Address allowlist**: Optional restriction to specific destination addresses
+- **Expiration**: Token becomes invalid after the specified lifetime
+
+Daily spending is tracked in `~/.sigil/agents/{wallet}-{id}.counter` with HMAC integrity protection.
+
+#### Agent Error Codes
+
+When policy enforcement fails, structured JSON errors are returned:
+
+| Code | Exit | Description |
+|------|------|-------------|
+| `AGENT_TOKEN_INVALID` | 3 | Token doesn't match any agent file |
+| `AGENT_TOKEN_EXPIRED` | 3 | Agent token has expired |
+| `AGENT_POLICY_VIOLATION` | 5 | Transaction exceeds per-tx limit |
+| `AGENT_DAILY_LIMIT` | 5 | Daily spending limit reached |
+| `AGENT_CHAIN_DENIED` | 2 | Agent not authorized for this chain |
+| `AGENT_ADDR_DENIED` | 2 | Destination address not in allowlist |
+| `AGENT_XPUB_INVALID` | 2 | xpub string is malformed |
+| `AGENT_XPUB_WRITE_DENIED` | 3 | Spending attempted with xpub-only auth |
+
+**Example error response:**
+```json
+{
+  "error": {
+    "code": "AGENT_DAILY_LIMIT",
+    "message": "daily spending limit reached",
+    "suggestion": "Wait until tomorrow or create a new agent with a higher daily limit",
+    "exit_code": 5
+  }
+}
+```
+
+#### Security Model
+
+**Protects against:**
+- Runaway agent spending (per-tx + daily limits)
+- Agent code bugs / LLM hallucinations (policy enforcement)
+- Token leak without file access (token alone is useless without the agent file on disk)
+- Chain restriction violation (BSV-only agent cannot spend ETH)
+- Stale credentials (tokens expire)
+
+**Does not protect against:**
+- Full machine compromise where attacker gets both token + agent file (they could decrypt the seed). Mitigated by low-value wallets + spending limits capping damage.
+
+**xpub security:** The xpub reveals addresses (privacy impact if leaked) but has zero spending capability. Ideal for monitoring and receiving agents.
+
+<br>
+
+---
+
+<br>
+
 ### backup
 
 Create, verify, and restore encrypted wallet backups.
@@ -923,6 +1157,8 @@ Environment variables override configuration file settings.
 | `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
 | `SIGIL_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
 | `SIGIL_SESSION_TTL` | Session timeout in minutes (default: 15) |
+| `SIGIL_AGENT_TOKEN` | Agent token for non-interactive wallet access (see [Agent Mode](#agent)) |
+| `SIGIL_AGENT_XPUB` | xpub for read-only balance/receive operations (see [Agent Mode](#agent)) |
 | `NO_COLOR` | Disable colored output (any value) |
 
 **Examples:**

@@ -481,3 +481,57 @@ func TestService_BackupPath(t *testing.T) {
 	path := svc.BackupPath("mybackup.sigil")
 	assert.Equal(t, "/var/backups/mybackup.sigil", path)
 }
+
+func TestManifest_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := backup.NewManifest(
+		"test-wallet",
+		[]string{"eth", "bsv"},
+		map[string]int{"eth": 5, "bsv": 3},
+	)
+	original.HostInfo = "test-host"
+
+	// Marshal to JSON
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	// Unmarshal from JSON
+	var restored backup.Manifest
+	err = json.Unmarshal(data, &restored)
+	require.NoError(t, err)
+
+	// Compare fields
+	assert.Equal(t, original.WalletName, restored.WalletName)
+	assert.Equal(t, original.Chains, restored.Chains)
+	assert.Equal(t, original.AddressCount, restored.AddressCount)
+	assert.Equal(t, original.EncryptionMethod, restored.EncryptionMethod)
+	assert.Equal(t, original.HostInfo, restored.HostInfo)
+	assert.True(t, original.CreatedAt.Equal(restored.CreatedAt), "CreatedAt should round-trip correctly")
+}
+
+func TestBackup_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	manifest := backup.NewManifest("wallet", []string{"eth"}, map[string]int{"eth": 1})
+	original := backup.NewBackup(manifest, []byte("encrypted-data-content"))
+
+	// Marshal to JSON
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	// Unmarshal from JSON
+	var restored backup.Backup
+	err = json.Unmarshal(data, &restored)
+	require.NoError(t, err)
+
+	// Compare fields
+	assert.Equal(t, original.Version, restored.Version)
+	assert.Equal(t, original.Manifest, restored.Manifest)
+	assert.Equal(t, original.EncryptedData, restored.EncryptedData)
+	assert.Equal(t, original.Checksum, restored.Checksum)
+
+	// Validate restored backup
+	err = restored.Validate()
+	assert.NoError(t, err)
+}

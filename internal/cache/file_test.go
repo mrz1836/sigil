@@ -257,3 +257,197 @@ func TestBalanceCache(t *testing.T) {
 		assert.False(t, exists)
 	})
 }
+
+func TestFileStorage_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "concurrent.json")
+	storage := NewFileStorage(cachePath)
+
+	const (
+		numWriters  = 10
+		numReaders  = 10
+		numDeleters = 10
+	)
+
+	done := make(chan bool, numWriters+numReaders+numDeleters)
+
+	// Initialize with some data
+	initialCache := NewBalanceCache()
+	initialCache.Set(BalanceCacheEntry{
+		Chain:   chain.ETH,
+		Address: "0xinit",
+		Balance: "1.0",
+	})
+	require.NoError(t, storage.Save(initialCache))
+
+	// Concurrent writers
+	for i := 0; i < numWriters; i++ {
+		go func(id int) {
+			cache := NewBalanceCache()
+			cache.Set(BalanceCacheEntry{
+				Chain:   chain.ETH,
+				Address: "0xwriter" + string(rune('0'+id)),
+				Balance: "1.0",
+			})
+			_ = storage.Save(cache)
+			done <- true
+		}(i)
+	}
+
+	// Concurrent readers
+	for i := 0; i < numReaders; i++ {
+		go func() {
+			_, _ = storage.Load()
+			done <- true
+		}()
+	}
+
+	// Concurrent deleters
+	for i := 0; i < numDeleters; i++ {
+		go func() {
+			cache, err := storage.Load()
+			if err == nil {
+				cache.Delete(chain.ETH, "0xinit", "")
+				_ = storage.Save(cache)
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numWriters+numReaders+numDeleters; i++ {
+		<-done
+	}
+
+	// Verify cache is still valid (not corrupted)
+	finalCache, err := storage.Load()
+	require.NoError(t, err)
+	assert.NotNil(t, finalCache)
+	t.Logf("Final cache size: %d", finalCache.Size())
+}
+
+func TestFileStorage_SaveAtomicity(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "atomic.json")
+	storage := NewFileStorage(cachePath)
+
+	const numSaves = 20
+	done := make(chan bool, numSaves)
+
+	// Concurrent saves
+	for i := 0; i < numSaves; i++ {
+		go func(id int) {
+			cache := NewBalanceCache()
+			cache.Set(BalanceCacheEntry{
+				Chain:   chain.ETH,
+				Address: "0xsave" + string(rune('0'+id%10)),
+				Balance: "1.0",
+			})
+			err := storage.Save(cache)
+			assert.NoError(t, err)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all saves
+	for i := 0; i < numSaves; i++ {
+		<-done
+	}
+
+	// Verify cache is valid and not corrupted
+	cache, err := storage.Load()
+	require.NoError(t, err)
+	assert.NotNil(t, cache)
+	t.Logf("Cache after %d concurrent saves: size=%d", numSaves, cache.Size())
+}
+
+func TestBalanceCache_KeyCollisions(t *testing.T) {
+	t.Parallel()
+
+	cache := NewBalanceCache()
+
+	// Test that addresses with colons don't collide
+	cache.Set(BalanceCacheEntry{
+		Chain:   chain.ETH,
+		Address: "0x123:456",
+		Balance: "1.0",
+		Symbol:  "TEST1",
+	})
+
+	cache.Set(BalanceCacheEntry{
+		Chain:   chain.ETH,
+		Address: "0x123",
+		Balance: "2.0",
+		Symbol:  "TEST2",
+		Token:   "456",
+	})
+
+	// These should be different entries
+	entry1, exists1, _ := cache.Get(chain.ETH, "0x123:456", "")
+	assert.True(t, exists1)
+	assert.Equal(t, "TEST1", entry1.Symbol)
+	assert.Equal(t, "1.0", entry1.Balance)
+
+	entry2, exists2, _ := cache.Get(chain.ETH, "0x123", "456")
+	assert.True(t, exists2)
+	assert.Equal(t, "TEST2", entry2.Symbol)
+	assert.Equal(t, "2.0", entry2.Balance)
+
+	// Verify size is 2
+	assert.Equal(t, 2, cache.Size())
+}
+
+func TestFileStorage_Delete(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "delete.json")
+	storage := NewFileStorage(cachePath)
+
+	// Create a cache file
+	cache := NewBalanceCache()
+	cache.Set(BalanceCacheEntry{
+		Chain:   chain.ETH,
+		Address: "0x123",
+		Balance: "1.0",
+	})
+	require.NoError(t, storage.Save(cache))
+	require.True(t, storage.Exists())
+
+	// Delete it
+	err := storage.Delete()
+	require.NoError(t, err)
+	assert.False(t, storage.Exists())
+
+	// Delete again should not error
+	err = storage.Delete()
+	require.NoError(t, err)
+}
+
+func TestFileStorage_Exists(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "exists.json")
+	storage := NewFileStorage(cachePath)
+
+	// Initially doesn't exist
+	assert.False(t, storage.Exists())
+
+	// After save, it exists
+	cache := NewBalanceCache()
+	require.NoError(t, storage.Save(cache))
+	assert.True(t, storage.Exists())
+}
+
+func TestFileStorage_Path(t *testing.T) {
+	t.Parallel()
+
+	path := "/tmp/test.json"
+	storage := NewFileStorage(path)
+	assert.Equal(t, path, storage.Path())
+}

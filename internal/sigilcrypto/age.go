@@ -59,6 +59,10 @@ func Encrypt(plaintext []byte, password string) ([]byte, error) {
 }
 
 // Decrypt decrypts ciphertext using age with a password-based identity.
+//
+// SECURITY: The caller MUST zero the returned byte slice when done to prevent
+// sensitive data (e.g., seed material) from lingering in memory. Prefer
+// DecryptSecure when possible, which handles zeroing automatically.
 func Decrypt(ciphertext []byte, password string) ([]byte, error) {
 	identity, err := age.NewScryptIdentity(password)
 	if err != nil {

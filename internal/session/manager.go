@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,13 @@ import (
 	"github.com/mrz1836/sigil/internal/fileutil"
 	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
+
+// walletNameRegex mirrors wallet.walletNameRegex for input validation at the
+// session boundary without importing the wallet package.
+var walletNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
+// errInvalidWalletName is returned when a wallet name fails validation.
+var errInvalidWalletName = fmt.Errorf("invalid wallet name")
 
 const (
 	// sessionFileExtension is the extension for session files.
@@ -73,7 +81,13 @@ func (m *FileManager) Available() bool {
 }
 
 // StartSession creates a new session for the wallet.
+//
+//nolint:gocyclo // Sequential validation and error-handling steps are inherent to the operation
 func (m *FileManager) StartSession(wallet string, seed []byte, ttl time.Duration) error {
+	if !walletNameRegex.MatchString(wallet) {
+		return errInvalidWalletName
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -148,6 +162,10 @@ func (m *FileManager) StartSession(wallet string, seed []byte, ttl time.Duration
 
 // GetSession retrieves the decrypted seed for an active session.
 func (m *FileManager) GetSession(wallet string) ([]byte, *Session, error) {
+	if !walletNameRegex.MatchString(wallet) {
+		return nil, nil, errInvalidWalletName
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -270,8 +288,28 @@ func (m *FileManager) ListSessions() ([]*Session, error) {
 	return m.listSessionsLocked()
 }
 
-// probeKeyring tests if the keyring is available.
+// probeKeyringTimeout is the maximum time to wait for a keyring probe.
+// Prevents CLI startup from blocking if the OS keyring daemon is slow or hung.
+const probeKeyringTimeout = 3 * time.Second
+
+// probeKeyring tests if the keyring is available, with a timeout to prevent
+// blocking CLI startup if the OS keyring daemon is unresponsive.
 func (m *FileManager) probeKeyring() bool {
+	ch := make(chan bool, 1)
+	go func() {
+		ch <- m.probeKeyringSync()
+	}()
+
+	select {
+	case result := <-ch:
+		return result
+	case <-time.After(probeKeyringTimeout):
+		return false
+	}
+}
+
+// probeKeyringSync performs the actual synchronous keyring probe.
+func (m *FileManager) probeKeyringSync() bool {
 	const (
 		testService = "sigil-probe"
 		testUser    = "probe"

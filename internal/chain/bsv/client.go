@@ -71,6 +71,10 @@ type WOCClient interface {
 	AddressUnspentTransactions(ctx context.Context, address string) (whatsonchain.AddressHistory, error)
 	GetMinerFeesStats(ctx context.Context, from, to int64) ([]*whatsonchain.MinerFeeStats, error)
 	BroadcastTx(ctx context.Context, txHex string) (string, error)
+
+	// Bulk operations (max 20 addresses per call)
+	BulkAddressConfirmedBalance(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
+	BulkAddressUnconfirmedBalance(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.AddressBalances, error)
 }
 
 // Compile-time check that the real SDK client satisfies WOCClient.

@@ -366,3 +366,89 @@ func (f *Fetcher) getCachedBSVBalances(address string) ([]CacheEntry, bool, erro
 	stale := age > cache.DefaultStaleness
 	return []CacheEntry{*entry}, stale, nil
 }
+
+// fetchBSVBulk fetches balances for multiple BSV addresses using bulk API.
+// Returns a map of address -> entries. More efficient than individual calls.
+//
+//nolint:gocognit,gocyclo // Complex business logic for bulk balance fetching with caching
+func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
+	if len(addresses) == 0 {
+		return make(map[string][]CacheEntry), nil
+	}
+
+	// Check post-send cache trust for all addresses
+	addressesToFetch := make([]string, 0, len(addresses))
+	results := make(map[string][]CacheEntry)
+
+	for _, addr := range addresses {
+		if entry, exists, age := f.cache.Get(chain.BSV, addr, ""); exists && age < postSendCacheTrust {
+			// Use trusted fresh cache
+			results[addr] = []CacheEntry{*entry}
+		} else {
+			addressesToFetch = append(addressesToFetch, addr)
+		}
+	}
+
+	if len(addressesToFetch) == 0 {
+		return results, nil
+	}
+
+	// Bulk fetch remaining addresses
+	client := bsv.NewClient(ctx, nil)
+	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
+	if err != nil {
+		// On error, fall back to cached data for all addresses
+		for _, addr := range addressesToFetch {
+			if cachedEntries, _, cacheErr := f.getCachedBSVBalances(addr); cacheErr == nil {
+				results[addr] = cachedEntries
+			}
+		}
+		return results, sigilerr.Wrap(err, "bulk BSV fetch failed, using cached data")
+	}
+
+	// Convert bulk results to cache entries
+	for addr, balance := range bulkBalances {
+		var unconfirmedStr string
+		if balance.Unconfirmed != nil && balance.Unconfirmed.Sign() != 0 {
+			unconfirmedStr = chain.FormatSignedDecimalAmount(balance.Unconfirmed, balance.Decimals)
+		}
+
+		entry := CacheEntry{
+			Chain:       chain.BSV,
+			Address:     addr,
+			Balance:     chain.FormatDecimalAmount(balance.Amount, balance.Decimals),
+			Unconfirmed: unconfirmedStr,
+			Symbol:      balance.Symbol,
+			Decimals:    balance.Decimals,
+			UpdatedAt:   time.Now().UTC(),
+		}
+
+		f.cache.Set(entry)
+		results[addr] = []CacheEntry{entry}
+	}
+
+	// Handle addresses not in bulk response (API returned no data for them).
+	// This includes:
+	// 1. Addresses completely absent from the bulk API response
+	// 2. Addresses with nil Balance (filtered out by GetBulkNativeBalance)
+	// Fall back to individual fetch for these addresses.
+	for _, addr := range addressesToFetch {
+		if _, found := results[addr]; found {
+			continue
+		}
+
+		// Address was not in bulk response, try individual fetch
+		entries, _, err := f.fetchBSV(ctx, addr)
+		if err == nil && len(entries) > 0 {
+			results[addr] = entries
+			continue
+		}
+
+		// If individual fetch also fails, try to use cached data
+		if cachedEntries, _, cacheErr := f.getCachedBSVBalances(addr); cacheErr == nil {
+			results[addr] = cachedEntries
+		}
+	}
+
+	return results, nil
+}

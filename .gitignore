@@ -56,3 +56,6 @@ node_modules/
 .specify/scripts/
 .specify/templates/
 .claude/
+
+# Sigil
+/sigil

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -11,16 +10,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/chain"
-	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/address"
+	"github.com/mrz1836/sigil/internal/service/balance"
+	"github.com/mrz1836/sigil/internal/service/discovery"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
-
-// errMaxAddresses is returned when xpub address derivation hits the limit.
-var errMaxAddresses = errors.New("would exceed maximum address derivation limit")
 
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level flag variables
 var (
@@ -137,6 +135,9 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading UTXO store: %w", loadErr)
 	}
 
+	// Create address service
+	addressService := address.NewService(address.NewMetadataAdapter(store))
+
 	// Multi-chain check: when --check --all is used without explicit --chain,
 	// check all enabled MVP chains (BSV + ETH).
 	if receiveCheck && receiveAll && !cmd.Flags().Changed("chain") {
@@ -150,17 +151,30 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	//nolint:nestif // Address derivation logic requires conditional nesting
 	if receiveNew {
 		// Force derive a new address
-		addr, err = deriveNextAddress(wlt, seed, cmdCtx, chainID)
+		addr, err = addressService.DeriveNext(&address.DerivationRequest{
+			Wallet:  wlt,
+			Seed:    seed,
+			ChainID: chainID,
+			Xpub:    cmdCtx.AgentXpub,
+		})
 		if err != nil {
 			return fmt.Errorf("deriving new address: %w", err)
 		}
 		isNew = true
 	} else {
 		// Find first unused address
-		addr = findUnusedReceiveAddress(wlt, chainID, store)
+		addr = addressService.FindUnused(&address.FindRequest{
+			Wallet:  wlt,
+			ChainID: chainID,
+		})
 		if addr == nil {
 			// All addresses are used, derive a new one
-			addr, err = deriveNextAddress(wlt, seed, cmdCtx, chainID)
+			addr, err = addressService.DeriveNext(&address.DerivationRequest{
+				Wallet:  wlt,
+				Seed:    seed,
+				ChainID: chainID,
+				Xpub:    cmdCtx.AgentXpub,
+			})
 			if err != nil {
 				return fmt.Errorf("deriving new address: %w", err)
 			}
@@ -229,49 +243,6 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 		displayReceiveText(cmd, addr, chainID, label, isNew)
 	}
 
-	return nil
-}
-
-// deriveNextAddress derives the next receive address using either seed or xpub.
-// When seed is nil and xpub is available (SIGIL_AGENT_XPUB mode), addresses are
-// derived from the xpub without any private key material.
-func deriveNextAddress(wlt *wallet.Wallet, seed []byte, cmdCtx *CommandContext, chainID chain.ID) (*wallet.Address, error) {
-	// Standard seed-based derivation
-	if seed != nil {
-		return wlt.DeriveNextReceiveAddress(seed, chainID)
-	}
-
-	// xpub read-only derivation
-	if cmdCtx != nil && cmdCtx.AgentXpub != "" {
-		nextIndex := wlt.GetReceiveAddressCount(chainID)
-		if nextIndex >= wallet.MaxAddressDerivation {
-			return nil, fmt.Errorf("%w: %d", errMaxAddresses, wallet.MaxAddressDerivation)
-		}
-		//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
-		addr, err := wallet.DeriveAddressFromXpub(cmdCtx.AgentXpub, chainID, wallet.ExternalChain, uint32(nextIndex))
-		if err != nil {
-			return nil, fmt.Errorf("deriving address from xpub: %w", err)
-		}
-		wlt.Addresses[chainID] = append(wlt.Addresses[chainID], *addr)
-		return addr, nil
-	}
-
-	return nil, sigilerr.WithSuggestion(
-		sigilerr.ErrAgentXpubInvalid,
-		"no seed or xpub available for address derivation",
-	)
-}
-
-// findUnusedReceiveAddress returns the first receiving address with no activity.
-func findUnusedReceiveAddress(wlt *wallet.Wallet, chainID chain.ID, store *utxostore.Store) *wallet.Address {
-	addresses := wlt.Addresses[chainID]
-	for i := range addresses {
-		addr := &addresses[i]
-		meta := store.GetAddress(chainID, addr.Address)
-		if meta == nil || !meta.HasActivity {
-			return addr
-		}
-	}
 	return nil
 }
 
@@ -381,23 +352,31 @@ func runReceiveCheckETH(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 
 // runReceiveCheckBSV dispatches BSV UTXO checking for --check mode.
 func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, currentAddr *wallet.Address, chainID chain.ID) error {
-	client := bsv.NewClient(ctx, &bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+	// Create discovery service
+	balanceSvc := balance.NewService(&balance.Config{
+		ConfigProvider: cmdCtx.Cfg,
+		CacheProvider:  nil, // Not using cache for checks
+		Metadata:       nil,
+		ForceRefresh:   true,
 	})
-	adapter := &bsvRefreshAdapter{client: client}
+	discoverySvc := discovery.NewService(&discovery.Config{
+		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
+		BalanceService: balanceSvc,
+		Config:         cmdCtx.Cfg,
+	})
 
 	switch {
 	case receiveAll:
-		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, adapter, chainID)
+		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, discoverySvc, chainID)
 		return nil
 	case receiveAddress != "":
 		addr, err := findWalletAddress(wlt, chainID, receiveAddress)
 		if err != nil {
 			return err
 		}
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, adapter, addr, chainID)
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, addr, chainID)
 	default:
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, adapter, currentAddr, chainID)
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, currentAddr, chainID)
 	}
 }
 
@@ -411,31 +390,41 @@ type addressCheckResult struct {
 }
 
 // runReceiveCheckSingle checks a single address and displays the result.
-func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandContext, store *utxostore.Store, adapter *bsvRefreshAdapter, addr *wallet.Address, chainID chain.ID) error {
-	_, err := store.RefreshAddress(ctx, addr.Address, chainID, adapter)
+func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandContext, _ *utxostore.Store, discoverySvc *discovery.Service, addr *wallet.Address, chainID chain.ID) error {
+	// Check address using discovery service
+	result, err := discoverySvc.CheckAddress(ctx, &discovery.CheckRequest{
+		ChainID: chainID,
+		Address: addr.Address,
+		Timeout: 30 * time.Second,
+	})
 	if err != nil {
 		return fmt.Errorf("checking address %s: %w", addr.Address, err)
 	}
 
-	balance := store.GetAddressBalance(chainID, addr.Address)
-	utxos := store.GetUTXOs(chainID, addr.Address)
-
-	label := ""
-	if meta := store.GetAddress(chainID, addr.Address); meta != nil {
-		label = meta.Label
+	// Convert service UTXOs back to store UTXOs for display compatibility
+	storeUTXOs := make([]*utxostore.StoredUTXO, len(result.UTXOs))
+	for i, u := range result.UTXOs {
+		storeUTXOs[i] = &utxostore.StoredUTXO{
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			Confirmations: u.Confirmations,
+		}
 	}
 
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
-		displayReceiveCheckJSON(w, addr, chainID, label, balance, utxos)
+		displayReceiveCheckJSON(w, addr, chainID, result.Label, result.Balance, storeUTXOs)
 	} else {
-		displayReceiveCheckText(w, addr, chainID, label, balance, utxos)
+		displayReceiveCheckText(w, addr, chainID, result.Label, result.Balance, storeUTXOs)
 	}
 
 	return nil
 }
 
 // runReceiveCheckAll checks all receiving addresses and displays a summary.
-func runReceiveCheckAll(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, adapter *bsvRefreshAdapter, chainID chain.ID) {
+//
+//nolint:gocognit // CLI display logic with multiple output paths
+func runReceiveCheckAll(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, discoverySvc *discovery.Service, chainID chain.ID) {
 	addresses, ok := wlt.Addresses[chainID]
 	if !ok || len(addresses) == 0 {
 		outln(w)
@@ -448,13 +437,18 @@ func runReceiveCheckAll(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 	for i := range addresses {
 		addr := &addresses[i]
 
-		label := ""
-		if meta := store.GetAddress(chainID, addr.Address); meta != nil {
-			label = meta.Label
-		}
-
-		_, err := store.RefreshAddress(ctx, addr.Address, chainID, adapter)
+		// Check address using discovery service
+		result, err := discoverySvc.CheckAddress(ctx, &discovery.CheckRequest{
+			ChainID: chainID,
+			Address: addr.Address,
+			Timeout: 30 * time.Second,
+		})
 		if err != nil {
+			// Get label from store for error case
+			label := ""
+			if meta := store.GetAddress(chainID, addr.Address); meta != nil {
+				label = meta.Label
+			}
 			results = append(results, addressCheckResult{
 				Addr:  addr,
 				Label: label,
@@ -463,14 +457,22 @@ func runReceiveCheckAll(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 			continue
 		}
 
-		balance := store.GetAddressBalance(chainID, addr.Address)
-		utxos := store.GetUTXOs(chainID, addr.Address)
+		// Convert service UTXOs to store UTXOs for display compatibility
+		storeUTXOs := make([]*utxostore.StoredUTXO, len(result.UTXOs))
+		for j, u := range result.UTXOs {
+			storeUTXOs[j] = &utxostore.StoredUTXO{
+				TxID:          u.TxID,
+				Vout:          u.Vout,
+				Amount:        u.Amount,
+				Confirmations: u.Confirmations,
+			}
+		}
 
 		results = append(results, addressCheckResult{
 			Addr:    addr,
-			Label:   label,
-			Balance: balance,
-			UTXOs:   utxos,
+			Label:   result.Label,
+			Balance: result.Balance,
+			UTXOs:   storeUTXOs,
 		})
 	}
 
@@ -495,13 +497,22 @@ func runReceiveCheckAllChains(cmd *cobra.Command, cmdCtx *CommandContext, wlt *w
 
 	w := cmd.OutOrStdout()
 
+	// Create discovery service
+	balanceSvc := balance.NewService(&balance.Config{
+		ConfigProvider: cmdCtx.Cfg,
+		CacheProvider:  nil,
+		Metadata:       nil,
+		ForceRefresh:   true,
+	})
+	discoverySvc := discovery.NewService(&discovery.Config{
+		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
+		BalanceService: balanceSvc,
+		Config:         cmdCtx.Cfg,
+	})
+
 	// Check BSV addresses (UTXO-based)
 	if bsvAddrs, ok := wlt.Addresses[chain.BSV]; ok && len(bsvAddrs) > 0 {
-		client := bsv.NewClient(ctx, &bsv.ClientOptions{
-			APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
-		})
-		adapter := &bsvRefreshAdapter{client: client}
-		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, adapter, chain.BSV)
+		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, discoverySvc, chain.BSV)
 	}
 
 	// Check ETH addresses (account-based balance)

@@ -15,8 +15,10 @@ import (
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
-	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/address"
+	"github.com/mrz1836/sigil/internal/service/balance"
+	"github.com/mrz1836/sigil/internal/service/discovery"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -144,19 +146,6 @@ func init() {
 	_ = addressesRefreshCmd.MarkFlagRequired("wallet")
 }
 
-// addressInfo holds display information for an address.
-type addressInfo struct {
-	Type        string // "receive" or "change"
-	Index       uint32
-	Address     string
-	Path        string
-	Label       string
-	Balance     string // formatted confirmed balance (e.g. "0.00070422") or ""
-	Unconfirmed string // formatted unconfirmed delta (e.g. "-0.00070422") or ""
-	Used        bool
-	ChainID     chain.ID
-}
-
 //nolint:gocognit,gocyclo // CLI flow involves multiple validation, collection, and fetch steps
 func runAddressesList(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
@@ -198,62 +187,50 @@ func runAddressesList(cmd *cobra.Command, _ []string) error {
 	cacheStorage := cache.NewFileStorage(cachePath)
 	balanceCache := loadOrCreateBalanceCache(cacheStorage, addressesRefresh, cmd, cmdCtx.Log)
 
-	// Determine which chains to show
-	var chains []chain.ID
+	// Parse chain filter
+	var chainFilter chain.ID
 	if addressesChain != "" {
-		chainID, ok := chain.ParseChainID(addressesChain)
-		if !ok || !chainID.IsMVP() {
+		parsed, ok := chain.ParseChainID(addressesChain)
+		if !ok || !parsed.IsMVP() {
 			return sigilerr.WithSuggestion(
 				sigilerr.ErrInvalidInput,
 				fmt.Sprintf("invalid chain: %s (use eth or bsv)", addressesChain),
 			)
 		}
-		chains = []chain.ID{chainID}
-	} else {
-		chains = wlt.EnabledChains
+		chainFilter = parsed
 	}
 
-	// Collect all address info (filter applied after balance enrichment)
-	var allAddresses []addressInfo
-
-	for _, chainID := range chains {
-		// Collect receive addresses
-		if addressesType == "all" || addressesType == "receive" {
-			for _, addr := range wlt.Addresses[chainID] {
-				info := buildAddressInfo("receive", &addr, chainID, store)
-				allAddresses = append(allAddresses, info)
-			}
-		}
-
-		// Collect change addresses
-		if addressesType == "all" || addressesType == "change" {
-			if wlt.ChangeAddresses != nil {
-				for _, addr := range wlt.ChangeAddresses[chainID] {
-					info := buildAddressInfo("change", &addr, chainID, store)
-					allAddresses = append(allAddresses, info)
-				}
-			}
-		}
+	// Parse type filter
+	var typeFilter address.AddressType
+	switch addressesType {
+	case "all":
+		typeFilter = address.AllTypes
+	case "receive":
+		typeFilter = address.Receive
+	case "change":
+		typeFilter = address.Change
 	}
+
+	// Create address service and collect addresses
+	addressService := address.NewService(address.NewMetadataAdapter(store))
+	allAddresses := addressService.Collect(&address.CollectionRequest{
+		Wallet:      wlt,
+		ChainFilter: chainFilter,
+		TypeFilter:  typeFilter,
+	})
 
 	// Fetch live balances concurrently
 	fetchAddressBalances(cmd, allAddresses, balanceCache, cmdCtx.Cfg)
 
 	// Enrich "Used" status from fetched balance data
 	for i := range allAddresses {
-		if !allAddresses[i].Used {
-			allAddresses[i].Used = isNonZeroBalance(allAddresses[i].Balance) || isNonZeroBalance(allAddresses[i].Unconfirmed)
+		if !allAddresses[i].HasActivity {
+			allAddresses[i].HasActivity = isNonZeroBalance(allAddresses[i].Balance) || isNonZeroBalance(allAddresses[i].Unconfirmed)
 		}
 	}
 
 	// Apply --used/--unused filter after balance enrichment
-	var filtered []addressInfo
-	for _, addr := range allAddresses {
-		if shouldIncludeAddress(addr) {
-			filtered = append(filtered, addr)
-		}
-	}
-	allAddresses = filtered
+	allAddresses = address.FilterUsage(allAddresses, addressesUsed, addressesUnused)
 
 	// Sort by chain, type, index
 	sort.Slice(allAddresses, func(i, j int) bool {
@@ -355,27 +332,24 @@ func runAddressesRefresh(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Build addressInfo list for display
+	// Build addressInfo list for display using address service
 	targetSet := make(map[string]bool, len(targets))
 	for _, t := range targets {
 		targetSet[t.address] = true
 	}
 
-	var allAddresses []addressInfo
-	for _, chainID := range chains {
-		for _, addr := range wlt.Addresses[chainID] {
-			if targetSet[addr.Address] {
-				info := buildAddressInfo("receive", &addr, chainID, store)
-				allAddresses = append(allAddresses, info)
-			}
-		}
-		if wlt.ChangeAddresses != nil {
-			for _, addr := range wlt.ChangeAddresses[chainID] {
-				if targetSet[addr.Address] {
-					info := buildAddressInfo("change", &addr, chainID, store)
-					allAddresses = append(allAddresses, info)
-				}
-			}
+	addressService := address.NewService(address.NewMetadataAdapter(store))
+	allAddressesUnfiltered := addressService.Collect(&address.CollectionRequest{
+		Wallet:      wlt,
+		ChainFilter: "", // All chains
+		TypeFilter:  address.AllTypes,
+	})
+
+	// Filter to only target addresses
+	var allAddresses []address.AddressInfo
+	for _, addr := range allAddressesUnfiltered {
+		if targetSet[addr.Address] {
+			allAddresses = append(allAddresses, addr)
 		}
 	}
 
@@ -390,8 +364,8 @@ func runAddressesRefresh(cmd *cobra.Command, _ []string) error {
 
 	// Enrich "Used" status from balance data
 	for i := range allAddresses {
-		if !allAddresses[i].Used {
-			allAddresses[i].Used = isNonZeroBalance(allAddresses[i].Balance) || isNonZeroBalance(allAddresses[i].Unconfirmed)
+		if !allAddresses[i].HasActivity {
+			allAddresses[i].HasActivity = isNonZeroBalance(allAddresses[i].Balance) || isNonZeroBalance(allAddresses[i].Unconfirmed)
 		}
 	}
 
@@ -492,80 +466,55 @@ func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandCon
 	var errs []refreshError
 
 	// Group targets by chain
-	var bsvTargets, ethTargets []refreshTarget
+	targetsByChain := make(map[chain.ID][]refreshTarget)
 	for _, t := range targets {
-		switch t.chainID {
-		case chain.BSV:
-			bsvTargets = append(bsvTargets, t)
-		case chain.ETH:
-			ethTargets = append(ethTargets, t)
-		case chain.BTC, chain.BCH:
+		if t.chainID == chain.BTC || t.chainID == chain.BCH {
 			// BTC and BCH not supported in MVP
 			continue
 		}
+		targetsByChain[t.chainID] = append(targetsByChain[t.chainID], t)
 	}
 
-	// Refresh BSV addresses
-	if len(bsvTargets) > 0 {
-		bsvErrs := refreshBSVTargets(ctx, w, cmdCtx, store, bsvTargets, balanceCache)
-		errs = append(errs, bsvErrs...)
-	}
-
-	// Refresh ETH addresses
-	ethErrs := refreshETHTargets(ctx, w, cmdCtx, ethTargets, balanceCache)
-	errs = append(errs, ethErrs...)
-
-	return errs
-}
-
-// refreshBSVTargets refreshes BSV addresses (UTXO refresh + balance cache update).
-func refreshBSVTargets(ctx context.Context, w io.Writer, cmdCtx *CommandContext, store *utxostore.Store, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
-	var errs []refreshError
-
-	client := bsv.NewClient(ctx, &bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+	// Create balance service for discovery service
+	balanceSvc := balance.NewService(&balance.Config{
+		ConfigProvider: cmdCtx.Cfg,
+		CacheProvider:  balance.NewCacheAdapter(balanceCache),
+		Metadata:       nil,
+		ForceRefresh:   true,
 	})
-	adapter := &bsvRefreshAdapter{client: client}
 
-	for _, t := range targets {
-		if ctx.Err() != nil {
-			errs = append(errs, refreshError{address: t.address, err: ctx.Err()})
-			break
+	// Create discovery service
+	discoverySvc := discovery.NewService(&discovery.Config{
+		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
+		BalanceService: balanceSvc,
+		Config:         cmdCtx.Cfg,
+	})
+
+	// Refresh each chain's addresses
+	for chainID, chainTargets := range targetsByChain {
+		// Extract addresses
+		addresses := make([]string, len(chainTargets))
+		for i, t := range chainTargets {
+			addresses[i] = t.address
 		}
-		out(w, "  Refreshing %s [BSV]...\n", truncateAddressDisplay(t.address))
 
-		// Step 1: Refresh UTXOs in store
-		if _, refreshErr := store.RefreshAddress(ctx, t.address, chain.BSV, adapter); refreshErr != nil {
-			errs = append(errs, refreshError{address: t.address, err: refreshErr})
-			continue
+		// Display progress
+		for _, addr := range addresses {
+			out(w, "  Refreshing %s [%s]...\n", truncateAddressDisplay(addr), strings.ToUpper(string(chainID)))
 		}
 
-		// Step 2: Update balance cache
-		addrCtx, addrCancel := context.WithTimeout(ctx, 30*time.Second)
-		_, _, _ = fetchBalancesForAddress(addrCtx, chain.BSV, t.address, balanceCache, cmdCtx.Cfg)
-		addrCancel()
-	}
+		// Refresh via service
+		results, _ := discoverySvc.RefreshBatch(ctx, &discovery.RefreshRequest{
+			ChainID:   chainID,
+			Addresses: addresses,
+			Timeout:   30 * time.Second,
+		})
 
-	return errs
-}
-
-// refreshETHTargets refreshes ETH addresses (balance fetch + cache update).
-func refreshETHTargets(ctx context.Context, w io.Writer, cmdCtx *CommandContext, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
-	var errs []refreshError
-
-	for _, t := range targets {
-		if ctx.Err() != nil {
-			errs = append(errs, refreshError{address: t.address, err: ctx.Err()})
-			break
-		}
-		out(w, "  Refreshing %s [ETH]...\n", truncateAddressDisplay(t.address))
-
-		addrCtx, addrCancel := context.WithTimeout(ctx, 30*time.Second)
-		_, _, fetchErr := fetchBalancesForAddress(addrCtx, chain.ETH, t.address, balanceCache, cmdCtx.Cfg)
-		addrCancel()
-
-		if fetchErr != nil {
-			errs = append(errs, refreshError{address: t.address, err: fetchErr})
+		// Convert results to refreshError format
+		for _, result := range results {
+			if !result.Success {
+				errs = append(errs, refreshError{address: result.Address, err: result.Error})
+			}
 		}
 	}
 
@@ -597,8 +546,8 @@ func loadOrCreateBalanceCache(storage *cache.FileStorage, refresh bool, cmd *cob
 
 // fetchAddressBalances fetches live balances for all addresses concurrently.
 //
-//nolint:gocognit // Concurrent fetch logic requires nested control flow
-func fetchAddressBalances(cmd *cobra.Command, addresses []addressInfo, balanceCache *cache.BalanceCache, cfg ConfigProvider) {
+//nolint:gocognit,gocyclo // Concurrent fetch logic requires nested control flow
+func fetchAddressBalances(cmd *cobra.Command, addresses []address.AddressInfo, balanceCache *cache.BalanceCache, cfg ConfigProvider) {
 	if len(addresses) == 0 {
 		return
 	}
@@ -645,17 +594,28 @@ func fetchAddressBalances(cmd *cobra.Command, addresses []addressInfo, balanceCa
 			}
 			defer func() { <-sem }()
 
+			balanceSvc := balance.NewService(&balance.Config{
+				ConfigProvider: cfg,
+				CacheProvider:  balance.NewCacheAdapter(balanceCache),
+				Metadata:       nil,
+				ForceRefresh:   false,
+			})
+
 			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
-			entries, _, _ := fetchBalancesForAddress(addrCtx, task.chainID, task.address, balanceCache, cfg)
+			result, _ := balanceSvc.FetchBalance(addrCtx, &balance.FetchRequest{
+				ChainID:      task.chainID,
+				Address:      task.address,
+				ForceRefresh: false,
+			})
 			addrCancel()
 
 			mu.Lock()
 			defer mu.Unlock()
 			key := string(task.chainID) + ":" + task.address
-			if len(entries) > 0 {
+			if result != nil && len(result.Balances) > 0 {
 				results[key] = &fetchResult{
-					balance:     entries[0].Balance,
-					unconfirmed: entries[0].Unconfirmed,
+					balance:     result.Balances[0].Balance,
+					unconfirmed: result.Balances[0].Unconfirmed,
 				}
 			}
 		}()
@@ -672,35 +632,6 @@ func fetchAddressBalances(cmd *cobra.Command, addresses []addressInfo, balanceCa
 	}
 }
 
-func buildAddressInfo(addrType string, addr *wallet.Address, chainID chain.ID, store *utxostore.Store) addressInfo {
-	info := addressInfo{
-		Type:    addrType,
-		Index:   addr.Index,
-		Address: addr.Address,
-		Path:    addr.Path,
-		ChainID: chainID,
-		// Balance and Unconfirmed are populated after network fetch
-	}
-
-	// Get metadata from UTXO store (label and HasActivity)
-	if meta := store.GetAddress(chainID, addr.Address); meta != nil {
-		info.Label = meta.Label
-		info.Used = meta.HasActivity
-	}
-
-	return info
-}
-
-func shouldIncludeAddress(info addressInfo) bool {
-	if addressesUsed && !info.Used {
-		return false
-	}
-	if addressesUnused && info.Used {
-		return false
-	}
-	return true
-}
-
 // isNonZeroBalance returns true if the balance string represents a non-zero amount.
 func isNonZeroBalance(s string) bool {
 	if s == "" {
@@ -715,7 +646,7 @@ func isNonZeroBalance(s string) bool {
 }
 
 // hasUnconfirmedAddressData returns true if any address has non-empty unconfirmed data.
-func hasUnconfirmedAddressData(addresses []addressInfo) bool {
+func hasUnconfirmedAddressData(addresses []address.AddressInfo) bool {
 	for _, addr := range addresses {
 		if addr.Unconfirmed != "" {
 			return true
@@ -724,7 +655,7 @@ func hasUnconfirmedAddressData(addresses []addressInfo) bool {
 	return false
 }
 
-func displayAddressesText(cmd *cobra.Command, addresses []addressInfo) {
+func displayAddressesText(cmd *cobra.Command, addresses []address.AddressInfo) {
 	w := cmd.OutOrStdout()
 
 	if len(addresses) == 0 {
@@ -746,7 +677,7 @@ func displayAddressesText(cmd *cobra.Command, addresses []addressInfo) {
 }
 
 // displayAddressesTextNarrow renders the address table without unconfirmed column.
-func displayAddressesTextNarrow(w io.Writer, addresses []addressInfo) {
+func displayAddressesTextNarrow(w io.Writer, addresses []address.AddressInfo) {
 	outln(w, "  Type     Index  Address                                      Label           Balance          Status")
 	outln(w, "  ───────  ─────  ───────────────────────────────────────────  ──────────────  ───────────────  ──────")
 
@@ -761,13 +692,13 @@ func displayAddressesTextNarrow(w io.Writer, addresses []addressInfo) {
 		}
 
 		out(w, "  %-7s  %5d  %-42s  %-14s  %15s  %s\n",
-			addr.Type, addr.Index, truncateAddressDisplay(addr.Address),
-			formatLabel(addr.Label), formatBalanceDisplay(addr.Balance), formatStatus(addr.Used))
+			addr.Type.String(), addr.Index, truncateAddressDisplay(addr.Address),
+			formatLabel(addr.Label), formatBalanceDisplay(addr.Balance), formatStatus(addr.HasActivity))
 	}
 }
 
 // displayAddressesTextWide renders the address table with confirmed and unconfirmed columns.
-func displayAddressesTextWide(w io.Writer, addresses []addressInfo) {
+func displayAddressesTextWide(w io.Writer, addresses []address.AddressInfo) {
 	outln(w, "  Type     Index  Address                                      Label           Confirmed        Unconfirmed      Status")
 	outln(w, "  ───────  ─────  ───────────────────────────────────────────  ──────────────  ───────────────  ───────────────  ──────")
 
@@ -782,9 +713,9 @@ func displayAddressesTextWide(w io.Writer, addresses []addressInfo) {
 		}
 
 		out(w, "  %-7s  %5d  %-42s  %-14s  %15s  %15s  %s\n",
-			addr.Type, addr.Index, truncateAddressDisplay(addr.Address),
+			addr.Type.String(), addr.Index, truncateAddressDisplay(addr.Address),
 			formatLabel(addr.Label), formatBalanceDisplay(addr.Balance),
-			formatBalanceDisplay(addr.Unconfirmed), formatStatus(addr.Used))
+			formatBalanceDisplay(addr.Unconfirmed), formatStatus(addr.HasActivity))
 	}
 }
 
@@ -823,7 +754,7 @@ func formatStatus(used bool) string {
 	return "unused"
 }
 
-func displayAddressesJSON(cmd *cobra.Command, addresses []addressInfo) {
+func displayAddressesJSON(cmd *cobra.Command, addresses []address.AddressInfo) {
 	type addressJSON struct {
 		Chain       string `json:"chain"`
 		Type        string `json:"type"`
@@ -843,21 +774,21 @@ func displayAddressesJSON(cmd *cobra.Command, addresses []addressInfo) {
 	for _, addr := range addresses {
 		resp.Addresses = append(resp.Addresses, addressJSON{
 			Chain:       string(addr.ChainID),
-			Type:        addr.Type,
+			Type:        addr.Type.String(),
 			Index:       addr.Index,
 			Address:     addr.Address,
 			Path:        addr.Path,
 			Label:       addr.Label,
 			Balance:     addr.Balance,
 			Unconfirmed: addr.Unconfirmed,
-			Used:        addr.Used,
+			Used:        addr.HasActivity,
 		})
 	}
 
 	_ = writeJSON(cmd.OutOrStdout(), resp)
 }
 
-func displayAddressesRefreshJSON(cmd *cobra.Command, addresses []addressInfo, errorCount int) {
+func displayAddressesRefreshJSON(cmd *cobra.Command, addresses []address.AddressInfo, errorCount int) {
 	type addressJSON struct {
 		Chain       string `json:"chain"`
 		Type        string `json:"type"`
@@ -883,14 +814,14 @@ func displayAddressesRefreshJSON(cmd *cobra.Command, addresses []addressInfo, er
 	for _, addr := range addresses {
 		resp.Addresses = append(resp.Addresses, addressJSON{
 			Chain:       string(addr.ChainID),
-			Type:        addr.Type,
+			Type:        addr.Type.String(),
 			Index:       addr.Index,
 			Address:     addr.Address,
 			Path:        addr.Path,
 			Label:       addr.Label,
 			Balance:     addr.Balance,
 			Unconfirmed: addr.Unconfirmed,
-			Used:        addr.Used,
+			Used:        addr.HasActivity,
 		})
 	}
 

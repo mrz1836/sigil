@@ -5,26 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/cache"
-	"github.com/mrz1836/sigil/internal/chain"
-	"github.com/mrz1836/sigil/internal/chain/bsv"
-	"github.com/mrz1836/sigil/internal/chain/eth"
-	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
-	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
-	"github.com/mrz1836/sigil/internal/metrics"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/balance"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
-	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level flag variables
@@ -101,20 +93,18 @@ func init() {
 	_ = balanceShowCmd.MarkFlagRequired("wallet")
 }
 
-//nolint:gocognit,gocyclo,nestif // CLI entry point has inherent complexity
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
 
-	// Load wallet to get addresses (using session if available)
+	// 1. Load wallet (CLI concern)
 	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
-
 	w, seed, err := loadWalletWithSession(balanceWalletName, storage, cmd)
 	if err != nil {
 		return err
 	}
-	wallet.ZeroBytes(seed)
+	defer wallet.ZeroBytes(seed)
 
-	// Load UTXO store for address metadata
+	// 2. Initialize service dependencies
 	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", balanceWalletName)
 	utxoStore := utxostore.New(walletDir)
 	if err = utxoStore.Load(); err != nil && cmdCtx.Log != nil {
@@ -122,7 +112,6 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		// Continue without metadata (degrades to always-fetch behavior)
 	}
 
-	// Load or create cache
 	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
 	cacheStorage := cache.NewFileStorage(cachePath)
 	var balanceCache *cache.BalanceCache
@@ -144,137 +133,79 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Initialize refresh policy (unless --refresh flag bypasses it)
-	var refreshPolicy *RefreshPolicy
-	if !balanceRefresh && utxoStore != nil {
-		refreshPolicy = NewRefreshPolicy(utxoStore, balanceCache)
+	// Create balance service
+	balanceService := balance.NewService(&balance.Config{
+		ConfigProvider: cmdCtx.Cfg,
+		CacheProvider:  balance.NewCacheAdapter(balanceCache),
+		Metadata:       balance.NewMetadataAdapter(utxoStore),
+		ForceRefresh:   balanceRefresh,
+	})
+
+	// 3. Build address list (CLI concern)
+	var addresses []balance.AddressInput
+	for chainID, addrs := range w.Addresses {
+		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
+			continue
+		}
+		for _, addr := range addrs {
+			addresses = append(addresses, balance.AddressInput{
+				ChainID: chainID,
+				Address: addr.Address,
+			})
+		}
 	}
 
-	// Fetch balances with overall timeout
+	// 4. Fetch via service (business logic)
 	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
+	batchResult, err := balanceService.FetchBalances(ctx, &balance.FetchBatchRequest{
+		Addresses:     addresses,
+		ForceRefresh:  balanceRefresh,
+		MaxConcurrent: 8,
+		Timeout:       30 * time.Second,
+	})
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	// 5. Save cache (CLI concern)
+	if err := cacheStorage.Save(balanceCache); err != nil && cmdCtx.Log != nil {
+		cmdCtx.Log.Error("failed to save balance cache: %v", err)
+	}
+
+	// 6. Convert to CLI output format (CLI concern)
 	response := BalanceShowResponse{
 		Wallet:    balanceWalletName,
 		Balances:  make([]BalanceResult, 0),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	var fetchErrors []string
-
-	// Per-address timeout for individual balance fetches
-	const perAddressTimeout = 30 * time.Second
-	const maxConcurrent = 8
-
-	type balanceTask struct {
-		chainID wallet.ChainID
-		address string
-	}
-	// Build a flat list of address fetch tasks.
-	var taskCount int
-	for chainID, addresses := range w.Addresses {
-		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
-			continue
-		}
-		taskCount += len(addresses)
-	}
-	tasks := make([]balanceTask, 0, taskCount)
-
-	for chainID, addresses := range w.Addresses {
-		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
-			continue
-		}
-		for _, addr := range addresses {
-			tasks = append(tasks, balanceTask{
-				chainID: chainID,
-				address: addr.Address,
-			})
+	for _, result := range batchResult.Results {
+		for _, bal := range result.Balances {
+			cliResult := BalanceResult{
+				Chain:       string(bal.Chain),
+				Address:     bal.Address,
+				Balance:     bal.Balance,
+				Unconfirmed: bal.Unconfirmed,
+				Symbol:      bal.Symbol,
+				Token:       bal.Token,
+				Decimals:    bal.Decimals,
+				Stale:       bal.Stale,
+			}
+			if bal.Stale {
+				cliResult.CacheAge = formatCacheAge(bal.UpdatedAt)
+			}
+			response.Balances = append(response.Balances, cliResult)
 		}
 	}
 
-	sem := make(chan struct{}, maxConcurrent)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	for _, task := range tasks {
-		wg.Add(1)
-
-		// Check if we can use cached data (skip network fetch)
-		if refreshPolicy != nil {
-			decision := refreshPolicy.ShouldRefresh(task.chainID, task.address)
-			if decision == CacheOK {
-				// Use cached data directly without network call
-				cachedBalances := getCachedBalancesForAddress(task.chainID, task.address, balanceCache)
-				mu.Lock()
-				for _, bal := range cachedBalances {
-					response.Balances = append(response.Balances, balanceResultFromCache(bal))
-				}
-				mu.Unlock()
-				wg.Done()
-				continue
-			}
-		}
-
-		// Network fetch required
-		go func(t balanceTask) {
-			defer wg.Done()
-
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() {
-				<-sem
-			}()
-
-			addrCtx, addrCancel := context.WithTimeout(ctx, perAddressTimeout)
-			balances, stale, fetchErr := fetchBalancesForAddress(addrCtx, t.chainID, t.address, balanceCache, cmdCtx.Cfg)
-			addrCancel()
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			if fetchErr != nil {
-				fetchErrors = append(fetchErrors, fetchErr.Error())
-			}
-
-			for _, bal := range balances {
-				result := BalanceResult{
-					Chain:       string(bal.Chain),
-					Address:     bal.Address,
-					Balance:     bal.Balance,
-					Unconfirmed: bal.Unconfirmed,
-					Symbol:      bal.Symbol,
-					Token:       bal.Token,
-					Decimals:    bal.Decimals,
-					Stale:       stale,
-				}
-				if stale {
-					result.CacheAge = formatCacheAge(bal.UpdatedAt)
-				}
-				response.Balances = append(response.Balances, result)
-			}
-
-			// Add placeholder for failed fetches with no cache data.
-			if fetchErr != nil && len(balances) == 0 {
-				response.Balances = append(response.Balances, BalanceResult{
-					Chain:   string(t.chainID),
-					Address: t.address,
-					Balance: "N/A",
-					Symbol:  getChainSymbol(t.chainID),
-					Stale:   true,
-				})
-			}
-		}(task)
-	}
-	wg.Wait()
-
-	// Respect caller cancellation and timeouts.
-	if ctx.Err() != nil {
-		return ctx.Err()
+	// Add warning if any fetches failed
+	if len(batchResult.Errors) > 0 {
+		response.Warning = "Some balances could not be fetched. Showing cached data where available."
 	}
 
+	// Sort results
 	sort.Slice(response.Balances, func(i, j int) bool {
 		left := response.Balances[i]
 		right := response.Balances[j]
@@ -287,19 +218,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		return left.Token < right.Token
 	})
 
-	// Save updated cache
-	if err := cacheStorage.Save(balanceCache); err != nil {
-		if cmdCtx.Log != nil {
-			cmdCtx.Log.Error("failed to save balance cache: %v", err)
-		}
-	}
-
-	// Add warning if any fetches failed and using stale data
-	if len(fetchErrors) > 0 {
-		response.Warning = "Some balances could not be fetched. Showing cached data where available."
-	}
-
-	// Output results
+	// 7. Output results (CLI concern)
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		if err := outputBalanceJSON(cmd.OutOrStdout(), response); err != nil {
 			return fmt.Errorf("writing JSON output: %w", err)
@@ -309,357 +228,6 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
-}
-
-// fetchBalancesForAddress fetches balances for a single address.
-// Returns balances, whether data is stale, and any error.
-func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
-	var entries []cache.BalanceCacheEntry
-	var stale bool
-	var fetchErr error
-
-	switch chainID {
-	case wallet.ChainETH:
-		entries, stale, fetchErr = fetchETHBalances(ctx, address, balanceCache, cfg)
-	case wallet.ChainBSV:
-		entries, stale, fetchErr = fetchBSVBalances(ctx, address, balanceCache)
-	case wallet.ChainBTC, wallet.ChainBCH:
-		// BTC and BCH not supported in MVP
-		return nil, false, nil
-	}
-
-	return entries, stale, fetchErr
-}
-
-// ethTransportOnce ensures the shared HTTP transport is created exactly once.
-//
-//nolint:gochecknoglobals // Singleton transport for connection pooling across concurrent ETH requests
-var (
-	ethTransportOnce sync.Once
-	ethTransport     *http.Transport
-)
-
-// sharedETHTransport returns a shared HTTP transport for reuse across ETH clients.
-// The transport is created once and reused for proper connection pooling.
-// Uses rpc.NewDefaultTransport() for secure defaults including TLS 1.2+ requirement.
-func sharedETHTransport() *http.Transport {
-	ethTransportOnce.Do(func() {
-		ethTransport = rpc.NewDefaultTransport()
-	})
-	return ethTransport
-}
-
-// connectETHClient attempts to connect to the primary RPC, falling back to alternates on failure.
-func connectETHClient(rpcURL string, fallbackRPCs []string, transport *http.Transport) (*eth.Client, error) {
-	opts := &eth.ClientOptions{Transport: transport}
-	client, err := eth.NewClient(rpcURL, opts)
-	if err == nil {
-		return client, nil
-	}
-	// Try fallback RPCs
-	for _, fallbackURL := range fallbackRPCs {
-		client, err = eth.NewClient(fallbackURL, opts)
-		if err == nil {
-			return client, nil
-		}
-	}
-	return nil, err
-}
-
-// fetchETHBalanceWithFallback fetches ETH balance, trying fallback RPCs on failure.
-func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, address, primaryRPC string, fallbackRPCs []string, transport *http.Transport) (*eth.Balance, *eth.Client, error) {
-	// Try primary client first
-	balance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
-		bal, fetchErr := client.GetNativeBalance(ctx, address)
-		if fetchErr != nil {
-			return nil, chain.WrapRetryable(fetchErr)
-		}
-		return bal, nil
-	})
-	if err == nil {
-		return balance, client, nil
-	}
-
-	// Try fallback RPCs, sharing the same transport.
-	// The old client is intentionally not closed here because Close() calls
-	// CloseIdleConnections() on the shared transport, which would disrupt
-	// other goroutines using the same transport for concurrent requests.
-	opts := &eth.ClientOptions{Transport: transport}
-	for _, fallbackURL := range fallbackRPCs {
-		if fallbackURL == primaryRPC {
-			continue
-		}
-		fallbackClient, clientErr := eth.NewClient(fallbackURL, opts)
-		if clientErr != nil {
-			continue
-		}
-		balance, err = fallbackClient.GetNativeBalance(ctx, address)
-		if err == nil {
-			return balance, fallbackClient, nil
-		}
-	}
-
-	return nil, client, err
-}
-
-// fetchETHBalances fetches ETH and USDC balances using the configured provider with failover.
-func fetchETHBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
-	provider := cfg.GetETHProvider()
-
-	type fetchFn func() ([]cache.BalanceCacheEntry, bool, error)
-
-	etherscanFn := func() ([]cache.BalanceCacheEntry, bool, error) {
-		apiKey := cfg.GetETHEtherscanAPIKey()
-		if apiKey == "" {
-			return nil, true, etherscan.ErrAPIKeyRequired
-		}
-		return fetchETHBalancesViaEtherscan(ctx, address, balanceCache, apiKey)
-	}
-
-	rpcFn := func() ([]cache.BalanceCacheEntry, bool, error) {
-		return fetchETHBalancesViaRPC(ctx, address, balanceCache, cfg)
-	}
-
-	var primaryFn, secondaryFn fetchFn
-	if provider == "rpc" {
-		primaryFn = rpcFn
-		secondaryFn = etherscanFn
-	} else {
-		// Default: etherscan primary, rpc secondary
-		primaryFn = etherscanFn
-		secondaryFn = rpcFn
-	}
-
-	// Try primary
-	entries, stale, err := primaryFn()
-	if err == nil {
-		return entries, stale, nil
-	}
-
-	// Primary failed: try secondary (failover)
-	fallbackEntries, fallbackStale, fallbackErr := secondaryFn()
-	if fallbackErr == nil {
-		return fallbackEntries, fallbackStale, nil
-	}
-
-	// Both providers failed: return cached data
-	cached, cachedStale, cacheErr := getCachedETHBalances(address, balanceCache)
-	if cacheErr == nil {
-		return cached, cachedStale, nil
-	}
-
-	return nil, true, err
-}
-
-// fetchETHBalancesViaEtherscan fetches ETH and USDC balances using the Etherscan API.
-func fetchETHBalancesViaEtherscan(ctx context.Context, address string, balanceCache *cache.BalanceCache, apiKey string) ([]cache.BalanceCacheEntry, bool, error) {
-	// Trust very fresh cache entries (set by a recent tx send).
-	if _, exists, age := balanceCache.Get(chain.ETH, address, ""); exists && age < postSendCacheTrust {
-		return getCachedETHBalances(address, balanceCache)
-	}
-
-	var entries []cache.BalanceCacheEntry
-
-	client, err := etherscan.NewClient(apiKey, nil)
-	if err != nil {
-		return nil, true, err
-	}
-
-	// Fetch ETH balance
-	ethBalance, err := client.GetNativeBalance(ctx, address)
-	if err != nil {
-		return nil, true, err
-	}
-
-	ethEntry := cache.BalanceCacheEntry{
-		Chain:    chain.ETH,
-		Address:  address,
-		Balance:  chain.FormatDecimalAmount(ethBalance.Amount, ethBalance.Decimals),
-		Symbol:   ethBalance.Symbol,
-		Decimals: ethBalance.Decimals,
-	}
-	balanceCache.Set(ethEntry)
-	entries = append(entries, ethEntry)
-
-	// Fetch USDC balance
-	usdcBalance, err := client.GetUSDCBalance(ctx, address)
-	if err == nil {
-		usdcEntry := cache.BalanceCacheEntry{
-			Chain:    chain.ETH,
-			Address:  address,
-			Balance:  chain.FormatDecimalAmount(usdcBalance.Amount, usdcBalance.Decimals),
-			Symbol:   usdcBalance.Symbol,
-			Token:    usdcBalance.Token,
-			Decimals: usdcBalance.Decimals,
-		}
-		balanceCache.Set(usdcEntry)
-		entries = append(entries, usdcEntry)
-	}
-
-	return entries, false, nil
-}
-
-// fetchETHBalancesViaRPC fetches ETH and USDC balances using JSON-RPC.
-func fetchETHBalancesViaRPC(ctx context.Context, address string, balanceCache *cache.BalanceCache, cfg ConfigProvider) ([]cache.BalanceCacheEntry, bool, error) {
-	// Trust very fresh cache entries (set by a recent tx send).
-	if _, exists, age := balanceCache.Get(chain.ETH, address, ""); exists && age < postSendCacheTrust {
-		return getCachedETHBalances(address, balanceCache)
-	}
-
-	var entries []cache.BalanceCacheEntry
-	var stale bool
-
-	rpcURL := cfg.GetETHRPC()
-	if rpcURL == "" {
-		return nil, true, sigilerr.WithSuggestion(
-			sigilerr.ErrNetworkError,
-			"ETH RPC not configured. Set SIGIL_ETH_RPC or configure networks.eth.rpc in config.yaml",
-		)
-	}
-
-	fallbackRPCs := cfg.GetETHFallbackRPCs()
-	transport := sharedETHTransport()
-	client, err := connectETHClient(rpcURL, fallbackRPCs, transport)
-	if err != nil {
-		return nil, true, err
-	}
-	defer client.Close()
-
-	// Fetch ETH balance with fallback support
-	ethBalance, client, err := fetchETHBalanceWithFallback(ctx, client, address, rpcURL, fallbackRPCs, transport)
-	if err != nil {
-		return nil, true, err
-	}
-
-	// Format unconfirmed (only set if non-zero)
-	var ethUnconfirmedStr string
-	if ethBalance.Unconfirmed != nil && ethBalance.Unconfirmed.Sign() != 0 {
-		ethUnconfirmedStr = chain.FormatSignedDecimalAmount(ethBalance.Unconfirmed, ethBalance.Decimals)
-	}
-
-	// Store in cache
-	ethEntry := cache.BalanceCacheEntry{
-		Chain:       chain.ETH,
-		Address:     address,
-		Balance:     chain.FormatDecimalAmount(ethBalance.Amount, ethBalance.Decimals),
-		Unconfirmed: ethUnconfirmedStr,
-		Symbol:      ethBalance.Symbol,
-		Decimals:    ethBalance.Decimals,
-	}
-	balanceCache.Set(ethEntry)
-	entries = append(entries, ethEntry)
-
-	// Fetch USDC balance
-	usdcBalance, err := client.GetUSDCBalance(ctx, address)
-	if err == nil {
-		usdcEntry := cache.BalanceCacheEntry{
-			Chain:    chain.ETH,
-			Address:  address,
-			Balance:  chain.FormatDecimalAmount(usdcBalance.Amount, usdcBalance.Decimals),
-			Symbol:   usdcBalance.Symbol,
-			Token:    usdcBalance.Token,
-			Decimals: usdcBalance.Decimals,
-		}
-		balanceCache.Set(usdcEntry)
-		entries = append(entries, usdcEntry)
-	}
-
-	return entries, stale, nil
-}
-
-// getCachedETHBalances returns cached ETH balances if available.
-func getCachedETHBalances(address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
-	entries := make([]cache.BalanceCacheEntry, 0, 2)
-	stale := false
-
-	// Check for ETH
-	entry, exists, age := balanceCache.Get(chain.ETH, address, "")
-	if exists {
-		metrics.Global.RecordCacheHit()
-		entries = append(entries, *entry)
-		if age > cache.DefaultStaleness {
-			stale = true
-		}
-	} else {
-		metrics.Global.RecordCacheMiss()
-	}
-
-	// Check for USDC
-	usdcEntry, exists, age := balanceCache.Get(chain.ETH, address, eth.USDCMainnet)
-	if exists {
-		metrics.Global.RecordCacheHit()
-		entries = append(entries, *usdcEntry)
-		if age > cache.DefaultStaleness {
-			stale = true
-		}
-	} else {
-		metrics.Global.RecordCacheMiss()
-	}
-
-	if len(entries) == 0 {
-		return nil, true, sigilerr.ErrCacheNotFound
-	}
-
-	return entries, stale, nil
-}
-
-// postSendCacheTrust is the duration after a send during which locally-computed
-// cached balances are trusted over network queries. This covers the window
-// where the blockchain indexer may not yet reflect the broadcast transaction.
-const postSendCacheTrust = 30 * time.Second
-
-// fetchBSVBalances fetches BSV balances.
-func fetchBSVBalances(ctx context.Context, address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
-	// Trust very fresh cache entries (set by a recent tx send) over the
-	// network, which may not have indexed the transaction yet.
-	if entry, exists, age := balanceCache.Get(chain.BSV, address, ""); exists && age < postSendCacheTrust {
-		return []cache.BalanceCacheEntry{*entry}, false, nil
-	}
-
-	entries := make([]cache.BalanceCacheEntry, 0, 1)
-	var stale bool
-
-	client := bsv.NewClient(ctx, nil)
-
-	// Fetch BSV balance
-	bsvBalance, err := client.GetNativeBalance(ctx, address)
-	if err != nil {
-		// Fall back to cache
-		return getCachedBSVBalances(address, balanceCache)
-	}
-
-	// Format unconfirmed (only set if non-zero)
-	var unconfirmedStr string
-	if bsvBalance.Unconfirmed != nil && bsvBalance.Unconfirmed.Sign() != 0 {
-		unconfirmedStr = chain.FormatSignedDecimalAmount(bsvBalance.Unconfirmed, bsvBalance.Decimals)
-	}
-
-	// Store in cache
-	entry := cache.BalanceCacheEntry{
-		Chain:       chain.BSV,
-		Address:     address,
-		Balance:     chain.FormatDecimalAmount(bsvBalance.Amount, bsvBalance.Decimals),
-		Unconfirmed: unconfirmedStr,
-		Symbol:      bsvBalance.Symbol,
-		Decimals:    bsvBalance.Decimals,
-	}
-	balanceCache.Set(entry)
-	entries = append(entries, entry)
-
-	return entries, stale, nil
-}
-
-// getCachedBSVBalances returns cached BSV balances if available.
-func getCachedBSVBalances(address string, balanceCache *cache.BalanceCache) ([]cache.BalanceCacheEntry, bool, error) {
-	entry, exists, age := balanceCache.Get(chain.BSV, address, "")
-	if !exists {
-		metrics.Global.RecordCacheMiss()
-		return nil, true, sigilerr.ErrCacheNotFound
-	}
-	metrics.Global.RecordCacheHit()
-
-	stale := age > cache.DefaultStaleness
-	return []cache.BalanceCacheEntry{*entry}, stale, nil
 }
 
 // formatCacheAge formats the age of a cache entry for display.
@@ -673,42 +241,6 @@ func formatCacheAge(t time.Time) string {
 		return fmt.Sprintf("%dh ago", int(age.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(age.Hours()/24))
-}
-
-// getCachedBalancesForAddress retrieves all cached balances for an address.
-// Returns empty slice if no cache entries found.
-func getCachedBalancesForAddress(chainID wallet.ChainID, address string, balanceCache *cache.BalanceCache) []cache.BalanceCacheEntry {
-	var results []cache.BalanceCacheEntry
-
-	// Check native balance
-	if entry, exists, _ := balanceCache.Get(chainID, address, ""); exists {
-		results = append(results, *entry)
-	}
-
-	// For ETH, also check USDC
-	if chainID == wallet.ChainETH {
-		if entry, exists, _ := balanceCache.Get(chainID, address, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"); exists {
-			results = append(results, *entry)
-		}
-	}
-
-	return results
-}
-
-// balanceResultFromCache converts a cached balance entry to a BalanceResult for output.
-func balanceResultFromCache(entry cache.BalanceCacheEntry) BalanceResult {
-	age := time.Since(entry.UpdatedAt)
-	return BalanceResult{
-		Chain:       string(entry.Chain),
-		Address:     entry.Address,
-		Balance:     entry.Balance,
-		Unconfirmed: entry.Unconfirmed,
-		Symbol:      entry.Symbol,
-		Token:       entry.Token,
-		Decimals:    entry.Decimals,
-		Stale:       age > cache.DefaultStaleness,
-		CacheAge:    formatCacheAge(entry.UpdatedAt),
-	}
 }
 
 // getChainSymbol returns the symbol for a given chain ID.

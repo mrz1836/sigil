@@ -10,6 +10,8 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/balance"
+	walletservice "github.com/mrz1836/sigil/internal/service/wallet"
 	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -81,6 +83,14 @@ type CommandContext struct {
 	// When set, only balance/receive operations are allowed (no spending).
 	// Empty when not in xpub read-only mode.
 	AgentXpub string
+
+	// BalanceService provides balance fetching functionality.
+	// Nil until initialized by commands that need it.
+	BalanceService *balance.Service
+
+	// WalletService provides wallet loading and management operations.
+	// Nil until initialized by commands that need it.
+	WalletService *walletservice.Service
 }
 
 // NewCommandContext creates a context with the given dependencies.
@@ -124,5 +134,17 @@ func (c *CommandContext) WithSessionManager(mgr session.Manager) *CommandContext
 // WithAgentStore sets the agent file store.
 func (c *CommandContext) WithAgentStore(store *agent.FileStore) *CommandContext {
 	c.AgentStore = store
+	return c
+}
+
+// WithBalanceService sets the balance service.
+func (c *CommandContext) WithBalanceService(svc *balance.Service) *CommandContext {
+	c.BalanceService = svc
+	return c
+}
+
+// WithWalletService sets the wallet service.
+func (c *CommandContext) WithWalletService(svc *walletservice.Service) *CommandContext {
+	c.WalletService = svc
 	return c
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/service/address"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -143,12 +144,9 @@ func TestShouldIncludeAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Set global flags
-			addressesUsed = tc.flagUsed
-			addressesUnused = tc.flagUnused
-
-			info := addressInfo{Used: tc.addrUsed}
-			got := shouldIncludeAddress(info)
+			info := address.AddressInfo{HasActivity: tc.addrUsed}
+			filtered := address.FilterUsage([]address.AddressInfo{info}, tc.flagUsed, tc.flagUnused)
+			got := len(filtered) > 0
 			assert.Equal(t, tc.wantIncluded, got)
 		})
 	}
@@ -157,27 +155,27 @@ func TestShouldIncludeAddress(t *testing.T) {
 func TestDisplayAddressesText(t *testing.T) {
 	tests := []struct {
 		name        string
-		addresses   []addressInfo
+		addresses   []address.AddressInfo
 		contains    []string
 		notContains []string
 	}{
 		{
 			name:      "empty list",
-			addresses: []addressInfo{},
+			addresses: []address.AddressInfo{},
 			contains:  []string{"No addresses found"},
 		},
 		{
 			name: "single BSV address",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
-					Index:   0,
-					Address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-					Path:    "m/44'/236'/0'/0/0",
-					Label:   "",
-					Balance: "",
-					Used:    false,
-					ChainID: chain.BSV,
+					Type:        address.Receive,
+					Index:       0,
+					Address:     "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+					Path:        "m/44'/236'/0'/0/0",
+					Label:       "",
+					Balance:     "",
+					HasActivity: false,
+					ChainID:     chain.BSV,
 				},
 			},
 			contains: []string{
@@ -190,14 +188,14 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "address with balance",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
-					Index:   0,
-					Address: "1TestAddr",
-					Balance: "1.5",
-					Used:    true,
-					ChainID: chain.BSV,
+					Type:        address.Receive,
+					Index:       0,
+					Address:     "1TestAddr",
+					Balance:     "1.5",
+					HasActivity: true,
+					ChainID:     chain.BSV,
 				},
 			},
 			contains: []string{
@@ -207,9 +205,9 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "address with label",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "1TestAddr",
 					Label:   "Savings",
@@ -220,9 +218,9 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "label truncation",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "1TestAddr",
 					Label:   "VeryLongLabelThatShouldBeTruncated",
@@ -234,9 +232,9 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "long address truncation",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0abc123",
 					ChainID: chain.ETH,
@@ -246,15 +244,15 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "multiple chains",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "1BSVAddress",
 					ChainID: chain.BSV,
 				},
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "0xETHAddress",
 					ChainID: chain.ETH,
@@ -264,9 +262,9 @@ func TestDisplayAddressesText(t *testing.T) {
 		},
 		{
 			name: "change address type",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "change",
+					Type:    address.Change,
 					Index:   3,
 					Address: "1ChangeAddr",
 					ChainID: chain.BSV,
@@ -298,28 +296,28 @@ func TestDisplayAddressesText(t *testing.T) {
 func TestDisplayAddressesJSON(t *testing.T) {
 	tests := []struct {
 		name      string
-		addresses []addressInfo
+		addresses []address.AddressInfo
 		validate  func(t *testing.T, output string)
 	}{
 		{
 			name:      "empty list",
-			addresses: []addressInfo{},
+			addresses: []address.AddressInfo{},
 			validate: func(t *testing.T, output string) {
 				assert.Contains(t, output, `"addresses": [`)
 			},
 		},
 		{
 			name: "single address",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
-					Index:   0,
-					Address: "1TestAddress",
-					Path:    "m/44'/236'/0'/0/0",
-					Label:   "Test",
-					Balance: "0.00001",
-					Used:    true,
-					ChainID: chain.BSV,
+					Type:        address.Receive,
+					Index:       0,
+					Address:     "1TestAddress",
+					Path:        "m/44'/236'/0'/0/0",
+					Label:       "Test",
+					Balance:     "0.00001",
+					HasActivity: true,
+					ChainID:     chain.BSV,
 				},
 			},
 			validate: func(t *testing.T, output string) {
@@ -335,15 +333,15 @@ func TestDisplayAddressesJSON(t *testing.T) {
 		},
 		{
 			name: "address with unconfirmed",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:        "receive",
+					Type:        address.Receive,
 					Index:       0,
 					Address:     "1TestAddress",
 					Path:        "m/44'/236'/0'/0/0",
 					Balance:     "1.5",
 					Unconfirmed: "0.5",
-					Used:        true,
+					HasActivity: true,
 					ChainID:     chain.BSV,
 				},
 			},
@@ -354,15 +352,15 @@ func TestDisplayAddressesJSON(t *testing.T) {
 		},
 		{
 			name: "multiple addresses",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "addr1",
 					ChainID: chain.BSV,
 				},
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   1,
 					Address: "addr2",
 					ChainID: chain.BSV,
@@ -396,16 +394,16 @@ func TestDisplayAddressesJSON(t *testing.T) {
 }
 
 func TestDisplayAddressesJSONStructure(t *testing.T) {
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:        "receive",
+			Type:        address.Receive,
 			Index:       5,
 			Address:     "0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0",
 			Path:        "m/44'/60'/0'/0/5",
 			Label:       "Main",
 			Balance:     "1.0",
 			Unconfirmed: "0.5",
-			Used:        true,
+			HasActivity: true,
 			ChainID:     chain.ETH,
 		},
 	}
@@ -447,9 +445,9 @@ func TestDisplayAddressesJSONStructure(t *testing.T) {
 }
 
 func TestDisplayAddressesJSON_Escaping(t *testing.T) {
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:    "receive",
+			Type:    address.Receive,
 			Index:   1,
 			Address: "1Addr\"Test",
 			Path:    "m/44'/236'/0'/0/1",
@@ -478,41 +476,41 @@ func TestDisplayAddressesJSON_Escaping(t *testing.T) {
 }
 
 func TestAddressInfoStruct(t *testing.T) {
-	// Test that addressInfo correctly holds all fields
-	info := addressInfo{
-		Type:        "change",
+	// Test that address.AddressInfo correctly holds all fields
+	info := address.AddressInfo{
+		Type:        address.Change,
 		Index:       42,
 		Address:     "1TestAddress123456789012345678901234",
 		Path:        "m/44'/236'/0'/1/42",
 		Label:       "My Change",
 		Balance:     "5.0",
 		Unconfirmed: "-0.5",
-		Used:        true,
+		HasActivity: true,
 		ChainID:     chain.BSV,
 	}
 
-	assert.Equal(t, "change", info.Type)
+	assert.Equal(t, address.Change, info.Type)
 	assert.Equal(t, uint32(42), info.Index)
 	assert.Equal(t, "1TestAddress123456789012345678901234", info.Address)
 	assert.Equal(t, "m/44'/236'/0'/1/42", info.Path)
 	assert.Equal(t, "My Change", info.Label)
 	assert.Equal(t, "5.0", info.Balance)
 	assert.Equal(t, "-0.5", info.Unconfirmed)
-	assert.True(t, info.Used)
+	assert.True(t, info.HasActivity)
 	assert.Equal(t, chain.BSV, info.ChainID)
 }
 
 func TestDisplayAddressesTextTableFormat(t *testing.T) {
 	// Verify table formatting with expected column widths
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:    "receive",
-			Index:   0,
-			Address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-			Label:   "Genesis",
-			Balance: "50.0",
-			Used:    true,
-			ChainID: chain.BSV,
+			Type:        address.Receive,
+			Index:       0,
+			Address:     "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+			Label:       "Genesis",
+			Balance:     "50.0",
+			HasActivity: true,
+			ChainID:     chain.BSV,
 		},
 	}
 
@@ -541,9 +539,9 @@ func TestDisplayAddressesTextTableFormat(t *testing.T) {
 
 func TestDisplayAddressesTextEmptyLabel(t *testing.T) {
 	// Empty label should display as "-"
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:    "receive",
+			Type:    address.Receive,
 			Index:   0,
 			Address: "1TestAddr",
 			Label:   "",
@@ -571,9 +569,9 @@ func TestDisplayAddressesTextEmptyLabel(t *testing.T) {
 
 func TestDisplayAddressesTextZeroBalance(t *testing.T) {
 	// Empty balance should display as "-"
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:    "receive",
+			Type:    address.Receive,
 			Index:   0,
 			Address: "1TestAddr",
 			Balance: "",
@@ -613,25 +611,25 @@ func TestBuildAddressInfo(t *testing.T) {
 	})
 
 	tests := []struct {
-		name      string
-		addr      wallet.Address
-		chainID   chain.ID
-		wantUsed  bool
-		wantLabel string
+		name         string
+		addr         wallet.Address
+		chainID      chain.ID
+		wantActivity bool
+		wantLabel    string
 	}{
 		{
-			name:      "address with no store data",
-			addr:      wallet.Address{Index: 0, Address: "1UnknownAddr", Path: "m/44'/236'/0'/0/0"},
-			chainID:   chain.BSV,
-			wantUsed:  false,
-			wantLabel: "",
+			name:         "address with no store data",
+			addr:         wallet.Address{Index: 0, Address: "1UnknownAddr", Path: "m/44'/236'/0'/0/0"},
+			chainID:      chain.BSV,
+			wantActivity: false,
+			wantLabel:    "",
 		},
 		{
-			name:      "address with activity",
-			addr:      wallet.Address{Index: 1, Address: "1ActiveAddr", Path: "m/44'/236'/0'/0/1"},
-			chainID:   chain.BSV,
-			wantUsed:  true,
-			wantLabel: "Active",
+			name:         "address with activity",
+			addr:         wallet.Address{Index: 1, Address: "1ActiveAddr", Path: "m/44'/236'/0'/0/1"},
+			chainID:      chain.BSV,
+			wantActivity: true,
+			wantLabel:    "Active",
 		},
 	}
 
@@ -639,12 +637,26 @@ func TestBuildAddressInfo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			info := buildAddressInfo("receive", &tc.addr, tc.chainID, store)
-			assert.Equal(t, "receive", info.Type)
+			// Use address service to build address info
+			addressService := address.NewService(address.NewMetadataAdapter(store))
+			wlt := &wallet.Wallet{
+				Addresses: map[chain.ID][]wallet.Address{
+					tc.chainID: {tc.addr},
+				},
+			}
+			infos := addressService.Collect(&address.CollectionRequest{
+				Wallet:      wlt,
+				ChainFilter: tc.chainID,
+				TypeFilter:  address.Receive,
+			})
+			require.Len(t, infos, 1)
+			info := infos[0]
+
+			assert.Equal(t, address.Receive, info.Type)
 			assert.Equal(t, tc.addr.Index, info.Index)
 			assert.Equal(t, tc.addr.Address, info.Address)
 			assert.Equal(t, tc.chainID, info.ChainID)
-			assert.Equal(t, tc.wantUsed, info.Used)
+			assert.Equal(t, tc.wantActivity, info.HasActivity)
 			assert.Empty(t, info.Balance, "balance should be empty before network fetch")
 			assert.Equal(t, tc.wantLabel, info.Label)
 		})
@@ -679,17 +691,17 @@ func TestIsNonZeroBalance(t *testing.T) {
 func TestHasUnconfirmedAddressData(t *testing.T) {
 	tests := []struct {
 		name      string
-		addresses []addressInfo
+		addresses []address.AddressInfo
 		want      bool
 	}{
 		{
 			name:      "empty list",
-			addresses: []addressInfo{},
+			addresses: []address.AddressInfo{},
 			want:      false,
 		},
 		{
 			name: "no unconfirmed",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{Balance: "1.0"},
 				{Balance: "2.0"},
 			},
@@ -697,7 +709,7 @@ func TestHasUnconfirmedAddressData(t *testing.T) {
 		},
 		{
 			name: "has unconfirmed",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{Balance: "1.0"},
 				{Balance: "2.0", Unconfirmed: "0.5"},
 			},
@@ -715,23 +727,23 @@ func TestHasUnconfirmedAddressData(t *testing.T) {
 
 func TestDisplayAddressesTextWithUnconfirmed(t *testing.T) {
 	// When any address has unconfirmed data, wide table should show
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:        "receive",
+			Type:        address.Receive,
 			Index:       0,
 			Address:     "1TestAddr1",
 			Balance:     "1.5",
 			Unconfirmed: "0.5",
-			Used:        true,
+			HasActivity: true,
 			ChainID:     chain.BSV,
 		},
 		{
-			Type:    "receive",
-			Index:   1,
-			Address: "1TestAddr2",
-			Balance: "2.0",
-			Used:    true,
-			ChainID: chain.BSV,
+			Type:        address.Receive,
+			Index:       1,
+			Address:     "1TestAddr2",
+			Balance:     "2.0",
+			HasActivity: true,
+			ChainID:     chain.BSV,
 		},
 	}
 
@@ -754,14 +766,14 @@ func TestDisplayAddressesTextWithUnconfirmed(t *testing.T) {
 
 func TestDisplayAddressesTextNoUnconfirmed(t *testing.T) {
 	// When no address has unconfirmed data, narrow table should show
-	addresses := []addressInfo{
+	addresses := []address.AddressInfo{
 		{
-			Type:    "receive",
-			Index:   0,
-			Address: "1TestAddr",
-			Balance: "1.5",
-			Used:    true,
-			ChainID: chain.BSV,
+			Type:        address.Receive,
+			Index:       0,
+			Address:     "1TestAddr",
+			Balance:     "1.5",
+			HasActivity: true,
+			ChainID:     chain.BSV,
 		},
 	}
 
@@ -1027,13 +1039,13 @@ func TestDisplayAddressesRefreshJSON(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		addresses  []addressInfo
+		addresses  []address.AddressInfo
 		errorCount int
 		validate   func(t *testing.T, output string)
 	}{
 		{
 			name:       "empty list with no errors",
-			addresses:  []addressInfo{},
+			addresses:  []address.AddressInfo{},
 			errorCount: 0,
 			validate: func(t *testing.T, output string) {
 				assert.Contains(t, output, `"refreshed": 0`)
@@ -1043,16 +1055,16 @@ func TestDisplayAddressesRefreshJSON(t *testing.T) {
 		},
 		{
 			name: "single address",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
-					Index:   0,
-					Address: "1TestAddress",
-					Path:    "m/44'/236'/0'/0/0",
-					Label:   "Test",
-					Balance: "0.00001",
-					Used:    true,
-					ChainID: chain.BSV,
+					Type:        address.Receive,
+					Index:       0,
+					Address:     "1TestAddress",
+					Path:        "m/44'/236'/0'/0/0",
+					Label:       "Test",
+					Balance:     "0.00001",
+					HasActivity: true,
+					ChainID:     chain.BSV,
 				},
 			},
 			errorCount: 0,
@@ -1066,9 +1078,9 @@ func TestDisplayAddressesRefreshJSON(t *testing.T) {
 		},
 		{
 			name: "with errors",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:    "receive",
+					Type:    address.Receive,
 					Index:   0,
 					Address: "1Addr",
 					ChainID: chain.BSV,
@@ -1082,9 +1094,9 @@ func TestDisplayAddressesRefreshJSON(t *testing.T) {
 		},
 		{
 			name: "with unconfirmed balance",
-			addresses: []addressInfo{
+			addresses: []address.AddressInfo{
 				{
-					Type:        "receive",
+					Type:        address.Receive,
 					Index:       0,
 					Address:     "1Addr",
 					Balance:     "1.5",

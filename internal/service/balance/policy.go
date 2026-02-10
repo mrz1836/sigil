@@ -1,18 +1,17 @@
-package cli
+package balance
 
 import (
+	"strings"
 	"time"
 
-	"github.com/mrz1836/sigil/internal/cache"
-	"github.com/mrz1836/sigil/internal/utxostore"
-	"github.com/mrz1836/sigil/internal/wallet"
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 // RefreshPolicy determines when to fetch fresh balance data vs using cached data.
 // It implements a tiered strategy based on address activity and cache age.
 type RefreshPolicy struct {
-	utxoStore *utxostore.Store
-	cache     *cache.BalanceCache
+	metadata AddressMetadataProvider
+	cache    CacheProvider
 }
 
 // RefreshDecision indicates whether an address requires a fresh balance fetch.
@@ -41,10 +40,10 @@ const (
 )
 
 // NewRefreshPolicy creates a new refresh policy instance.
-func NewRefreshPolicy(utxoStore *utxostore.Store, cache *cache.BalanceCache) *RefreshPolicy {
+func NewRefreshPolicy(metadata AddressMetadataProvider, cache CacheProvider) *RefreshPolicy {
 	return &RefreshPolicy{
-		utxoStore: utxoStore,
-		cache:     cache,
+		metadata: metadata,
+		cache:    cache,
 	}
 }
 
@@ -57,7 +56,7 @@ func NewRefreshPolicy(utxoStore *utxostore.Store, cache *cache.BalanceCache) *Re
 //
 // This strategy balances freshness for important addresses with performance optimization
 // for less active addresses, reducing API calls while maintaining accuracy.
-func (p *RefreshPolicy) ShouldRefresh(chainID wallet.ChainID, address string) RefreshDecision {
+func (p *RefreshPolicy) ShouldRefresh(chainID chain.ID, address string) RefreshDecision {
 	// Get cached balance and its age
 	nativeEntry, nativeExists, nativeAge := p.cache.Get(chainID, address, "")
 
@@ -66,8 +65,8 @@ func (p *RefreshPolicy) ShouldRefresh(chainID wallet.ChainID, address string) Re
 		return RefreshRequired
 	}
 
-	// Get address metadata from UTXO store
-	addressMeta := p.utxoStore.GetAddress(chainID, address)
+	// Get address metadata
+	addressMeta := p.metadata.GetAddress(chainID, address)
 
 	// If no metadata exists, default to fresh fetch (safe fallback)
 	if addressMeta == nil {
@@ -87,16 +86,16 @@ func (p *RefreshPolicy) ShouldRefresh(chainID wallet.ChainID, address string) Re
 }
 
 // isNewlyCreatedAddress checks if an address is newly created (within 24 hours).
-func (p *RefreshPolicy) isNewlyCreatedAddress(addressMeta *utxostore.AddressMetadata) bool {
+func (p *RefreshPolicy) isNewlyCreatedAddress(addressMeta *AddressMetadata) bool {
 	return !addressMeta.LastScanned.IsZero() && time.Since(addressMeta.LastScanned) < freshAddressWindow
 }
 
 // hasNonZeroBalance checks if an address has a non-zero balance, including token balances.
-func (p *RefreshPolicy) hasNonZeroBalance(chainID wallet.ChainID, address string, nativeEntry *cache.BalanceCacheEntry) bool {
+func (p *RefreshPolicy) hasNonZeroBalance(chainID chain.ID, address string, nativeEntry *CacheEntry) bool {
 	hasBalance := isNonZeroBalance(nativeEntry.Balance)
 
 	// Check for token balances (ETH/USDC case)
-	if chainID == wallet.ChainETH {
+	if chainID == chain.ETH {
 		usdcEntry, usdcExists, _ := p.cache.Get(chainID, address, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")
 		if usdcExists && isNonZeroBalance(usdcEntry.Balance) {
 			hasBalance = true
@@ -134,4 +133,14 @@ func (p *RefreshPolicy) shouldRefreshBasedOnPriority(hasActivity, hasBalance boo
 
 	// Default: refresh required
 	return RefreshRequired
+}
+
+// isNonZeroBalance checks if a balance string represents a non-zero value.
+func isNonZeroBalance(balance string) bool {
+	if balance == "" || balance == "0" {
+		return false
+	}
+	// Trim leading zeros and decimal points
+	trimmed := strings.TrimLeft(balance, "0.")
+	return trimmed != "" && trimmed != "0"
 }

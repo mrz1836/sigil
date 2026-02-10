@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/service/address"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -124,7 +125,12 @@ func TestFindUnusedReceiveAddress(t *testing.T) {
 				})
 			}
 
-			result := findUnusedReceiveAddress(wlt, wallet.ChainBSV, store)
+			// Use address service to find unused address
+			addressService := address.NewService(address.NewMetadataAdapter(store))
+			result := addressService.FindUnused(&address.FindRequest{
+				Wallet:  wlt,
+				ChainID: wallet.ChainBSV,
+			})
 
 			if tc.expectedNil {
 				assert.Nil(t, result)

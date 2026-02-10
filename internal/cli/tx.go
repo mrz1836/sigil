@@ -13,12 +13,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/transaction"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -166,493 +166,104 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 		txConfirm = true
 	}
 
-	// Execute chain-specific send
-	switch chainID {
-	case chain.ETH:
-		return runETHSend(ctx, cmd, addresses[0].Address, seed)
-	case chain.BSV:
-		return runBSVSend(ctx, cmd, wlt, storage, addresses, seed)
-	case chain.BTC, chain.BCH:
-		return sigilerr.ErrNotImplemented
-	default:
-		return sigilerr.ErrNotImplemented
-	}
+	// Execute transaction via service
+	return runTxSendWithService(ctx, cmd, chainID, wlt, addresses, seed, storage)
 }
 
-//nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
-func runETHSend(ctx context.Context, cmd *cobra.Command, fromAddress string, seed []byte) error {
+// runTxSendWithService executes a transaction using the transaction service.
+func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain.ID, _ *wallet.Wallet, addresses []wallet.Address, seed []byte, storage *wallet.FileStorage) error {
 	cc := GetCmdContext(cmd)
 
-	// Validate ETH address
-	if err := eth.ValidateChecksumAddress(txTo); err != nil {
-		if !eth.IsValidAddress(txTo) {
-			return sigilerr.WithSuggestion(
-				sigilerr.ErrInvalidAddress,
-				fmt.Sprintf("invalid Ethereum address: %s", txTo),
-			)
-		}
+	// Create transaction service
+	txService := cc.TransactionService
+	if txService == nil {
+		// Initialize on-demand if not set
+		txService = transaction.NewService(&transaction.Config{
+			Config:  cc.Cfg,
+			Storage: storage,
+			Logger:  cc.Log,
+		})
 	}
-
-	// Get RPC URL from config
-	rpcURL := cc.Cfg.GetETHRPC()
-	if rpcURL == "" {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrConfigInvalid,
-			"Ethereum RPC URL not configured. Set it in ~/.sigil/config.yaml or SIGIL_ETH_RPC environment variable",
-		)
-	}
-
-	// Create ETH client
-	client, err := eth.NewClient(rpcURL, nil)
-	if err != nil {
-		return fmt.Errorf("creating ETH client: %w", err)
-	}
-	defer client.Close()
-
-	// Parse gas speed
-	speed, err := eth.ParseGasSpeed(txGasSpeed)
-	if err != nil {
-		return sigilerr.WithSuggestion(sigilerr.ErrInvalidInput, err.Error())
-	}
-
-	// Parse amount and get token address
-	sweepAll := isAmountAll(txAmount)
-	var amount *big.Int
-	var tokenAddress string
-	var decimals int
-
-	//nolint:nestif // Amount parsing branches by token type and sweep mode
-	if txToken != "" {
-		// ERC-20 transfer
-		tokenAddress, decimals, err = resolveToken(txToken)
-		if err != nil {
-			return err
-		}
-		if !sweepAll {
-			amount, err = parseDecimalAmount(txAmount, decimals)
-			if err != nil {
-				return sigilerr.WithSuggestion(
-					sigilerr.ErrInvalidInput,
-					fmt.Sprintf("invalid amount: %s", txAmount),
-				)
-			}
-		}
-	} else {
-		// Native ETH transfer
-		if !sweepAll {
-			amount, err = client.ParseAmount(txAmount)
-			if err != nil {
-				return sigilerr.WithSuggestion(
-					sigilerr.ErrInvalidInput,
-					fmt.Sprintf("invalid amount: %s", txAmount),
-				)
-			}
-		}
-	}
-
-	// Estimate gas
-	var estimate *eth.GasEstimate
-	if tokenAddress != "" {
-		estimate, err = client.EstimateGasForERC20Transfer(ctx, speed)
-	} else {
-		estimate, err = client.EstimateGasForETHTransfer(ctx, speed)
-	}
-	if err != nil {
-		return fmt.Errorf("estimating gas: %w", err)
-	}
-
-	// For sweep, calculate the actual amount from balance minus fees
-	//nolint:nestif // Sweep calculation branches by token type with balance/gas checks
-	if sweepAll {
-		if tokenAddress != "" {
-			// ERC-20 sweep: send full token balance (ETH needed for gas only)
-			tokenBalance, tokenErr := client.GetTokenBalance(ctx, fromAddress, tokenAddress)
-			if tokenErr != nil {
-				return fmt.Errorf("getting token balance: %w", tokenErr)
-			}
-			if tokenBalance.Sign() <= 0 {
-				return sigilerr.WithDetails(
-					sigilerr.ErrInsufficientFunds,
-					map[string]string{
-						"symbol": txToken,
-						"reason": "zero token balance",
-					},
-				)
-			}
-			amount = tokenBalance
-
-			// Still need ETH for gas
-			ethBalance, ethErr := client.GetBalance(ctx, fromAddress)
-			if ethErr != nil {
-				return fmt.Errorf("getting ETH balance: %w", ethErr)
-			}
-			if ethBalance.Cmp(estimate.Total) < 0 {
-				return sigilerr.WithDetails(
-					sigilerr.ErrInsufficientFunds,
-					map[string]string{
-						"required":  client.FormatAmount(estimate.Total),
-						"available": client.FormatAmount(ethBalance),
-						"symbol":    "ETH",
-						"reason":    "insufficient ETH for gas",
-					},
-				)
-			}
-		} else {
-			// Native ETH sweep: balance minus gas cost
-			ethBalance, ethErr := client.GetBalance(ctx, fromAddress)
-			if ethErr != nil {
-				return fmt.Errorf("getting ETH balance: %w", ethErr)
-			}
-			amount = new(big.Int).Sub(ethBalance, estimate.Total)
-			if amount.Sign() <= 0 {
-				return sigilerr.WithDetails(
-					sigilerr.ErrInsufficientFunds,
-					map[string]string{
-						"required":  client.FormatAmount(estimate.Total),
-						"available": client.FormatAmount(ethBalance),
-						"symbol":    "ETH",
-						"reason":    "balance does not cover gas fees",
-					},
-				)
-			}
-		}
-	} else {
-		// Normal send: check balance covers amount + fees
-		err = checkETHBalance(ctx, client, fromAddress, amount, estimate.Total, tokenAddress)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Agent policy enforcement (after amount is finalized)
-	if policyErr := enforceAgentPolicy(cmd, chain.ETH, txTo, amount); policyErr != nil {
-		return policyErr
-	}
-
-	// Display transaction details and confirm
-	displayAmount := txAmount
-	if sweepAll {
-		if tokenAddress != "" {
-			displayAmount = chain.FormatDecimalAmount(amount, decimals) + " (sweep all)"
-		} else {
-			displayAmount = client.FormatAmount(amount) + " (sweep all)"
-		}
-	}
-	if !txConfirm {
-		displayTxDetails(cmd, fromAddress, txTo, displayAmount, txToken, estimate)
-		if !promptConfirmFn() {
-			outln(cmd.OutOrStdout(), "Transaction canceled.")
-			return nil
-		}
-	}
-
-	// Derive private key from seed
-	privateKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainETH, 0)
-	if err != nil {
-		return fmt.Errorf("deriving private key: %w", err)
-	}
-	defer wallet.ZeroBytes(privateKey)
 
 	// Build send request
-	req := chain.SendRequest{
-		From:       fromAddress,
-		To:         txTo,
-		Amount:     amount,
-		PrivateKey: privateKey,
-		Token:      tokenAddress,
-		GasLimit:   estimate.GasLimit,
+	req := &transaction.SendRequest{
+		ChainID:     chainID,
+		To:          txTo,
+		AmountStr:   txAmount,
+		Wallet:      txWallet,
+		FromAddress: addresses[0].Address,
+		Token:       txToken,
+		GasSpeed:    txGasSpeed,
+		Addresses:   addresses, // For BSV multi-address
+		Confirm:     txConfirm,
+		Seed:        seed,
+	}
+
+	// Set agent fields if in agent mode
+	if cc.AgentCred != nil {
+		req.AgentCredID = cc.AgentCred.ID
+		req.AgentToken = cc.AgentToken
+		req.AgentCounterPath = cc.AgentCounterPath
 	}
 
 	// Send transaction
-	result, err := client.Send(ctx, req)
+	result, err := txService.Send(ctx, req)
 	if err != nil {
-		return fmt.Errorf("sending transaction: %w", err)
+		return err
 	}
-
-	// Invalidate balance cache so next "balance show" reflects the send.
-	if sweepAll && tokenAddress == "" {
-		// Native ETH sweep: balance is now 0
-		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "0.0")
-	} else if sweepAll && tokenAddress != "" {
-		// Token sweep: token balance is 0, ETH balance changed (gas spent)
-		invalidateBalanceCache(cc, chain.ETH, fromAddress, tokenAddress, "0.0")
-		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "")
-	} else {
-		// Partial send: delete entries to force fresh fetch
-		invalidateBalanceCache(cc, chain.ETH, fromAddress, "", "")
-		if tokenAddress != "" {
-			invalidateBalanceCache(cc, chain.ETH, fromAddress, tokenAddress, "")
-		}
-	}
-
-	// Record agent spending (after successful send)
-	recordAgentSpend(cmd, chain.ETH, amount)
 
 	// Display result
-	displayTxResult(cmd, result)
-
-	return nil
-}
-
-//nolint:gocognit,gocyclo // Transaction flow involves multiple validation and setup steps
-func runBSVSend(ctx context.Context, cmd *cobra.Command, wlt *wallet.Wallet, storage *wallet.FileStorage, addresses []wallet.Address, seed []byte) error {
-	cc := GetCmdContext(cmd)
-	primaryAddress := addresses[0].Address
-
-	// Validate BSV address
-	if err := bsv.ValidateBase58CheckAddress(txTo); err != nil {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrInvalidAddress,
-			fmt.Sprintf("invalid BSV address: %s", txTo),
-		)
-	}
-
-	// Create BSV client
-	opts := &bsv.ClientOptions{
-		APIKey:      cc.Cfg.GetBSVAPIKey(),
-		Logger:      cc.Log,
-		FeeStrategy: bsv.FeeStrategy(cc.Cfg.GetBSVFeeStrategy()),
-		MinMiners:   cc.Cfg.GetBSVMinMiners(),
-	}
-	client := bsv.NewClient(ctx, opts)
-
-	// Load local UTXO store for spent-UTXO filtering and post-broadcast marking.
-	walletPath := filepath.Join(cc.Cfg.GetHome(), "wallets", txWallet)
-	utxoStore := utxostore.New(walletPath)
-	if err := utxoStore.Load(); err != nil {
-		logTxError(cc, "bsv send: failed to load utxo store: %v", err)
-		// Non-fatal: proceed without local filtering (API-only UTXOs)
-		utxoStore = nil
-	}
-
-	sweepAll := isAmountAll(txAmount)
-	logTxDebug(cc, "bsv send: to=%s amount=%s sweep=%v", txTo, txAmount, sweepAll)
-
-	// Parse amount (skip for sweep — amount is calculated from balance minus fees)
-	var amount *big.Int
-	if !sweepAll {
-		var err error
-		amount, err = client.ParseAmount(txAmount)
-		if err != nil {
-			return sigilerr.WithSuggestion(
-				sigilerr.ErrInvalidInput,
-				fmt.Sprintf("invalid amount: %s", txAmount),
-			)
-		}
-	}
-
-	// Get fee quote
-	feeQuote, err := client.GetFeeQuote(ctx)
-	if err != nil {
-		// Use default if fee quote fails
-		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
-	}
-	logTxDebug(cc, "bsv send: fee rate=%d sat/KB source=%s", feeQuote.StandardRate, feeQuote.Source)
-
-	// Aggregate UTXOs from ALL wallet addresses for this chain
-	allUTXOs, utxoErr := aggregateBSVUTXOs(ctx, client, addresses)
-	if utxoErr != nil {
-		logTxError(cc, "bsv send: utxo aggregation failed: %v", utxoErr)
-		return fmt.Errorf("listing UTXOs: %w", utxoErr)
-	}
-	// Filter out UTXOs that are known-spent in the local store (prevents double-spend)
-	if utxoStore != nil {
-		allUTXOs = filterSpentBSVUTXOs(allUTXOs, utxoStore)
-	}
-	logTxDebug(cc, "bsv send: %d UTXOs from %d addresses (after spent filtering)", len(allUTXOs), len(addresses))
-
-	var displayAmount string
-	var estimatedFee uint64
-	var sendUTXOs []chain.UTXO // UTXOs that will be used in the transaction
-
-	//nolint:nestif // Sweep vs normal send have distinct balance check and fee estimation paths
-	if sweepAll {
-		// Sweep: use ALL UTXOs from all addresses
-		if len(allUTXOs) == 0 {
-			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found across any wallet address")
-		}
-
-		var totalInputs uint64
-		for _, u := range allUTXOs {
-			totalInputs += u.Amount
-		}
-
-		sweepAmount, sweepErr := bsv.CalculateSweepAmount(totalInputs, len(allUTXOs), feeQuote.StandardRate)
-		if sweepErr != nil {
-			return sweepErr
-		}
-
-		amount = chain.AmountToBigInt(sweepAmount)
-		estimatedFee = totalInputs - sweepAmount
-		displayAmount = client.FormatAmount(amount) + " (sweep all)"
-		sendUTXOs = allUTXOs
+	if chainID == chain.BSV {
+		displayBSVTxResult(cmd, convertToBSVTransactionResult(result))
 	} else {
-		// Normal send: select UTXOs across all addresses to cover amount + fee
-		if len(allUTXOs) == 0 {
-			return sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found across any wallet address")
-		}
-
-		// Convert to bsv.UTXO for SelectUTXOs, preserving address info
-		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
-		for i, u := range allUTXOs {
-			bsvUTXOs[i] = bsv.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
-
-		selected, _, selErr := client.SelectUTXOs(bsvUTXOs, amount.Uint64(), feeQuote.StandardRate)
-		if selErr != nil {
-			return selErr
-		}
-
-		// Convert selected back to chain.UTXO
-		sendUTXOs = make([]chain.UTXO, len(selected))
-		for i, u := range selected {
-			sendUTXOs[i] = chain.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
-
-		estimatedFee = bsv.EstimateFeeForTx(len(selected), 2, feeQuote.StandardRate)
-		displayAmount = txAmount
-	}
-	logTxDebug(cc, "bsv send: using %d UTXOs, estimated fee=%d sat", len(sendUTXOs), estimatedFee)
-
-	// Agent policy enforcement (after amount is finalized)
-	if policyErr := enforceAgentPolicy(cmd, chain.BSV, txTo, amount); policyErr != nil {
-		return policyErr
-	}
-
-	// Display transaction details and confirm
-	if !txConfirm {
-		displayBSVTxDetails(cmd, primaryAddress, txTo, displayAmount, estimatedFee, feeQuote.StandardRate)
-		if !promptConfirmFn() {
-			outln(cmd.OutOrStdout(), "Transaction canceled.")
-			return nil
-		}
-	}
-
-	// Derive change address only for non-sweep (sweep has no change output)
-	var changeAddress string
-	if !sweepAll {
-		changeAddr, changeErr := wlt.DeriveNextChangeAddress(seed, wallet.ChainBSV)
-		if changeErr != nil {
-			return fmt.Errorf("deriving change address: %w", changeErr)
-		}
-		if updateErr := storage.UpdateMetadata(wlt); updateErr != nil {
-			return fmt.Errorf("persisting wallet metadata: %w", updateErr)
-		}
-		changeAddress = changeAddr.Address
-	}
-
-	// Derive private keys for all addresses that have UTXOs being spent
-	privateKeys, keyErr := deriveKeysForUTXOs(sendUTXOs, addresses, seed)
-	if keyErr != nil {
-		return fmt.Errorf("deriving private keys: %w", keyErr)
-	}
-	defer func() {
-		for _, k := range privateKeys {
-			wallet.ZeroBytes(k)
-		}
-	}()
-
-	// Build send request with multi-address support
-	req := chain.SendRequest{
-		From:          primaryAddress,
-		To:            txTo,
-		Amount:        amount,
-		UTXOs:         sendUTXOs,
-		PrivateKeys:   privateKeys,
-		FeeRate:       feeQuote.StandardRate,
-		ChangeAddress: changeAddress,
-		SweepAll:      sweepAll,
-	}
-
-	// Send transaction
-	result, err := client.Send(ctx, req)
-	if err != nil {
-		logTxError(cc, "bsv send failed: %v", err)
-		return fmt.Errorf("sending transaction: %w", err)
-	}
-	logTxDebug(cc, "bsv send: success hash=%s", result.Hash)
-
-	// Mark spent UTXOs in the local store to prevent double-spend on subsequent sends
-	markSpentBSVUTXOs(cc, utxoStore, sendUTXOs, result.Hash)
-
-	// Invalidate balance cache for all addresses that contributed UTXOs
-	involvedAddrs := uniqueUTXOAddrs(sendUTXOs)
-	if sweepAll {
-		// Sweep: all addresses are now empty
-		for _, addr := range addresses {
-			invalidateBalanceCache(cc, chain.BSV, addr.Address, "", "0.0")
-		}
-	} else {
-		// Partial send: invalidate addresses that contributed inputs
-		for addr := range involvedAddrs {
-			invalidateBalanceCache(cc, chain.BSV, addr, "", "")
-		}
-	}
-
-	// Record agent spending (after successful send)
-	recordAgentSpend(cmd, chain.BSV, amount)
-
-	// Display result
-	displayBSVTxResult(cmd, result)
-
-	return nil
-}
-
-// enforceAgentPolicy checks per-transaction and daily limits when running in agent mode.
-// Returns nil if not in agent mode or if the transaction is within policy limits.
-func enforceAgentPolicy(cmd *cobra.Command, chainID chain.ID, to string, amount *big.Int) error {
-	cc := GetCmdContext(cmd)
-	if cc.AgentCred == nil {
-		return nil // Not in agent mode
-	}
-
-	// Per-transaction limit and address allowlist check
-	if err := agent.ValidateTransaction(cc.AgentCred, chainID, to, amount); err != nil {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrAgentPolicyViolation,
-			err.Error(),
-		)
-	}
-
-	// Daily limit check
-	if err := agent.CheckDailyLimit(cc.AgentCounterPath, cc.AgentToken, cc.AgentCred, chainID, amount); err != nil {
-		return sigilerr.WithSuggestion(
-			sigilerr.ErrAgentDailyLimit,
-			err.Error(),
-		)
+		displayTxResult(cmd, convertToETHTransactionResult(result))
 	}
 
 	return nil
 }
 
-// recordAgentSpend records a completed transaction in the agent's daily spending counter.
-// No-op if not in agent mode.
-func recordAgentSpend(cmd *cobra.Command, chainID chain.ID, amount *big.Int) {
-	cc := GetCmdContext(cmd)
-	if cc.AgentCred == nil {
-		return
-	}
-
-	if err := agent.RecordSpend(cc.AgentCounterPath, cc.AgentToken, chainID, amount); err != nil {
-		if cc.Log != nil {
-			cc.Log.Debug("failed to record agent spending: %v", err)
-		}
+// convertToETHTransactionResult converts service result to chain.TransactionResult for display.
+func convertToETHTransactionResult(result *transaction.SendResult) *chain.TransactionResult {
+	return &chain.TransactionResult{
+		Hash:     result.Hash,
+		From:     result.From,
+		To:       result.To,
+		Amount:   result.Amount,
+		Fee:      result.Fee,
+		Token:    result.Token,
+		Status:   result.Status,
+		GasUsed:  result.GasUsed,
+		GasPrice: result.GasPrice,
 	}
 }
+
+// convertToBSVTransactionResult converts service result to chain.TransactionResult for display.
+func convertToBSVTransactionResult(result *transaction.SendResult) *chain.TransactionResult {
+	return &chain.TransactionResult{
+		Hash:   result.Hash,
+		From:   result.From,
+		To:     result.To,
+		Amount: result.Amount,
+		Fee:    result.Fee,
+		Status: result.Status,
+	}
+}
+
+// runETHSend has been replaced by runTxSendWithService
+// runBSVSend has been replaced by runTxSendWithService
+
+// The following functions have been migrated to internal/service/transaction/:
+//   - enforceAgentPolicy
+//   - recordAgentSpend
+//   - resolveToken
+//   - isAmountAll, SanitizeAmount, parseDecimalAmount
+//   - checkETHBalance
+//   - invalidateBalanceCache, buildPostSendEntry
+//   - aggregateBSVUTXOs
+//   - deriveKeysForUTXOs, deriveKeyForAddress, zeroKeyMap
+//   - uniqueUTXOAddrs, filterSpentBSVUTXOs, markSpentBSVUTXOs
+
+// Display functions retained in CLI (unchanged):
 
 // displayBSVTxDetails shows BSV transaction details before confirmation.
 func displayBSVTxDetails(cmd *cobra.Command, from, to, amount string, fee, feeRate uint64) {

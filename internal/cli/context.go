@@ -11,6 +11,7 @@ import (
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/service/balance"
+	"github.com/mrz1836/sigil/internal/service/transaction"
 	walletservice "github.com/mrz1836/sigil/internal/service/wallet"
 	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
@@ -91,6 +92,10 @@ type CommandContext struct {
 	// WalletService provides wallet loading and management operations.
 	// Nil until initialized by commands that need it.
 	WalletService *walletservice.Service
+
+	// TransactionService provides transaction sending functionality.
+	// Nil until initialized by commands that need it.
+	TransactionService *transaction.Service
 }
 
 // NewCommandContext creates a context with the given dependencies.
@@ -146,5 +151,11 @@ func (c *CommandContext) WithBalanceService(svc *balance.Service) *CommandContex
 // WithWalletService sets the wallet service.
 func (c *CommandContext) WithWalletService(svc *walletservice.Service) *CommandContext {
 	c.WalletService = svc
+	return c
+}
+
+// WithTransactionService sets the transaction service.
+func (c *CommandContext) WithTransactionService(svc *transaction.Service) *CommandContext {
+	c.TransactionService = svc
 	return c
 }

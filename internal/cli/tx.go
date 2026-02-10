@@ -14,6 +14,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/service/transaction"
@@ -204,6 +205,18 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 		req.AgentCounterPath = cc.AgentCounterPath
 	}
 
+	// Display transaction details and prompt for confirmation (unless --yes flag or agent mode)
+	if !txConfirm {
+		confirmed, err := promptTransactionConfirmation(ctx, cmd, chainID, req, addresses)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			outln(cmd.OutOrStdout(), "Transaction canceled.")
+			return nil
+		}
+	}
+
 	// Send transaction
 	result, err := txService.Send(ctx, req)
 	if err != nil {
@@ -211,13 +224,118 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 	}
 
 	// Display result
-	if chainID == chain.BSV {
+	switch chainID {
+	case chain.BSV:
 		displayBSVTxResult(cmd, convertToBSVTransactionResult(result))
-	} else {
+	case chain.ETH:
+		displayTxResult(cmd, convertToETHTransactionResult(result))
+	case chain.BTC, chain.BCH:
+		// BTC and BCH are not yet supported for transactions
 		displayTxResult(cmd, convertToETHTransactionResult(result))
 	}
 
 	return nil
+}
+
+// promptTransactionConfirmation prompts the user to confirm the transaction.
+// Returns true if the user confirmed, false if canceled, or an error.
+func promptTransactionConfirmation(ctx context.Context, cmd *cobra.Command, chainID chain.ID, req *transaction.SendRequest, addresses []wallet.Address) (bool, error) {
+	switch chainID {
+	case chain.ETH:
+		return promptETHConfirmation(ctx, cmd, req)
+	case chain.BSV:
+		return promptBSVConfirmation(ctx, cmd, req, addresses)
+	case chain.BTC, chain.BCH:
+		// BTC and BCH are not yet supported for transactions
+		return false, sigilerr.WithSuggestion(
+			sigilerr.ErrInvalidInput,
+			fmt.Sprintf("chain %s is not yet supported for transactions", chainID),
+		)
+	default:
+		return false, sigilerr.WithSuggestion(
+			sigilerr.ErrInvalidInput,
+			fmt.Sprintf("unsupported chain for confirmation: %s", chainID),
+		)
+	}
+}
+
+// promptETHConfirmation handles ETH transaction confirmation prompt.
+func promptETHConfirmation(ctx context.Context, cmd *cobra.Command, req *transaction.SendRequest) (bool, error) {
+	cc := GetCmdContext(cmd)
+
+	// Estimate ETH gas fees for display
+	ethClient, err := eth.NewClient(cc.Cfg.GetETHRPC(), nil)
+	if err != nil {
+		return false, fmt.Errorf("creating ETH client for fee estimation: %w", err)
+	}
+	defer ethClient.Close()
+
+	speed, err := eth.ParseGasSpeed(txGasSpeed)
+	if err != nil {
+		return false, fmt.Errorf("parsing gas speed: %w", err)
+	}
+
+	var estimate *eth.GasEstimate
+	if txToken != "" {
+		estimate, err = ethClient.EstimateGasForERC20Transfer(ctx, speed)
+	} else {
+		estimate, err = ethClient.EstimateGasForETHTransfer(ctx, speed)
+	}
+	if err != nil {
+		return false, fmt.Errorf("estimating fees for confirmation: %w", err)
+	}
+
+	// Format display amount
+	displayAmount := txAmount
+	if req.SweepAll() {
+		displayAmount = txAmount + " (sweep all)"
+	}
+
+	// Display transaction details
+	displayTxDetails(cmd, req.FromAddress, req.To, displayAmount, txToken, estimate)
+
+	// Prompt for confirmation
+	return promptConfirmFn(), nil
+}
+
+// promptBSVConfirmation handles BSV transaction confirmation prompt.
+func promptBSVConfirmation(ctx context.Context, cmd *cobra.Command, req *transaction.SendRequest, addresses []wallet.Address) (bool, error) {
+	cc := GetCmdContext(cmd)
+
+	// Estimate BSV fees for display
+	opts := &bsv.ClientOptions{
+		APIKey:      cc.Cfg.GetBSVAPIKey(),
+		Logger:      cc.Log,
+		FeeStrategy: bsv.FeeStrategy(cc.Cfg.GetBSVFeeStrategy()),
+		MinMiners:   cc.Cfg.GetBSVMinMiners(),
+	}
+	bsvClient := bsv.NewClient(ctx, opts)
+
+	feeQuote, err := bsvClient.GetFeeQuote(ctx)
+	if err != nil {
+		// Use default if fee quote fails (same as service does)
+		feeQuote = &bsv.FeeQuote{StandardRate: bsv.DefaultFeeRate}
+	}
+
+	// Estimate fee based on UTXO count
+	numInputs := len(addresses)
+	numOutputs := 2 // Recipient + change
+	if req.SweepAll() {
+		numOutputs = 1 // Only recipient for sweep all
+	}
+	estimatedFee := bsv.EstimateFeeForTx(numInputs, numOutputs, feeQuote.StandardRate)
+
+	// Format display amount
+	displayAmount := txAmount
+	if req.SweepAll() {
+		displayAmount = txAmount + " (sweep all)"
+	}
+
+	// Display transaction details
+	displayBSVTxDetails(cmd, req.FromAddress, req.To, displayAmount, estimatedFee, feeQuote.StandardRate)
+
+	// Prompt for confirmation
+	return promptConfirmFn(), nil
 }
 
 // convertToETHTransactionResult converts service result to chain.TransactionResult for display.

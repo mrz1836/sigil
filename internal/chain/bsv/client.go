@@ -76,16 +76,24 @@ type WOCClient interface {
 // Compile-time check that the real SDK client satisfies WOCClient.
 var _ WOCClient = (whatsonchain.ClientInterface)(nil)
 
-// DebugLogger is the interface for debug logging.
-// This allows the client to accept different logger implementations.
-type DebugLogger interface {
+// Logger is the interface for client logging.
+// Supports both debug (verbose) and error (always captured) levels.
+type Logger interface {
 	Debug(format string, args ...any)
+	Error(format string, args ...any)
 }
+
+// DebugLogger is kept as an alias for backward compatibility.
+type DebugLogger = Logger
 
 // ClientOptions contains optional configuration for the BSV client.
 type ClientOptions struct {
 	// WOCClient allows injecting a custom WhatsOnChain client (e.g., for testing).
 	WOCClient WOCClient
+
+	// Broadcasters overrides the default broadcast providers (e.g., for testing).
+	// When set, no default broadcasters are created.
+	Broadcasters []Broadcaster
 
 	// APIKey is the optional WhatsOnChain API key for higher rate limits.
 	APIKey string
@@ -95,6 +103,12 @@ type ClientOptions struct {
 
 	// Logger is an optional debug logger for diagnostic output.
 	Logger DebugLogger
+
+	// FeeStrategy selects the fee rate selection strategy (economy, normal, priority).
+	FeeStrategy FeeStrategy
+
+	// MinMiners is the minimum number of miners that must accept the fee (used by normal strategy).
+	MinMiners int
 }
 
 // Compile-time interface check
@@ -106,46 +120,76 @@ type Client struct {
 	network      Network
 	logger       DebugLogger
 	broadcasters []Broadcaster
+	feeStrategy  FeeStrategy
+	minMiners    int
 }
 
 // NewClient creates a new BSV client.
 func NewClient(ctx context.Context, opts *ClientOptions) *Client {
 	c := &Client{
-		network: NetworkMainnet,
+		network:     NetworkMainnet,
+		feeStrategy: FeeStrategyNormal,
+		minMiners:   3,
 	}
 
 	if opts != nil {
 		c.applyOptions(opts)
 	}
 
-	// Create default SDK client if none was injected.
-	if c.woc == nil {
-		var wocOpts []whatsonchain.ClientOption
-		wocOpts = append(wocOpts, whatsonchain.WithNetwork(mapNetwork(c.network)))
-		if opts != nil && opts.APIKey != "" {
-			wocOpts = append(wocOpts, whatsonchain.WithAPIKey(opts.APIKey))
-		}
-		wocClient, err := whatsonchain.NewClient(ctx, wocOpts...)
-		if err != nil {
-			// SDK NewClient only returns an error for truly invalid configuration.
-			// Fall back to a default client.
-			wocClient, _ = whatsonchain.NewClient(ctx)
-		}
-		c.woc = wocClient
-	}
-
-	// Default broadcasters: WhatsOnChain SDK (primary) + GorillaPool ARC (fallback).
-	if len(c.broadcasters) == 0 {
-		c.broadcasters = []Broadcaster{
-			&WOCSDKBroadcaster{woc: c.woc},
-			&GorillaPoolARCBroadcaster{
-				BaseURL:    GorillaPoolARCURL,
-				httpClient: &http.Client{Timeout: defaultTimeout},
-			},
-		}
-	}
+	c.initializeWOCClient(ctx, opts)
+	c.initializeBroadcasters(opts)
 
 	return c
+}
+
+// initializeWOCClient creates the WhatsOnChain SDK client if not already injected.
+//
+//nolint:funcorder // Helper method grouped with NewClient
+func (c *Client) initializeWOCClient(ctx context.Context, opts *ClientOptions) {
+	if c.woc != nil {
+		return
+	}
+
+	var wocOpts []whatsonchain.ClientOption
+	wocOpts = append(wocOpts, whatsonchain.WithNetwork(mapNetwork(c.network)))
+	if opts != nil && opts.APIKey != "" {
+		wocOpts = append(wocOpts, whatsonchain.WithAPIKey(opts.APIKey))
+	}
+
+	wocClient, err := whatsonchain.NewClient(ctx, wocOpts...)
+	if err != nil {
+		// SDK NewClient only returns an error for truly invalid configuration.
+		// Fall back to a default client.
+		wocClient, _ = whatsonchain.NewClient(ctx)
+	}
+	c.woc = wocClient
+}
+
+// initializeBroadcasters sets up broadcast providers if not already configured.
+//
+//nolint:funcorder // Helper method grouped with NewClient
+func (c *Client) initializeBroadcasters(opts *ClientOptions) {
+	if len(c.broadcasters) > 0 {
+		return
+	}
+
+	if opts != nil && opts.WOCClient != nil {
+		// WOC client was injected (e.g., testing) — only use the SDK broadcaster.
+		// No real network fallback to avoid accidental live HTTP calls in tests.
+		c.broadcasters = []Broadcaster{
+			&WOCSDKBroadcaster{woc: c.woc},
+		}
+		return
+	}
+
+	// Production: WhatsOnChain SDK (primary) + GorillaPool ARC (fallback).
+	c.broadcasters = []Broadcaster{
+		&WOCSDKBroadcaster{woc: c.woc},
+		&GorillaPoolARCBroadcaster{
+			BaseURL:    GorillaPoolARCURL,
+			httpClient: &http.Client{Timeout: defaultTimeout},
+		},
+	}
 }
 
 // mapNetwork converts the sigil Network type to the SDK's NetworkType.
@@ -210,6 +254,7 @@ func (c *Client) doGetFullBalance(ctx context.Context, address string) (*Balance
 
 	bal, err := c.woc.AddressBalance(ctx, address)
 	if err != nil {
+		c.logError("balance fetch failed for %s: %v", address, err)
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
 
@@ -242,6 +287,7 @@ func (c *Client) doListUTXOs(ctx context.Context, address string) ([]UTXO, error
 
 	history, err := c.woc.AddressUnspentTransactions(ctx, address)
 	if err != nil {
+		c.logError("utxo fetch failed for %s: %v", address, err)
 		return nil, fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}
 
@@ -345,11 +391,20 @@ func (c *Client) applyOptions(opts *ClientOptions) {
 	if opts.WOCClient != nil {
 		c.woc = opts.WOCClient
 	}
+	if len(opts.Broadcasters) > 0 {
+		c.broadcasters = opts.Broadcasters
+	}
 	if opts.Network != "" {
 		c.network = opts.Network
 	}
 	if opts.Logger != nil {
 		c.logger = opts.Logger
+	}
+	if opts.FeeStrategy != "" {
+		c.feeStrategy = opts.FeeStrategy
+	}
+	if opts.MinMiners > 0 {
+		c.minMiners = opts.MinMiners
 	}
 }
 
@@ -357,5 +412,12 @@ func (c *Client) applyOptions(opts *ClientOptions) {
 func (c *Client) debug(format string, args ...any) {
 	if c.logger != nil {
 		c.logger.Debug(format, args...)
+	}
+}
+
+// logError logs an error message if a logger is configured.
+func (c *Client) logError(format string, args ...any) {
+	if c.logger != nil {
+		c.logger.Error(format, args...)
 	}
 }

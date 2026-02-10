@@ -3,7 +3,10 @@ package bsv
 import (
 	"context"
 	"math"
+	"sort"
 	"time"
+
+	whatsonchain "github.com/mrz1836/go-whatsonchain"
 )
 
 const (
@@ -30,6 +33,18 @@ const (
 	TxOverhead = 10
 )
 
+// FeeStrategy defines the fee selection strategy for BSV transactions.
+type FeeStrategy string
+
+const (
+	// FeeStrategyEconomy selects the lowest MinFeeRate from any miner.
+	FeeStrategyEconomy FeeStrategy = "economy"
+	// FeeStrategyNormal selects the Nth-lowest rate (sorted descending) to ensure at least N miners accept.
+	FeeStrategyNormal FeeStrategy = "normal"
+	// FeeStrategyPriority selects the highest MinFeeRate across all miners.
+	FeeStrategyPriority FeeStrategy = "priority"
+)
+
 // FeeQuote represents a fee quote from a miner.
 type FeeQuote struct {
 	// Standard fee rate in satoshis per kilobyte.
@@ -53,7 +68,7 @@ func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 
 	entries, err := c.woc.GetMinerFeesStats(ctx, from, now)
 	if err != nil {
-		c.debug("fee API request failed, using default rate: %v", err)
+		c.logError("fee API request failed, using default rate: %v", err)
 		return defaultFeeQuote(), nil
 	}
 
@@ -62,23 +77,72 @@ func (c *Client) GetFeeQuote(ctx context.Context) (*FeeQuote, error) {
 		return defaultFeeQuote(), nil
 	}
 
-	// Calculate average fee rate across all miners
-	var total float64
-	for _, entry := range entries {
-		total += entry.FeeRate
-	}
-	avgRate := uint64(math.Ceil(total / float64(len(entries))))
+	rate := uint64(math.Ceil(selectFeeRate(entries, c.feeStrategy, c.minMiners)))
 
-	if avgRate < MinFeeRate {
-		avgRate = MinFeeRate
+	if rate < MinFeeRate {
+		rate = MinFeeRate
 	}
+	c.debug("fee quote: %d sat/KB from %d miners (strategy=%s, min_miners=%d)", rate, len(entries), c.feeStrategy, c.minMiners)
 
 	return &FeeQuote{
-		StandardRate: avgRate,
-		DataRate:     avgRate,
+		StandardRate: rate,
+		DataRate:     rate,
 		Source:       "whatsonchain",
 		Timestamp:    time.Now(),
 	}, nil
+}
+
+// selectFeeRate picks a fee rate from miner entries based on the given strategy.
+// entries must be non-empty.
+func selectFeeRate(entries []*whatsonchain.MinerFeeStats, strategy FeeStrategy, minMiners int) float64 {
+	switch strategy {
+	case FeeStrategyEconomy:
+		return minFeeRateFrom(entries)
+	case FeeStrategyPriority:
+		return maxFeeRateFrom(entries)
+	case FeeStrategyNormal:
+		return nthFeeRate(entries, minMiners)
+	}
+	// Unknown strategy falls back to normal behavior.
+	return nthFeeRate(entries, minMiners)
+}
+
+// minFeeRateFrom returns the lowest MinFeeRate across all entries.
+func minFeeRateFrom(entries []*whatsonchain.MinerFeeStats) float64 {
+	lowest := entries[0].MinFeeRate
+	for _, e := range entries[1:] {
+		if e.MinFeeRate < lowest {
+			lowest = e.MinFeeRate
+		}
+	}
+	return lowest
+}
+
+// maxFeeRateFrom returns the highest MinFeeRate across all entries.
+func maxFeeRateFrom(entries []*whatsonchain.MinerFeeStats) float64 {
+	highest := entries[0].MinFeeRate
+	for _, e := range entries[1:] {
+		if e.MinFeeRate > highest {
+			highest = e.MinFeeRate
+		}
+	}
+	return highest
+}
+
+// nthFeeRate sorts entries descending and returns the rate at index (minMiners-1),
+// clamped to [0, len-1]. This guarantees at least minMiners miners accept the rate.
+func nthFeeRate(entries []*whatsonchain.MinerFeeStats, minMiners int) float64 {
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].MinFeeRate > entries[j].MinFeeRate
+	})
+	idx := minMiners - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(entries) {
+		idx = len(entries) - 1
+	}
+	return entries[idx].MinFeeRate
 }
 
 // EstimateTxSize estimates the transaction size in bytes.

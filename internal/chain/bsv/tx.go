@@ -170,12 +170,15 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	)
 	if len(req.UTXOs) > 0 {
 		utxos = convertChainUTXOs(req.UTXOs)
+		c.debug("send: using %d pre-fetched UTXOs", len(utxos))
 	} else {
+		c.debug("send: fetching UTXOs for %s", req.From)
 		utxos, err = c.ListUTXOs(ctx, req.From)
 		if err != nil {
 			return nil, fmt.Errorf("listing UTXOs: %w", err)
 		}
 	}
+	c.debug("send: %d UTXOs available", len(utxos))
 
 	// Get fee quote
 	feeRate := uint64(DefaultFeeRate)
@@ -264,6 +267,7 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	if err != nil {
 		return nil, fmt.Errorf("building raw transaction: %w", err)
 	}
+	c.debug("send: raw tx built, %d bytes", len(rawTx))
 
 	// Zero private keys after use
 	if req.PrivateKey != nil {
@@ -547,11 +551,12 @@ func (c *Client) BroadcastTransaction(ctx context.Context, rawTx []byte) (string
 			c.debug("broadcast successful via %s: %s", b.Name(), txid)
 			return txid, nil
 		}
-		c.debug("broadcast failed via %s: %v", b.Name(), err)
+		c.logError("broadcast failed via %s: %v", b.Name(), err)
 		lastErr = err
 	}
 
 	if lastErr != nil {
+		c.logError("all broadcast providers failed, last error: %v", lastErr)
 		return "", fmt.Errorf("%w: all providers failed: %w", ErrBroadcastFailed, lastErr)
 	}
 	return "", fmt.Errorf("%w: no broadcast providers configured", ErrBroadcastFailed)

@@ -254,6 +254,9 @@ func (c *Client) ParseAmount(amount string) (*big.Int, error) {
 
 // Close closes the client connection.
 func (c *Client) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.rpcClient != nil {
 		c.rpcClient.Close()
 		c.rpcClient = nil

@@ -69,12 +69,16 @@ func NewBalanceCache() *BalanceCache {
 	}
 }
 
+// keySep is a null byte separator for cache keys. Unlike ":", it cannot appear
+// in chain IDs, addresses, or token identifiers, preventing key collisions.
+const keySep = "\x00"
+
 // Key generates a cache key for an address and optional token.
 func Key(chainID chain.ID, address, token string) string {
 	if token != "" {
-		return string(chainID) + ":" + address + ":" + token
+		return string(chainID) + keySep + address + keySep + token
 	}
-	return string(chainID) + ":" + address
+	return string(chainID) + keySep + address
 }
 
 // Get retrieves a cached balance entry.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"time"
 
@@ -87,13 +88,17 @@ func RetryWithConfig[T any](ctx context.Context, cfg RetryConfig, operation func
 	return result, fmt.Errorf("operation failed after %d attempts: %w", cfg.MaxAttempts, err)
 }
 
-// calculateDelay calculates the delay for the given attempt using exponential backoff.
+// calculateDelay calculates the delay for the given attempt using exponential backoff with jitter.
+// Jitter prevents thundering herd when multiple goroutines retry simultaneously.
 func calculateDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
 	delay := baseDelay * (1 << attempt) // 2^attempt * baseDelay
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	return delay
+	// Add jitter: random duration in [delay/2, delay).
+	// Cryptographic randomness is not needed for retry jitter.
+	half := delay / 2
+	return half + rand.N(half) //nolint:gosec // G404: Jitter does not require cryptographic randomness
 }
 
 // IsRetryable returns true if the error should trigger a retry.

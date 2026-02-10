@@ -37,18 +37,24 @@ type BuildInfo struct {
 //nolint:gochecknoglobals // Required to store build info passed from main
 var buildInfo BuildInfo
 
+// resolvedBuildInfo returns version, commit, and date with defaults applied for empty values.
+func resolvedBuildInfo(info BuildInfo) (version, commit, date string) {
+	version, commit, date = info.Version, info.Commit, info.Date
+	if version == "" {
+		version = "dev"
+	}
+	if commit == "" {
+		commit = "unknown"
+	}
+	if date == "" {
+		date = "unknown"
+	}
+	return version, commit, date
+}
+
 // formatVersion returns a formatted version string with defaults for empty values.
 func formatVersion(info BuildInfo) string {
-	v, c, d := info.Version, info.Commit, info.Date
-	if v == "" {
-		v = "dev"
-	}
-	if c == "" {
-		c = "unknown"
-	}
-	if d == "" {
-		d = "unknown"
-	}
+	v, c, d := resolvedBuildInfo(info)
 	return fmt.Sprintf("%s (commit: %s, built: %s)", v, c, d)
 }
 
@@ -215,16 +221,7 @@ var versionCmd = &cobra.Command{
 	Short: "Show version information",
 	Long:  `Display the version, build commit, and build date.`,
 	Run: func(cmd *cobra.Command, _ []string) {
-		v, c, d := buildInfo.Version, buildInfo.Commit, buildInfo.Date
-		if v == "" {
-			v = "dev"
-		}
-		if c == "" {
-			c = "unknown"
-		}
-		if d == "" {
-			d = "unknown"
-		}
+		v, c, d := resolvedBuildInfo(buildInfo)
 		if formatter != nil && formatter.Format() == output.FormatJSON {
 			_ = writeJSON(cmd.OutOrStdout(), map[string]string{
 				"version": v,

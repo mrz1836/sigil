@@ -120,31 +120,30 @@ func runSessionLock(cmd *cobra.Command, _ []string) error {
 }
 
 func outputSessionStatusJSON(cmd *cobra.Command, sessions []*session.Session) {
-	w := cmd.OutOrStdout()
+	type sessionEntry struct {
+		Wallet    string `json:"wallet"`
+		ExpiresIn string `json:"expires_in"`
+		CreatedAt string `json:"created_at"`
+	}
 
-	outln(w, "{")
-	outln(w, `  "available": true,`)
-	out(w, `  "sessions": [`)
-
+	entries := make([]sessionEntry, len(sessions))
 	for i, s := range sessions {
-		if i > 0 {
-			out(w, ",")
+		entries[i] = sessionEntry{
+			Wallet:    s.WalletName,
+			ExpiresIn: formatDuration(s.TTL()),
+			CreatedAt: s.CreatedAt.Format(time.RFC3339),
 		}
-		outln(w)
-		out(w, `    {"wallet": "%s", "expires_in": "%s", "created_at": "%s"}`,
-			s.WalletName,
-			formatDuration(s.TTL()),
-			s.CreatedAt.Format(time.RFC3339),
-		)
 	}
 
-	if len(sessions) > 0 {
-		outln(w)
-		outln(w, "  ]")
-	} else {
-		outln(w, "]")
+	payload := struct {
+		Available bool           `json:"available"`
+		Sessions  []sessionEntry `json:"sessions"`
+	}{
+		Available: true,
+		Sessions:  entries,
 	}
-	outln(w, "}")
+
+	_ = writeJSON(cmd.OutOrStdout(), payload)
 }
 
 func outputSessionStatusText(cmd *cobra.Command, sessions []*session.Session) {

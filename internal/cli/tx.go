@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -909,24 +910,47 @@ func logTxError(cc *CommandContext, format string, args ...any) {
 	}
 }
 
-// aggregateBSVUTXOs fetches UTXOs from all wallet addresses and merges them into a single slice.
+// aggregateBSVUTXOs fetches UTXOs from all wallet addresses concurrently and merges them.
 func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+	type result struct {
+		utxos []chain.UTXO
+		err   error
+	}
+
+	results := make([]result, len(addresses))
+	var wg sync.WaitGroup
+
+	for i, addr := range addresses {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			utxos, err := client.ListUTXOs(ctx, addr.Address)
+			if err != nil {
+				results[i] = result{err: fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)}
+				return
+			}
+			converted := make([]chain.UTXO, len(utxos))
+			for j, u := range utxos {
+				converted[j] = chain.UTXO{
+					TxID:          u.TxID,
+					Vout:          u.Vout,
+					Amount:        u.Amount,
+					ScriptPubKey:  u.ScriptPubKey,
+					Address:       u.Address,
+					Confirmations: u.Confirmations,
+				}
+			}
+			results[i] = result{utxos: converted}
+		}()
+	}
+	wg.Wait()
+
 	var allUTXOs []chain.UTXO
-	for _, addr := range addresses {
-		utxos, err := client.ListUTXOs(ctx, addr.Address)
-		if err != nil {
-			return nil, fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		for _, u := range utxos {
-			allUTXOs = append(allUTXOs, chain.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			})
-		}
+		allUTXOs = append(allUTXOs, r.utxos...)
 	}
 	return allUTXOs, nil
 }

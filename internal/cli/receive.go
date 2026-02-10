@@ -193,11 +193,23 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("saving UTXO store: %w", err)
 		}
 	} else if receiveLabel != "" {
-		// Update label on existing address
-		if err := store.SetAddressLabel(chainID, addr.Address, receiveLabel); err == nil {
-			if err := store.Save(); err != nil {
-				return fmt.Errorf("saving UTXO store: %w", err)
+		// Update label on existing address, registering it in the store first if needed
+		if store.GetAddress(chainID, addr.Address) == nil {
+			store.AddAddress(&utxostore.AddressMetadata{
+				Address:        addr.Address,
+				ChainID:        chainID,
+				DerivationPath: addr.Path,
+				Index:          addr.Index,
+				Label:          receiveLabel,
+				IsChange:       false,
+			})
+		} else {
+			if err := store.SetAddressLabel(chainID, addr.Address, receiveLabel); err != nil {
+				return fmt.Errorf("setting address label: %w", err)
 			}
+		}
+		if err := store.Save(); err != nil {
+			return fmt.Errorf("saving UTXO store: %w", err)
 		}
 	}
 

@@ -363,6 +363,9 @@ By default, shows the first unused address. The same address is shown until it r
 # Show next unused BSV receiving address
 sigil receive --wallet main --chain bsv
 
+# Label the current unused receiving address
+sigil receive --wallet main --chain bsv --label "Payment from Alice"
+
 # Generate a new address even if current is unused
 sigil receive --wallet main --chain bsv --new
 

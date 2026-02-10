@@ -295,16 +295,28 @@ func fetchBalancesForAddress(ctx context.Context, chainID wallet.ChainID, addres
 	return entries, stale, fetchErr
 }
 
-// sharedETHTransport creates an HTTP transport for sharing across ETH clients.
+// ethTransportOnce ensures the shared HTTP transport is created exactly once.
+//
+//nolint:gochecknoglobals // Singleton transport for connection pooling across concurrent ETH requests
+var (
+	ethTransportOnce sync.Once
+	ethTransport     *http.Transport
+)
+
+// sharedETHTransport returns a shared HTTP transport for reuse across ETH clients.
+// The transport is created once and reused for proper connection pooling.
 func sharedETHTransport() *http.Transport {
-	return &http.Transport{
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       20,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
+	ethTransportOnce.Do(func() {
+		ethTransport = &http.Transport{
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			MaxConnsPerHost:       20,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+	})
+	return ethTransport
 }
 
 // connectETHClient attempts to connect to the primary RPC, falling back to alternates on failure.
@@ -338,7 +350,10 @@ func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, addres
 		return balance, client, nil
 	}
 
-	// Try fallback RPCs, sharing the same transport
+	// Try fallback RPCs, sharing the same transport.
+	// The old client is intentionally not closed here because Close() calls
+	// CloseIdleConnections() on the shared transport, which would disrupt
+	// other goroutines using the same transport for concurrent requests.
 	opts := &eth.ClientOptions{Transport: transport}
 	for _, fallbackURL := range fallbackRPCs {
 		if fallbackURL == primaryRPC {
@@ -350,10 +365,8 @@ func fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, addres
 		}
 		balance, err = fallbackClient.GetNativeBalance(ctx, address)
 		if err == nil {
-			client.Close()
 			return balance, fallbackClient, nil
 		}
-		fallbackClient.Close()
 	}
 
 	return nil, client, err

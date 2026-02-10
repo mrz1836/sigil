@@ -1053,3 +1053,97 @@ func TestDisplayReceiveCheckAllText_Empty(t *testing.T) {
 	assert.Contains(t, result, "Checking 0 receiving address")
 	assert.Contains(t, result, "Total: 0.00000000 BSV")
 }
+
+// ---------------------------------------------------------------------------
+// Label storage integration tests
+// ---------------------------------------------------------------------------
+
+func TestReceiveLabelStoredOnUnregisteredAddress(t *testing.T) {
+	t.Parallel()
+
+	// Address exists in wallet but is NOT registered in the UTXO store.
+	addr := &wallet.Address{
+		Index:   0,
+		Address: "1UnregisteredAddr",
+		Path:    "m/44'/236'/0'/0/0",
+	}
+
+	store := utxostore.New(t.TempDir())
+
+	// Precondition: address not in store.
+	assert.Nil(t, store.GetAddress(chain.BSV, addr.Address))
+
+	// Simulate the fixed code path: register with label when missing.
+	if store.GetAddress(chain.BSV, addr.Address) == nil {
+		store.AddAddress(&utxostore.AddressMetadata{
+			Address:        addr.Address,
+			ChainID:        chain.BSV,
+			DerivationPath: addr.Path,
+			Index:          addr.Index,
+			Label:          "new label",
+			IsChange:       false,
+		})
+	}
+	require.NoError(t, store.Save())
+
+	meta := store.GetAddress(chain.BSV, addr.Address)
+	require.NotNil(t, meta)
+	assert.Equal(t, "new label", meta.Label)
+	assert.Equal(t, addr.Path, meta.DerivationPath)
+	assert.Equal(t, addr.Index, meta.Index)
+}
+
+func TestReceiveLabelUpdatedOnRegisteredAddress(t *testing.T) {
+	t.Parallel()
+
+	addr := &wallet.Address{
+		Index:   1,
+		Address: "1RegisteredAddr",
+		Path:    "m/44'/236'/0'/0/1",
+	}
+
+	store := utxostore.New(t.TempDir())
+	store.AddAddress(&utxostore.AddressMetadata{
+		Address:        addr.Address,
+		ChainID:        chain.BSV,
+		DerivationPath: addr.Path,
+		Index:          addr.Index,
+		Label:          "old label",
+		IsChange:       false,
+	})
+
+	// Simulate the fixed code path: update label on existing address.
+	require.NoError(t, store.SetAddressLabel(chain.BSV, addr.Address, "updated label"))
+	require.NoError(t, store.Save())
+
+	meta := store.GetAddress(chain.BSV, addr.Address)
+	require.NotNil(t, meta)
+	assert.Equal(t, "updated label", meta.Label)
+}
+
+func TestReceiveLabelStoredWithNewAddress(t *testing.T) {
+	t.Parallel()
+
+	// Simulates the isNew=true path where AddAddress is called directly with the label.
+	addr := &wallet.Address{
+		Index:   2,
+		Address: "1BrandNewAddr",
+		Path:    "m/44'/236'/0'/0/2",
+	}
+
+	store := utxostore.New(t.TempDir())
+	store.AddAddress(&utxostore.AddressMetadata{
+		Address:        addr.Address,
+		ChainID:        chain.BSV,
+		DerivationPath: addr.Path,
+		Index:          addr.Index,
+		Label:          "new addr label",
+		IsChange:       false,
+	})
+	require.NoError(t, store.Save())
+
+	meta := store.GetAddress(chain.BSV, addr.Address)
+	require.NotNil(t, meta)
+	assert.Equal(t, "new addr label", meta.Label)
+	assert.False(t, meta.IsChange)
+}

@@ -27,6 +27,22 @@ func formatEmptyWalletList(w io.Writer, format output.Format) {
 	}
 }
 
+// validateWalletExists checks if a wallet exists in storage.
+// Returns an error with helpful suggestion if wallet is not found.
+func validateWalletExists(name string, storage *wallet.FileStorage) error {
+	exists, existsErr := storage.Exists(name)
+	if existsErr != nil {
+		return existsErr
+	}
+	if !exists {
+		return sigilerr.WithSuggestion(
+			wallet.ErrWalletNotFound,
+			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
+		)
+	}
+	return nil
+}
+
 // formatWalletListJSON outputs wallet names as JSON array.
 func formatWalletListJSON(w io.Writer, names []string) {
 	_ = writeJSON(w, names)
@@ -148,15 +164,8 @@ func displayWalletJSON(wlt *wallet.Wallet, cmd *cobra.Command) {
 //nolint:gocognit,gocyclo,nestif // Session/agent handling requires multiple branches
 func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
 	// Check if wallet exists
-	exists, existsErr := storage.Exists(name)
-	if existsErr != nil {
-		return nil, nil, existsErr
-	}
-	if !exists {
-		return nil, nil, sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
-		)
+	if err := validateWalletExists(name, storage); err != nil {
+		return nil, nil, err
 	}
 
 	ctx := GetCmdContext(cmd)
@@ -284,15 +293,8 @@ func loadWalletWithAgentToken(name, token string, storage *wallet.FileStorage, c
 //nolint:unparam // nil seed return is intentional (read-only mode, no private key access)
 func loadWalletWithXpub(name, xpub string, storage *wallet.FileStorage, cmd *cobra.Command) (*wallet.Wallet, []byte, error) {
 	// Check if wallet exists
-	exists, existsErr := storage.Exists(name)
-	if existsErr != nil {
-		return nil, nil, existsErr
-	}
-	if !exists {
-		return nil, nil, sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
-		)
+	if err := validateWalletExists(name, storage); err != nil {
+		return nil, nil, err
 	}
 
 	// Load wallet metadata (doesn't require password)

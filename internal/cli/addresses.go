@@ -15,6 +15,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
@@ -35,6 +36,8 @@ var (
 	addressesUnused bool
 	// addressesRefresh forces a fresh fetch, ignoring the cache.
 	addressesRefresh bool
+	// addressesRefreshAddresses is a list of specific addresses to refresh.
+	addressesRefreshAddresses []string
 )
 
 // addressesCmd is the parent command for address operations.
@@ -43,7 +46,10 @@ var (
 var addressesCmd = &cobra.Command{
 	Use:   "addresses",
 	Short: "Manage and view addresses",
-	Long:  `View, filter, and manage wallet addresses.`,
+	Long: `View, filter, and manage wallet addresses.
+
+List addresses with balances, set labels, and refresh data from the network.
+Supports filtering by chain, address type (receive/change), and usage status.`,
 }
 
 // addressesListCmd lists all addresses in a wallet.
@@ -55,10 +61,8 @@ var addressesListCmd = &cobra.Command{
 	Long: `List all addresses in a wallet with their status and balance.
 
 Balances are fetched live from the network with cache fallback.
-Use --refresh to bypass the cache and force a fresh fetch.
-
-Examples:
-  # List all BSV addresses
+Use --refresh to bypass the cache and force a fresh fetch.`,
+	Example: `  # List all BSV addresses
   sigil addresses list --wallet main --chain bsv
 
   # List only unused receiving addresses
@@ -75,10 +79,8 @@ Examples:
 var addressesLabelCmd = &cobra.Command{
 	Use:   "label <address> <label>",
 	Short: "Set a label on an address",
-	Long: `Set or update the label for an address.
-
-Examples:
-  # Set a label
+	Long:  `Set or update the label for an address.`,
+	Example: `  # Set a label
   sigil addresses label 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa "Savings" --wallet main
 
   # Clear a label (empty string)
@@ -87,8 +89,36 @@ Examples:
 	RunE: runAddressesLabel,
 }
 
+// addressesRefreshCmd refreshes balance and UTXO data from the network.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
+var addressesRefreshCmd = &cobra.Command{
+	Use:   "refresh",
+	Short: "Refresh address balances from the network",
+	Long: `Refresh balance and UTXO data for wallet addresses from the blockchain.
+
+For BSV addresses: re-scans UTXOs via WhatsOnChain and updates the balance cache.
+For ETH addresses: fetches fresh balances via the configured provider and updates the balance cache.
+
+By default, refreshes all addresses. Use --address to target specific addresses.
+Use --chain to filter by blockchain.`,
+	Example: `  # Refresh all addresses
+  sigil addresses refresh --wallet main
+
+  # Refresh BSV addresses only
+  sigil addresses refresh --wallet main --chain bsv
+
+  # Refresh specific addresses
+  sigil addresses refresh --wallet main --address 1ABC... --address 1XYZ...
+
+  # JSON output
+  sigil addresses refresh --wallet main -o json`,
+	RunE: runAddressesRefresh,
+}
+
 //nolint:gochecknoinits // Cobra CLI pattern requires init for command registration
 func init() {
+	addressesCmd.GroupID = "wallet"
 	rootCmd.AddCommand(addressesCmd)
 	addressesCmd.AddCommand(addressesListCmd)
 	addressesCmd.AddCommand(addressesLabelCmd)
@@ -105,6 +135,13 @@ func init() {
 	// Label command flags
 	addressesLabelCmd.Flags().StringVarP(&addressesWallet, "wallet", "w", "", "wallet name (required)")
 	_ = addressesLabelCmd.MarkFlagRequired("wallet")
+
+	// Refresh command
+	addressesCmd.AddCommand(addressesRefreshCmd)
+	addressesRefreshCmd.Flags().StringVarP(&addressesWallet, "wallet", "w", "", "wallet name (required)")
+	addressesRefreshCmd.Flags().StringVarP(&addressesChain, "chain", "c", "", "filter by chain (eth, bsv)")
+	addressesRefreshCmd.Flags().StringArrayVar(&addressesRefreshAddresses, "address", nil, "specific address(es) to refresh (optional, repeatable)")
+	_ = addressesRefreshCmd.MarkFlagRequired("wallet")
 }
 
 // addressInfo holds display information for an address.
@@ -244,6 +281,295 @@ func runAddressesList(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// refreshTarget identifies a single address to refresh.
+type refreshTarget struct {
+	address string
+	chainID chain.ID
+}
+
+//nolint:gocognit,gocyclo // CLI flow involves validation, chain-specific refresh, and display steps
+func runAddressesRefresh(cmd *cobra.Command, _ []string) error {
+	cmdCtx := GetCmdContext(cmd)
+	w := cmd.OutOrStdout()
+
+	// Load wallet
+	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
+	wlt, seed, err := loadWalletWithSession(addressesWallet, storage, cmd)
+	if err != nil {
+		return err
+	}
+	defer wallet.ZeroBytes(seed)
+
+	// Load UTXO store
+	utxoStorePath := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", addressesWallet)
+	store := utxostore.New(utxoStorePath)
+	if loadErr := store.Load(); loadErr != nil {
+		return fmt.Errorf("loading UTXO store: %w", loadErr)
+	}
+
+	// Create fresh balance cache (refresh always bypasses existing cache)
+	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
+	cacheStorage := cache.NewFileStorage(cachePath)
+	balanceCache := loadOrCreateBalanceCache(cacheStorage, true, cmd, cmdCtx.Log)
+
+	// Determine which chains to refresh
+	var chains []chain.ID
+	if addressesChain != "" {
+		chainID, ok := chain.ParseChainID(addressesChain)
+		if !ok || !chainID.IsMVP() {
+			return sigilerr.WithSuggestion(
+				sigilerr.ErrInvalidInput,
+				fmt.Sprintf("invalid chain: %s (use eth or bsv)", addressesChain),
+			)
+		}
+		chains = []chain.ID{chainID}
+	} else {
+		chains = wlt.EnabledChains
+	}
+
+	// Build target list
+	targets, err := buildRefreshTargets(wlt, chains, addressesRefreshAddresses)
+	if err != nil {
+		return err
+	}
+
+	if len(targets) == 0 {
+		out(w, "No addresses found to refresh.\n")
+		return nil
+	}
+
+	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	defer cancel()
+
+	out(w, "Refreshing %d address(es) for wallet '%s'...\n", len(targets), addressesWallet)
+
+	// Refresh addresses by chain
+	refreshErrors := refreshTargetAddresses(ctx, w, cmdCtx, store, targets, balanceCache)
+
+	// Save balance cache
+	if saveErr := cacheStorage.Save(balanceCache); saveErr != nil {
+		if cmdCtx.Log != nil {
+			cmdCtx.Log.Error("failed to save balance cache: %v", saveErr)
+		}
+	}
+
+	// Build addressInfo list for display
+	targetSet := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		targetSet[t.address] = true
+	}
+
+	var allAddresses []addressInfo
+	for _, chainID := range chains {
+		for _, addr := range wlt.Addresses[chainID] {
+			if targetSet[addr.Address] {
+				info := buildAddressInfo("receive", &addr, chainID, store)
+				allAddresses = append(allAddresses, info)
+			}
+		}
+		if wlt.ChangeAddresses != nil {
+			for _, addr := range wlt.ChangeAddresses[chainID] {
+				if targetSet[addr.Address] {
+					info := buildAddressInfo("change", &addr, chainID, store)
+					allAddresses = append(allAddresses, info)
+				}
+			}
+		}
+	}
+
+	// Populate balances from freshly-updated cache
+	for i := range allAddresses {
+		entry, exists, _ := balanceCache.Get(allAddresses[i].ChainID, allAddresses[i].Address, "")
+		if exists {
+			allAddresses[i].Balance = entry.Balance
+			allAddresses[i].Unconfirmed = entry.Unconfirmed
+		}
+	}
+
+	// Enrich "Used" status from balance data
+	for i := range allAddresses {
+		if !allAddresses[i].Used {
+			allAddresses[i].Used = isNonZeroBalance(allAddresses[i].Balance) || isNonZeroBalance(allAddresses[i].Unconfirmed)
+		}
+	}
+
+	// Sort by chain, type, index
+	sort.Slice(allAddresses, func(i, j int) bool {
+		if allAddresses[i].ChainID != allAddresses[j].ChainID {
+			return allAddresses[i].ChainID < allAddresses[j].ChainID
+		}
+		if allAddresses[i].Type != allAddresses[j].Type {
+			return allAddresses[i].Type < allAddresses[j].Type
+		}
+		return allAddresses[i].Index < allAddresses[j].Index
+	})
+
+	// Display results
+	errorCount := len(refreshErrors)
+	outln(w)
+	if cmdCtx.Fmt.Format() == output.FormatJSON {
+		displayAddressesRefreshJSON(cmd, allAddresses, errorCount)
+	} else {
+		out(w, "Refreshed %d address(es)", len(targets))
+		if errorCount > 0 {
+			out(w, " (%d error(s))", errorCount)
+		}
+		outln(w)
+		displayAddressesText(cmd, allAddresses)
+		for _, re := range refreshErrors {
+			out(w, "  Error refreshing %s: %s\n", truncateAddressDisplay(re.address), re.err)
+		}
+	}
+
+	return nil
+}
+
+// refreshError records a failed refresh for a specific address.
+type refreshError struct {
+	address string
+	err     error
+}
+
+// buildRefreshTargets builds the list of addresses to refresh.
+// If specific addresses are provided, validates they exist in the wallet.
+func buildRefreshTargets(wlt *wallet.Wallet, chains []chain.ID, specificAddrs []string) ([]refreshTarget, error) {
+	if len(specificAddrs) > 0 {
+		return resolveSpecificTargets(wlt, chains, specificAddrs)
+	}
+
+	// All addresses for the selected chains
+	var targets []refreshTarget
+	for _, chainID := range chains {
+		for _, addr := range wlt.Addresses[chainID] {
+			targets = append(targets, refreshTarget{address: addr.Address, chainID: chainID})
+		}
+		if wlt.ChangeAddresses != nil {
+			for _, addr := range wlt.ChangeAddresses[chainID] {
+				targets = append(targets, refreshTarget{address: addr.Address, chainID: chainID})
+			}
+		}
+	}
+	return targets, nil
+}
+
+// resolveSpecificTargets validates and resolves specific address strings to targets.
+func resolveSpecificTargets(wlt *wallet.Wallet, chains []chain.ID, specificAddrs []string) ([]refreshTarget, error) {
+	var targets []refreshTarget
+	for _, addr := range specificAddrs {
+		found := false
+		for _, chainID := range chains {
+			if findInAddresses(wlt.Addresses[chainID], addr) || findInAddresses(wlt.ChangeAddresses[chainID], addr) {
+				targets = append(targets, refreshTarget{address: addr, chainID: chainID})
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, sigilerr.WithSuggestion(
+				sigilerr.ErrInvalidInput,
+				fmt.Sprintf("address %s not found in wallet for the specified chain(s)", addr),
+			)
+		}
+	}
+	return targets, nil
+}
+
+// findInAddresses returns true if the address exists in the slice.
+func findInAddresses(addresses []wallet.Address, target string) bool {
+	for _, a := range addresses {
+		if a.Address == target {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshTargetAddresses performs the actual refresh for all targets.
+// Returns any errors encountered during refresh.
+func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandContext, store *utxostore.Store, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
+	var errs []refreshError
+
+	// Group targets by chain
+	var bsvTargets, ethTargets []refreshTarget
+	for _, t := range targets {
+		switch t.chainID {
+		case chain.BSV:
+			bsvTargets = append(bsvTargets, t)
+		case chain.ETH:
+			ethTargets = append(ethTargets, t)
+		case chain.BTC, chain.BCH:
+			// BTC and BCH not supported in MVP
+			continue
+		}
+	}
+
+	// Refresh BSV addresses
+	if len(bsvTargets) > 0 {
+		bsvErrs := refreshBSVTargets(ctx, w, cmdCtx, store, bsvTargets, balanceCache)
+		errs = append(errs, bsvErrs...)
+	}
+
+	// Refresh ETH addresses
+	ethErrs := refreshETHTargets(ctx, w, cmdCtx, ethTargets, balanceCache)
+	errs = append(errs, ethErrs...)
+
+	return errs
+}
+
+// refreshBSVTargets refreshes BSV addresses (UTXO refresh + balance cache update).
+func refreshBSVTargets(ctx context.Context, w io.Writer, cmdCtx *CommandContext, store *utxostore.Store, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
+	var errs []refreshError
+
+	client := bsv.NewClient(ctx, &bsv.ClientOptions{
+		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+	})
+	adapter := &bsvRefreshAdapter{client: client}
+
+	for _, t := range targets {
+		if ctx.Err() != nil {
+			errs = append(errs, refreshError{address: t.address, err: ctx.Err()})
+			break
+		}
+		out(w, "  Refreshing %s [BSV]...\n", truncateAddressDisplay(t.address))
+
+		// Step 1: Refresh UTXOs in store
+		if _, refreshErr := store.RefreshAddress(ctx, t.address, chain.BSV, adapter); refreshErr != nil {
+			errs = append(errs, refreshError{address: t.address, err: refreshErr})
+			continue
+		}
+
+		// Step 2: Update balance cache
+		addrCtx, addrCancel := context.WithTimeout(ctx, 30*time.Second)
+		_, _, _ = fetchBalancesForAddress(addrCtx, chain.BSV, t.address, balanceCache, cmdCtx.Cfg)
+		addrCancel()
+	}
+
+	return errs
+}
+
+// refreshETHTargets refreshes ETH addresses (balance fetch + cache update).
+func refreshETHTargets(ctx context.Context, w io.Writer, cmdCtx *CommandContext, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
+	var errs []refreshError
+
+	for _, t := range targets {
+		if ctx.Err() != nil {
+			errs = append(errs, refreshError{address: t.address, err: ctx.Err()})
+			break
+		}
+		out(w, "  Refreshing %s [ETH]...\n", truncateAddressDisplay(t.address))
+
+		addrCtx, addrCancel := context.WithTimeout(ctx, 30*time.Second)
+		_, _, fetchErr := fetchBalancesForAddress(addrCtx, chain.ETH, t.address, balanceCache, cmdCtx.Cfg)
+		addrCancel()
+
+		if fetchErr != nil {
+			errs = append(errs, refreshError{address: t.address, err: fetchErr})
+		}
+	}
+
+	return errs
 }
 
 // loadOrCreateBalanceCache loads the balance cache from storage, or creates a fresh one.
@@ -514,6 +840,46 @@ func displayAddressesJSON(cmd *cobra.Command, addresses []addressInfo) {
 	}
 
 	resp := responseJSON{Addresses: make([]addressJSON, 0, len(addresses))}
+	for _, addr := range addresses {
+		resp.Addresses = append(resp.Addresses, addressJSON{
+			Chain:       string(addr.ChainID),
+			Type:        addr.Type,
+			Index:       addr.Index,
+			Address:     addr.Address,
+			Path:        addr.Path,
+			Label:       addr.Label,
+			Balance:     addr.Balance,
+			Unconfirmed: addr.Unconfirmed,
+			Used:        addr.Used,
+		})
+	}
+
+	_ = writeJSON(cmd.OutOrStdout(), resp)
+}
+
+func displayAddressesRefreshJSON(cmd *cobra.Command, addresses []addressInfo, errorCount int) {
+	type addressJSON struct {
+		Chain       string `json:"chain"`
+		Type        string `json:"type"`
+		Index       uint32 `json:"index"`
+		Address     string `json:"address"`
+		Path        string `json:"path"`
+		Label       string `json:"label"`
+		Balance     string `json:"balance"`
+		Unconfirmed string `json:"unconfirmed,omitempty"`
+		Used        bool   `json:"used"`
+	}
+	type responseJSON struct {
+		Refreshed int           `json:"refreshed"`
+		Errors    int           `json:"errors"`
+		Addresses []addressJSON `json:"addresses"`
+	}
+
+	resp := responseJSON{
+		Refreshed: len(addresses),
+		Errors:    errorCount,
+		Addresses: make([]addressJSON, 0, len(addresses)),
+	}
 	for _, addr := range addresses {
 		resp.Addresses = append(resp.Addresses, addressJSON{
 			Chain:       string(addr.ChainID),

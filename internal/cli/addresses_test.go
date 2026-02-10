@@ -1021,3 +1021,224 @@ func TestRunAddressesLabel(t *testing.T) {
 		require.ErrorIs(t, err, sigilerr.ErrInvalidInput)
 	})
 }
+
+func TestDisplayAddressesRefreshJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		addresses  []addressInfo
+		errorCount int
+		validate   func(t *testing.T, output string)
+	}{
+		{
+			name:       "empty list with no errors",
+			addresses:  []addressInfo{},
+			errorCount: 0,
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, `"refreshed": 0`)
+				assert.Contains(t, output, `"errors": 0`)
+				assert.Contains(t, output, `"addresses": [`)
+			},
+		},
+		{
+			name: "single address",
+			addresses: []addressInfo{
+				{
+					Type:    "receive",
+					Index:   0,
+					Address: "1TestAddress",
+					Path:    "m/44'/236'/0'/0/0",
+					Label:   "Test",
+					Balance: "0.00001",
+					Used:    true,
+					ChainID: chain.BSV,
+				},
+			},
+			errorCount: 0,
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, `"refreshed": 1`)
+				assert.Contains(t, output, `"errors": 0`)
+				assert.Contains(t, output, `"chain": "bsv"`)
+				assert.Contains(t, output, `"address": "1TestAddress"`)
+				assert.Contains(t, output, `"balance": "0.00001"`)
+			},
+		},
+		{
+			name: "with errors",
+			addresses: []addressInfo{
+				{
+					Type:    "receive",
+					Index:   0,
+					Address: "1Addr",
+					ChainID: chain.BSV,
+				},
+			},
+			errorCount: 2,
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, `"refreshed": 1`)
+				assert.Contains(t, output, `"errors": 2`)
+			},
+		},
+		{
+			name: "with unconfirmed balance",
+			addresses: []addressInfo{
+				{
+					Type:        "receive",
+					Index:       0,
+					Address:     "1Addr",
+					Balance:     "1.5",
+					Unconfirmed: "0.5",
+					ChainID:     chain.BSV,
+				},
+			},
+			errorCount: 0,
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, `"balance": "1.5"`)
+				assert.Contains(t, output, `"unconfirmed": "0.5"`)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			buf := new(bytes.Buffer)
+			cmd := &cobra.Command{}
+			cmd.SetOut(buf)
+
+			displayAddressesRefreshJSON(cmd, tc.addresses, tc.errorCount)
+
+			output := buf.String()
+			tc.validate(t, output)
+
+			// Verify it's valid JSON
+			var result map[string]interface{}
+			err := json.Unmarshal([]byte(output), &result)
+			require.NoError(t, err, "output should be valid JSON: %s", output)
+
+			// Verify structure
+			require.Contains(t, result, "refreshed")
+			require.Contains(t, result, "errors")
+			require.Contains(t, result, "addresses")
+		})
+	}
+}
+
+func TestAddressesRefreshCmd_FlagRegistration(t *testing.T) {
+	t.Parallel()
+
+	// Verify the command is registered
+	require.NotNil(t, addressesRefreshCmd)
+	assert.Equal(t, "refresh", addressesRefreshCmd.Use)
+
+	// Verify flags exist
+	walletFlag := addressesRefreshCmd.Flags().Lookup("wallet")
+	require.NotNil(t, walletFlag, "wallet flag should exist")
+	assert.Equal(t, "w", walletFlag.Shorthand)
+
+	chainFlag := addressesRefreshCmd.Flags().Lookup("chain")
+	require.NotNil(t, chainFlag, "chain flag should exist")
+	assert.Equal(t, "c", chainFlag.Shorthand)
+
+	addressFlag := addressesRefreshCmd.Flags().Lookup("address")
+	require.NotNil(t, addressFlag, "address flag should exist")
+
+	// Verify wallet is required
+	err := addressesRefreshCmd.ValidateRequiredFlags()
+	require.Error(t, err, "wallet flag should be required")
+}
+
+func TestBuildRefreshTargets(t *testing.T) {
+	t.Parallel()
+
+	// Create a test wallet
+	wlt := &wallet.Wallet{
+		Name:          "test",
+		EnabledChains: []chain.ID{chain.BSV, chain.ETH},
+		Addresses: map[chain.ID][]wallet.Address{
+			chain.BSV: {
+				{Index: 0, Address: "1BSVAddr1", Path: "m/44'/236'/0'/0/0"},
+				{Index: 1, Address: "1BSVAddr2", Path: "m/44'/236'/0'/0/1"},
+			},
+			chain.ETH: {
+				{Index: 0, Address: "0xETHAddr1", Path: "m/44'/60'/0'/0/0"},
+			},
+		},
+		ChangeAddresses: map[chain.ID][]wallet.Address{
+			chain.BSV: {
+				{Index: 0, Address: "1BSVChange1", Path: "m/44'/236'/0'/1/0"},
+			},
+		},
+	}
+
+	t.Run("all addresses", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV, chain.ETH}, nil)
+		require.NoError(t, err)
+		assert.Len(t, targets, 4) // 2 BSV receive + 1 BSV change + 1 ETH
+	})
+
+	t.Run("specific chain", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV}, nil)
+		require.NoError(t, err)
+		assert.Len(t, targets, 3) // 2 BSV receive + 1 BSV change
+	})
+
+	t.Run("specific valid address", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV}, []string{"1BSVAddr1"})
+		require.NoError(t, err)
+		assert.Len(t, targets, 1)
+		assert.Equal(t, "1BSVAddr1", targets[0].address)
+		assert.Equal(t, chain.BSV, targets[0].chainID)
+	})
+
+	t.Run("specific change address", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV}, []string{"1BSVChange1"})
+		require.NoError(t, err)
+		assert.Len(t, targets, 1)
+		assert.Equal(t, "1BSVChange1", targets[0].address)
+	})
+
+	t.Run("invalid address", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV}, []string{"1NonExistent"})
+		require.Error(t, err)
+		require.Nil(t, targets)
+		require.ErrorIs(t, err, sigilerr.ErrInvalidInput)
+	})
+
+	t.Run("multiple addresses", func(t *testing.T) {
+		t.Parallel()
+
+		targets, err := buildRefreshTargets(wlt, []chain.ID{chain.BSV, chain.ETH}, []string{"1BSVAddr1", "0xETHAddr1"})
+		require.NoError(t, err)
+		assert.Len(t, targets, 2)
+	})
+}
+
+func TestFindInAddresses(t *testing.T) {
+	t.Parallel()
+
+	addresses := []wallet.Address{
+		{Index: 0, Address: "1Addr1"},
+		{Index: 1, Address: "1Addr2"},
+		{Index: 2, Address: "1Addr3"},
+	}
+
+	assert.True(t, findInAddresses(addresses, "1Addr1"))
+	assert.True(t, findInAddresses(addresses, "1Addr2"))
+	assert.True(t, findInAddresses(addresses, "1Addr3"))
+	assert.False(t, findInAddresses(addresses, "1NotFound"))
+	assert.False(t, findInAddresses(nil, "1Addr1"))
+	assert.False(t, findInAddresses([]wallet.Address{}, "1Addr1"))
+}

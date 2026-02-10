@@ -358,6 +358,12 @@ By default, shows the first unused address. The same address is shown until it r
 | `--address` | - | - | Specific address to check (use with `--check`) |
 | `--all` | - | `false` | Check all receiving addresses (use with `--check`) |
 
+**Flag Constraints:**
+- `--check` and `--new` are mutually exclusive (cannot use both together)
+- `--address` and `--all` are mutually exclusive (cannot use both together)
+- `--address` requires `--check`
+- `--all` requires `--check`
+
 **Examples:**
 ```bash
 # Show next unused BSV receiving address
@@ -451,6 +457,46 @@ sigil addresses list --wallet main --refresh
 # Output as JSON
 sigil addresses list --wallet main -o json
 ```
+
+#### addresses refresh
+
+Refresh balance and UTXO data for wallet addresses from the blockchain.
+
+For BSV addresses, this re-scans UTXOs via WhatsOnChain and updates the local UTXO store and balance cache. For ETH addresses, this fetches fresh balances via the configured provider and updates the balance cache.
+
+By default, refreshes all addresses. Use `--address` to target specific addresses.
+
+```bash
+sigil addresses refresh [flags]
+```
+
+**Flags:**
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--wallet` | `-w` | - | Wallet name (required) |
+| `--chain` | `-c` | - | Filter by chain (`eth`, `bsv`) |
+| `--address` | - | - | Specific address(es) to refresh (repeatable) |
+
+**Examples:**
+```bash
+# Refresh all addresses
+sigil addresses refresh --wallet main
+
+# Refresh BSV addresses only
+sigil addresses refresh --wallet main --chain bsv
+
+# Refresh specific addresses
+sigil addresses refresh --wallet main --address 1ABC... --address 1XYZ...
+
+# JSON output
+sigil addresses refresh --wallet main -o json
+```
+
+<br>
+
+---
+
+<br>
 
 #### addresses label
 
@@ -896,8 +942,11 @@ sigil agent revoke [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wallet` | - | Wallet name (required) |
-| `--id` | - | Agent ID to revoke (required unless `--all`) |
+| `--id` | - | Agent ID to revoke |
 | `--all` | `false` | Revoke all agents for this wallet |
+
+**Flag Constraints:**
+- Exactly one of `--id` or `--all` is required (they are mutually exclusive)
 
 **Examples:**
 ```bash
@@ -1152,7 +1201,9 @@ Environment variables override configuration file settings.
 | `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL (default: PublicNode gateway) |
 | `SIGIL_ETH_PROVIDER` | ETH balance provider: `etherscan` (default) or `rpc` |
 | `ETHERSCAN_API_KEY` | Etherscan API key (required when provider is `etherscan`) |
-| `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional) |
+| `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional, fallback: `WHATS_ON_CHAIN_API_KEY`) |
+| `SIGIL_BSV_FEE_STRATEGY` | BSV fee strategy: `economy`, `normal` (default), `priority` |
+| `SIGIL_BSV_MIN_MINERS` | Minimum miners for normal fee strategy (default: 2) |
 | `SIGIL_OUTPUT_FORMAT` | Default output format (`text`, `json`, `auto`) |
 | `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
 | `SIGIL_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
@@ -1201,6 +1252,12 @@ security:
   session_enabled: true   # Enable session caching
   session_ttl_minutes: 15 # Session duration in minutes
 
+# Fee settings
+fees:
+  bsv_fee_strategy: normal  # economy, normal, priority
+  bsv_min_miners: 2         # Minimum miners for normal strategy
+  eth_gas_strategy: medium  # slow, medium, fast
+
 # Network settings
 networks:
   eth:
@@ -1225,6 +1282,9 @@ Use dot notation with `config get` and `config set`:
 | `logging.file` | Log file path | Any path |
 | `security.session_enabled` | Enable session caching | `true`, `false` |
 | `security.session_ttl_minutes` | Session duration | `1`-`60` |
+| `fees.bsv_fee_strategy` | BSV fee strategy | `economy`, `normal`, `priority` |
+| `fees.bsv_min_miners` | Minimum miners for normal strategy | Any integer > 0 |
+| `fees.eth_gas_strategy` | ETH gas speed | `slow`, `medium`, `fast` |
 | `networks.eth.provider` | ETH balance provider | `etherscan`, `rpc` |
 | `networks.eth.etherscan_api_key` | Etherscan API key | Any string |
 | `networks.eth.rpc` | Ethereum RPC URL | Any URL |

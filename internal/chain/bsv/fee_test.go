@@ -2,6 +2,7 @@ package bsv
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,8 +20,8 @@ func TestGetFeeQuote(t *testing.T) {
 		mock := &mockWOCClient{
 			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 				return []*whatsonchain.MinerFeeStats{
-					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 400},
-					{Timestamp: time.Now().Unix(), Name: "MinerB", FeeRate: 600},
+					{Miner: "MinerA", MinFeeRate: 400},
+					{Miner: "MinerB", MinFeeRate: 600},
 				}, nil
 			},
 		}
@@ -34,8 +35,8 @@ func TestGetFeeQuote(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "whatsonchain", quote.Source)
-		// Average of 400 and 600 = 500 sat/KB
-		assert.Equal(t, uint64(500), quote.StandardRate)
+		// Normal strategy (default): sorted desc [600, 400], minMiners=3, idx=min(2,1)=1 → 400
+		assert.Equal(t, uint64(400), quote.StandardRate)
 	})
 
 	t.Run("single miner response", func(t *testing.T) {
@@ -44,7 +45,7 @@ func TestGetFeeQuote(t *testing.T) {
 		mock := &mockWOCClient{
 			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 				return []*whatsonchain.MinerFeeStats{
-					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 236},
+					{Miner: "MinerA", MinFeeRate: 236},
 				}, nil
 			},
 		}
@@ -67,7 +68,7 @@ func TestGetFeeQuote(t *testing.T) {
 		mock := &mockWOCClient{
 			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 				return []*whatsonchain.MinerFeeStats{
-					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 10.5},
+					{Miner: "MinerA", MinFeeRate: 10.5},
 				}, nil
 			},
 		}
@@ -171,7 +172,7 @@ func TestGetFeeQuote(t *testing.T) {
 		mock := &mockWOCClient{
 			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 				return []*whatsonchain.MinerFeeStats{
-					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 1.0},
+					{Miner: "MinerA", MinFeeRate: 1.0},
 				}, nil
 			},
 		}
@@ -416,7 +417,7 @@ func TestEstimateFeeForAmount(t *testing.T) {
 		mock := &mockWOCClient{
 			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
 				return []*whatsonchain.MinerFeeStats{
-					{Timestamp: time.Now().Unix(), Name: "MinerA", FeeRate: 2000},
+					{Miner: "MinerA", MinFeeRate: 2000},
 				}, nil
 			},
 		}
@@ -746,4 +747,217 @@ func TestFeeQuote_DefaultValues(t *testing.T) {
 	assert.Equal(t, uint64(DefaultFeeRate), quote.DataRate)
 	assert.Equal(t, "default", quote.Source)
 	assert.False(t, quote.Timestamp.IsZero())
+}
+
+func TestSelectFeeRate(t *testing.T) {
+	t.Parallel()
+
+	mkEntries := func(rates ...float64) []*whatsonchain.MinerFeeStats {
+		entries := make([]*whatsonchain.MinerFeeStats, len(rates))
+		for i, r := range rates {
+			entries[i] = &whatsonchain.MinerFeeStats{Miner: fmt.Sprintf("Miner%d", i), MinFeeRate: r}
+		}
+		return entries
+	}
+
+	tests := []struct {
+		name      string
+		rates     []float64
+		strategy  FeeStrategy
+		minMiners int
+		expected  float64
+	}{
+		// Economy tests
+		{"economy - picks lowest", []float64{400, 600, 100}, FeeStrategyEconomy, 3, 100},
+		{"economy - single miner", []float64{250}, FeeStrategyEconomy, 3, 250},
+		{"economy - all same rate", []float64{100, 100, 100}, FeeStrategyEconomy, 3, 100},
+		{"economy - fractional rates", []float64{10.5, 20.3, 5.7}, FeeStrategyEconomy, 3, 5.7},
+
+		// Normal tests
+		{"normal - picks Nth from top", []float64{100, 48.6, 200, 1.0, 100}, FeeStrategyNormal, 3, 100},
+		{"normal - minMiners=1 (same as priority)", []float64{50, 200, 100}, FeeStrategyNormal, 1, 200},
+		{"normal - minMiners equals count", []float64{300, 200, 100}, FeeStrategyNormal, 3, 100},
+		{"normal - minMiners exceeds count", []float64{300, 200}, FeeStrategyNormal, 5, 200},
+		{"normal - minMiners=0 (edge, clamp to first)", []float64{300, 200, 100}, FeeStrategyNormal, 0, 300},
+		{"normal - single miner", []float64{150}, FeeStrategyNormal, 3, 150},
+		{"normal - two miners, minMiners=2", []float64{200, 100}, FeeStrategyNormal, 2, 100},
+
+		// Priority tests
+		{"priority - picks highest", []float64{100, 600, 400}, FeeStrategyPriority, 3, 600},
+		{"priority - single miner", []float64{250}, FeeStrategyPriority, 3, 250},
+		{"priority - all same rate", []float64{100, 100, 100}, FeeStrategyPriority, 3, 100},
+		{"priority - fractional rates", []float64{10.5, 20.3, 5.7}, FeeStrategyPriority, 3, 20.3},
+
+		// Unknown strategy defaults to normal
+		{"unknown strategy defaults to normal", []float64{300, 200, 100}, "invalid", 2, 200},
+
+		// Real-world data
+		{"real-world data normal", []float64{100, 100, 100, 100, 100, 48.6, 2.25, 1, 1, 1}, FeeStrategyNormal, 3, 100},
+		{"real-world data economy", []float64{100, 100, 100, 100, 100, 48.6, 2.25, 1, 1, 1}, FeeStrategyEconomy, 3, 1},
+		{"real-world data priority", []float64{100, 100, 100, 100, 100, 48.6, 2.25, 1, 1, 1}, FeeStrategyPriority, 3, 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			entries := mkEntries(tt.rates...)
+			result := selectFeeRate(entries, tt.strategy, tt.minMiners)
+			assert.InDelta(t, tt.expected, result, 0.001)
+		})
+	}
+}
+
+func TestGetFeeQuote_WithStrategy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("economy strategy selects lowest", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Miner: "MinerA", MinFeeRate: 400},
+					{Miner: "MinerB", MinFeeRate: 600},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyEconomy,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(400), quote.StandardRate)
+	})
+
+	t.Run("normal strategy selects Nth", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Miner: "MinerA", MinFeeRate: 400},
+					{Miner: "MinerB", MinFeeRate: 300},
+					{Miner: "MinerC", MinFeeRate: 200},
+					{Miner: "MinerD", MinFeeRate: 100},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyNormal,
+			MinMiners:   2,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		// Sorted desc: [400, 300, 200, 100], minMiners=2 → index 1 → 300
+		assert.Equal(t, uint64(300), quote.StandardRate)
+	})
+
+	t.Run("priority strategy selects highest", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Miner: "MinerA", MinFeeRate: 400},
+					{Miner: "MinerB", MinFeeRate: 600},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyPriority,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(600), quote.StandardRate)
+	})
+
+	t.Run("strategy with MinFeeRate clamping", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{
+					{Miner: "MinerA", MinFeeRate: 1.0},
+					{Miner: "MinerB", MinFeeRate: 2.0},
+				}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyEconomy,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		// Economy selects 1.0, ceil → 1, but clamped to MinFeeRate (50)
+		assert.Equal(t, uint64(MinFeeRate), quote.StandardRate)
+	})
+
+	t.Run("error fallback ignores strategy", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return nil, errTestConnRefused
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyEconomy,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(DefaultFeeRate), quote.StandardRate)
+		assert.Equal(t, "default", quote.Source)
+	})
+
+	t.Run("empty entries ignores strategy", func(t *testing.T) {
+		t.Parallel()
+
+		mock := &mockWOCClient{
+			feeFunc: func(_ context.Context, _, _ int64) ([]*whatsonchain.MinerFeeStats, error) {
+				return []*whatsonchain.MinerFeeStats{}, nil
+			},
+		}
+
+		client := NewClient(context.Background(), &ClientOptions{
+			WOCClient:   mock,
+			FeeStrategy: FeeStrategyEconomy,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		quote, err := client.GetFeeQuote(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(DefaultFeeRate), quote.StandardRate)
+		assert.Equal(t, "default", quote.Source)
+	})
 }

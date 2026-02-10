@@ -28,6 +28,8 @@ type mockConfigProvider struct {
 	ethEtherscanAPIKey string
 	bsvAPIKey          string
 	bsvBroadcast       string
+	bsvFeeStrategy     string
+	bsvMinMiners       int
 	logLevel           string
 	logFile            string
 	outputFormat       string
@@ -55,6 +57,20 @@ func (m *mockConfigProvider) GetETHProvider() string {
 
 func (m *mockConfigProvider) GetETHEtherscanAPIKey() string {
 	return m.ethEtherscanAPIKey
+}
+
+func (m *mockConfigProvider) GetBSVFeeStrategy() string {
+	if m.bsvFeeStrategy == "" {
+		return "normal"
+	}
+	return m.bsvFeeStrategy
+}
+
+func (m *mockConfigProvider) GetBSVMinMiners() int {
+	if m.bsvMinMiners == 0 {
+		return 3
+	}
+	return m.bsvMinMiners
 }
 
 func TestFormatCacheAge(t *testing.T) {

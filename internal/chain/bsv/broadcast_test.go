@@ -3,6 +3,7 @@ package bsv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -390,4 +391,70 @@ func TestBroadcastFallback_AlreadyKnownNoFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, txid)
 	assert.Equal(t, int64(0), secondary.called.Load()) // Not called.
+}
+
+// --- Logger Tests ---
+
+// testLogger captures log messages for assertions.
+type testLogger struct {
+	debugMsgs []string
+	errorMsgs []string
+}
+
+func (l *testLogger) Debug(format string, args ...any) {
+	l.debugMsgs = append(l.debugMsgs, fmt.Sprintf(format, args...))
+}
+
+func (l *testLogger) Error(format string, args ...any) {
+	l.errorMsgs = append(l.errorMsgs, fmt.Sprintf(format, args...))
+}
+
+func TestBroadcastTransaction_LogsErrorOnFailure(t *testing.T) {
+	t.Parallel()
+
+	logger := &testLogger{}
+	primary := &mockBroadcaster{name: "primary", err: ErrBroadcastFailed}
+	secondary := &mockBroadcaster{name: "secondary", err: ErrBroadcastFailed}
+
+	client := &Client{
+		broadcasters: []Broadcaster{primary, secondary},
+		logger:       logger,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.BroadcastTransaction(ctx, []byte{0xde, 0xad})
+	require.Error(t, err)
+
+	// Should have error-level logs for each failure and the final "all failed" message
+	require.Len(t, logger.errorMsgs, 3)
+	assert.Contains(t, logger.errorMsgs[0], "broadcast failed via primary")
+	assert.Contains(t, logger.errorMsgs[1], "broadcast failed via secondary")
+	assert.Contains(t, logger.errorMsgs[2], "all broadcast providers failed")
+}
+
+func TestBroadcastTransaction_LogsDebugOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	logger := &testLogger{}
+	primary := &mockBroadcaster{name: "primary", txid: "abc123"}
+
+	client := &Client{
+		broadcasters: []Broadcaster{primary},
+		logger:       logger,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	txid, err := client.BroadcastTransaction(ctx, []byte{0xde, 0xad})
+	require.NoError(t, err)
+	assert.Equal(t, "abc123", txid)
+
+	// Should have debug logs for attempt and success
+	require.Len(t, logger.debugMsgs, 2)
+	assert.Contains(t, logger.debugMsgs[0], "broadcasting via primary")
+	assert.Contains(t, logger.debugMsgs[1], "broadcast successful via primary")
+	assert.Empty(t, logger.errorMsgs)
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
@@ -109,9 +108,8 @@ func newMockWOCFromConfig(cfg mockServerConfig) *mockWOCClient {
 			}
 			return []*whatsonchain.MinerFeeStats{
 				{
-					Timestamp: time.Now().Unix(),
-					Name:      "test_miner",
-					FeeRate:   float64(feeRate),
+					Miner:      "test_miner",
+					MinFeeRate: float64(feeRate),
 				},
 			}, nil
 		},

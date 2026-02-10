@@ -19,6 +19,17 @@ import (
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
+var (
+	// ErrCachedAndAsync is returned when both --cached and --async flags are used together.
+	ErrCachedAndAsync = errors.New("cannot use --cached and --async together")
+	// ErrRefreshAndAsync is returned when both --refresh and --async flags are used together.
+	ErrRefreshAndAsync = errors.New("cannot use --refresh and --async together")
+	// ErrRefreshAndCached is returned when both --refresh and --cached flags are used together.
+	ErrRefreshAndCached = errors.New("cannot use --refresh and --cached together")
+	// ErrNoCachedData is returned when no cached data is available in cached-only mode.
+	ErrNoCachedData = errors.New("no cached data available")
+)
+
 //nolint:gochecknoglobals // Cobra CLI pattern requires package-level flag variables
 var (
 	// balanceWalletName is the wallet to check balances for.
@@ -27,6 +38,10 @@ var (
 	balanceChainFilter string
 	// balanceRefresh forces a fresh fetch, ignoring the cache.
 	balanceRefresh bool
+	// balanceCachedOnly shows cached data only, skipping network calls.
+	balanceCachedOnly bool
+	// balanceAsync shows cached data immediately and refreshes in background.
+	balanceAsync bool
 )
 
 // balanceCmd is the parent command for balance operations.
@@ -50,11 +65,20 @@ var balanceShowCmd = &cobra.Command{
 	Long: `Show balances for all addresses in a wallet across supported chains.
 
 Displays ETH, USDC (on Ethereum), and BSV balances for all addresses.
-Supports filtering by chain with the --chain flag.
-Use --refresh to bypass the cache and force a fresh fetch from the network.`,
+
+Balances are cached and refreshed intelligently:
+  - Active addresses (with balance): Always refreshed
+  - Inactive addresses: Cached for 30 minutes
+  - Never-used addresses: Cached for 2 hours
+
+Use --cached for instant display without network calls.
+Use --async for instant display with background refresh.
+Use --refresh to force fresh network fetch.`,
 	Example: `  sigil balance show --wallet main
-  sigil balance show --wallet main --chain eth
-  sigil balance show --wallet main --refresh
+  sigil balance show --wallet main --cached       # instant, cache only
+  sigil balance show --wallet main --async        # instant + background refresh
+  sigil balance show --wallet main --refresh      # force fresh fetch
+  sigil balance show --wallet main --chain eth    # filter by chain
   sigil balance show --wallet main -o json`,
 	RunE: runBalanceShow,
 }
@@ -89,12 +113,26 @@ func init() {
 	balanceShowCmd.Flags().StringVar(&balanceWalletName, "wallet", "", "wallet name (required)")
 	balanceShowCmd.Flags().StringVar(&balanceChainFilter, "chain", "", "filter by chain (eth, bsv)")
 	balanceShowCmd.Flags().BoolVar(&balanceRefresh, "refresh", false, "force fresh fetch, ignore cache")
+	balanceShowCmd.Flags().BoolVar(&balanceCachedOnly, "cached", false, "show cached data only, skip network")
+	balanceShowCmd.Flags().BoolVar(&balanceAsync, "async", false, "show cached data immediately, refresh in background")
 
 	_ = balanceShowCmd.MarkFlagRequired("wallet")
 }
 
+//nolint:gocognit,gocyclo,nestif // Complex business logic for balance display with multiple modes (async, cached, normal)
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
+
+	// Validate mutually exclusive flags
+	if balanceCachedOnly && balanceAsync {
+		return ErrCachedAndAsync
+	}
+	if balanceRefresh && balanceAsync {
+		return ErrRefreshAndAsync
+	}
+	if balanceRefresh && balanceCachedOnly {
+		return ErrRefreshAndCached
+	}
 
 	// 1. Load wallet
 	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
@@ -115,24 +153,73 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		ForceRefresh:   balanceRefresh,
 	})
 
-	// 3. Build address list and fetch balances
+	// 3. Build address list
 	addresses := buildAddressList(w, balanceChainFilter)
 
 	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
-	batchResult, err := balanceService.FetchBalances(ctx, &balance.FetchBatchRequest{
-		Addresses:     addresses,
-		ForceRefresh:  balanceRefresh,
-		MaxConcurrent: 8,
-		Timeout:       30 * time.Second,
-	})
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
+	var batchResult *balance.FetchBatchResult
 
-	// 4. Save cache
-	saveBalanceCache(cmdCtx, balanceCache)
+	// 4. Fetch balances based on mode
+	if balanceAsync {
+		// Async mode: show cached data immediately, refresh in background
+		batchResult, err = balanceService.FetchCachedBalances(ctx, &balance.FetchBatchRequest{
+			Addresses: addresses,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Show cached data (even if incomplete)
+		if len(batchResult.Results) > 0 {
+			response := convertToBalanceResponse(balanceWalletName, batchResult)
+
+			// Add async refresh indicator
+			if response.Warning == "" {
+				response.Warning = "Showing cached data. Refreshing in background..."
+			} else {
+				response.Warning += " Refreshing in background..."
+			}
+
+			if outErr := outputBalanceResponse(cmd, cmdCtx, response); outErr != nil {
+				return outErr
+			}
+		} else {
+			outln(cmd.ErrOrStderr(), "No cached data available. Run without --async to fetch from network.")
+		}
+
+		// Spawn background refresh goroutine
+		go refreshBalancesAsync(cmdCtx, balanceService, addresses, balanceCache, balanceWalletName)
+
+		return nil
+	} else if balanceCachedOnly {
+		// Cached-only mode: no network calls
+		batchResult, err = balanceService.FetchCachedBalances(ctx, &balance.FetchBatchRequest{
+			Addresses: addresses,
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(batchResult.Results) == 0 {
+			return fmt.Errorf("%w: run without --cached to fetch from network", ErrNoCachedData)
+		}
+	} else {
+		// Normal mode: fetch from network (with smart caching)
+		batchResult, err = balanceService.FetchBalances(ctx, &balance.FetchBatchRequest{
+			Addresses:     addresses,
+			ForceRefresh:  balanceRefresh,
+			MaxConcurrent: 8,
+			Timeout:       30 * time.Second,
+		})
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+
+		// Save cache after network fetch
+		saveBalanceCache(cmdCtx, balanceCache)
+	}
 
 	// 5. Convert and output results
 	response := convertToBalanceResponse(balanceWalletName, batchResult)
@@ -232,7 +319,11 @@ func convertToBalanceResponse(walletName string, batchResult *balance.FetchBatch
 	}
 
 	if len(batchResult.Errors) > 0 {
-		response.Warning = "Some balances could not be fetched. Showing cached data where available."
+		if balanceCachedOnly {
+			response.Warning = "Some addresses have no cached data. Run without --cached to fetch from network."
+		} else {
+			response.Warning = "Some balances could not be fetched. Showing cached data where available."
+		}
 	}
 
 	sortBalanceResults(response.Balances)
@@ -406,4 +497,39 @@ func truncateAddress(addr string) string {
 		return addr[:20] + "..." + addr[len(addr)-17:]
 	}
 	return addr
+}
+
+// refreshBalancesAsync refreshes balances in a background goroutine.
+// Updates the cache file when complete. Logs errors but doesn't block.
+func refreshBalancesAsync(
+	cmdCtx *CommandContext,
+	service *balance.Service,
+	addresses []balance.AddressInput,
+	balanceCache *cache.BalanceCache,
+	walletName string,
+) {
+	// Use background context (don't tie to command context)
+	bgCtx := context.Background()
+	bgCtx, cancel := context.WithTimeout(bgCtx, 60*time.Second)
+	defer cancel()
+
+	// Fetch fresh balances using smart refresh policy
+	_, err := service.FetchBalances(bgCtx, &balance.FetchBatchRequest{
+		Addresses:     addresses,
+		ForceRefresh:  false, // Use smart refresh policy
+		MaxConcurrent: 8,
+		Timeout:       30 * time.Second,
+	})
+
+	if err != nil && cmdCtx.Log != nil {
+		cmdCtx.Log.Debug("background balance refresh completed with errors: %v", err)
+		// Don't return on error - partial success is OK
+	}
+
+	// Save updated cache
+	saveBalanceCache(cmdCtx, balanceCache)
+
+	if cmdCtx.Log != nil {
+		cmdCtx.Log.Debug("background balance refresh completed for wallet %s", walletName)
+	}
 }

@@ -311,14 +311,49 @@ sigil balance show [flags]
 | `--wallet` | - | Wallet name (required) |
 | `--chain` | - | Filter by chain (`eth`, `bsv`) |
 | `--refresh` | `false` | Force fresh fetch from network, ignoring cache |
+| `--cached` | `false` | Show cached data only, skip network calls (instant display) |
+| `--async` | `false` | Show cached data immediately, refresh in background |
 
 **Examples:**
 ```bash
+# Default: Wait for network fetch (with smart caching)
 sigil balance show --wallet main
-sigil balance show --wallet main --chain eth
+
+# Instant display: Show cached data only
+sigil balance show --wallet main --cached
+
+# Instant + refresh: Show cached data now, update in background
+sigil balance show --wallet main --async
+
+# Force fresh fetch: Bypass cache completely
 sigil balance show --wallet main --refresh
+
+# Filter by chain
+sigil balance show --wallet main --chain eth
+
+# JSON output
 sigil balance show --wallet main -o json
 ```
+
+**Performance Modes:**
+
+Sigil offers three balance display modes to optimize for different use cases:
+
+1. **Default Mode** (standard behavior):
+   - Uses smart caching to balance speed and freshness
+   - Waits for network calls to complete before displaying
+   - Best for: When you need guaranteed fresh data
+
+2. **Cached Mode** (`--cached`):
+   - Shows only cached data, skips all network calls
+   - Returns instantly (<100ms), even with many addresses
+   - Works offline
+   - Best for: Quick balance checks, offline usage, when you recently checked
+
+3. **Async Mode** (`--async`):
+   - Shows cached data immediately (instant display)
+   - Refreshes balances in background for next time
+   - Best for: Most common usage - fast UX with automatic updates
 
 **Smart Caching:**
 
@@ -328,6 +363,10 @@ Balance fetching uses an intelligent caching strategy that balances speed with a
 - **Inactive addresses** (used before but now empty): Cached for 30 minutes
 - **Never-used addresses**: Cached for 2 hours
 - **Recently created addresses** (< 24 hours old): Always fetched fresh
+
+**Bulk Optimization:**
+
+For BSV addresses, Sigil uses bulk API calls to fetch up to 20 addresses per request, providing 5-10x performance improvement when checking wallets with multiple BSV addresses.
 
 This approach significantly reduces API calls (typically 80% reduction) and improves command speed, especially for wallets with many addresses. Active addresses always get fresh data, while inactive addresses benefit from extended cache windows without sacrificing meaningful accuracy.
 

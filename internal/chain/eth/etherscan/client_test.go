@@ -75,7 +75,7 @@ func TestGetNativeBalance(t *testing.T) {
 			assert.Equal(t, "balance", r.URL.Query().Get("action"))
 			assert.Equal(t, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", r.URL.Query().Get("address"))
 			assert.Equal(t, "latest", r.URL.Query().Get("tag"))
-			assert.Equal(t, "test-key", r.URL.Query().Get("apikey"))
+			assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
 			assert.Equal(t, "1", r.URL.Query().Get("chainid"))
 
 			resp := apiResponse{

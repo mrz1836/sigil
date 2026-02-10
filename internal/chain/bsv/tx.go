@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/bsv-blockchain/go-sdk/chainhash"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -33,6 +34,9 @@ var (
 	// ErrInvalidTxID indicates an invalid transaction ID format.
 	ErrInvalidTxID = errors.New("invalid transaction ID")
 
+	// ErrAmountOverflow indicates an arithmetic overflow in amount calculation.
+	ErrAmountOverflow = errors.New("amount overflow: uint64 limit exceeded")
+
 	// ErrSigningFailed indicates transaction signing failed.
 	ErrSigningFailed = errors.New("transaction signing failed")
 
@@ -42,6 +46,14 @@ var (
 	// ErrMissingLockingScript indicates a UTXO is missing its locking script.
 	ErrMissingLockingScript = errors.New("UTXO missing locking script")
 )
+
+// checkedAdd returns a + b, or an error if the result overflows uint64.
+func checkedAdd(a, b uint64) (uint64, error) {
+	if a > math.MaxUint64-b {
+		return 0, ErrAmountOverflow
+	}
+	return a + b, nil
+}
 
 // TxOutput represents a transaction output.
 type TxOutput struct {
@@ -89,21 +101,31 @@ func (b *TxBuilder) AddOutput(address string, amount uint64) error {
 }
 
 // TotalInputAmount returns the sum of all input amounts.
-func (b *TxBuilder) TotalInputAmount() uint64 {
+// Returns an error if the sum overflows uint64.
+func (b *TxBuilder) TotalInputAmount() (uint64, error) {
 	var total uint64
 	for _, input := range b.Inputs {
-		total += input.Amount
+		sum, err := checkedAdd(total, input.Amount)
+		if err != nil {
+			return 0, fmt.Errorf("input sum: %w", err)
+		}
+		total = sum
 	}
-	return total
+	return total, nil
 }
 
 // TotalOutputAmount returns the sum of all output amounts.
-func (b *TxBuilder) TotalOutputAmount() uint64 {
+// Returns an error if the sum overflows uint64.
+func (b *TxBuilder) TotalOutputAmount() (uint64, error) {
 	var total uint64
 	for _, output := range b.Outputs {
-		total += output.Amount
+		sum, err := checkedAdd(total, output.Amount)
+		if err != nil {
+			return 0, fmt.Errorf("output sum: %w", err)
+		}
+		total = sum
 	}
-	return total
+	return total, nil
 }
 
 // CalculateFee calculates the fee based on transaction size.
@@ -123,13 +145,26 @@ func (b *TxBuilder) Validate() error {
 		return ErrNoOutputs
 	}
 
-	inputTotal := b.TotalInputAmount()
-	outputTotal := b.TotalOutputAmount()
+	inputTotal, err := b.TotalInputAmount()
+	if err != nil {
+		return fmt.Errorf("calculating input total: %w", err)
+	}
+
+	outputTotal, err := b.TotalOutputAmount()
+	if err != nil {
+		return fmt.Errorf("calculating output total: %w", err)
+	}
+
 	fee := b.CalculateFee(b.FeeRate)
 
-	if inputTotal < outputTotal+fee {
+	needed, err := checkedAdd(outputTotal, fee)
+	if err != nil {
+		return fmt.Errorf("calculating required amount: %w", err)
+	}
+
+	if inputTotal < needed {
 		return fmt.Errorf("%w: have %d, need %d (outputs: %d, fee: %d)",
-			ErrInsufficientFunds, inputTotal, outputTotal+fee, outputTotal, fee)
+			ErrInsufficientFunds, inputTotal, needed, outputTotal, fee)
 	}
 
 	return nil
@@ -200,7 +235,11 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 
 		var totalInputs uint64
 		for _, u := range utxos {
-			totalInputs += u.Amount
+			sum, addErr := checkedAdd(totalInputs, u.Amount)
+			if addErr != nil {
+				return nil, fmt.Errorf("calculating sweep total: %w", addErr)
+			}
+			totalInputs = sum
 		}
 
 		sweepAmount, sweepErr := CalculateSweepAmount(totalInputs, len(utxos), feeRate)
@@ -283,8 +322,10 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 		return nil, err
 	}
 
-	// Calculate fee
-	fee := builder.TotalInputAmount() - builder.TotalOutputAmount()
+	// Calculate fee (safe: Validate already confirmed inputTotal >= outputTotal)
+	inputTotal, _ := builder.TotalInputAmount()
+	outputTotal, _ := builder.TotalOutputAmount()
+	fee := inputTotal - outputTotal
 
 	return &chain.TransactionResult{
 		Hash:   txHash,

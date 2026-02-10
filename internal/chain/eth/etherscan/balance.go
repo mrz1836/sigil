@@ -27,7 +27,6 @@ func (c *Client) GetNativeBalance(ctx context.Context, address string) (*eth.Bal
 		"action":  {"balance"},
 		"address": {address},
 		"tag":     {"latest"},
-		"apikey":  {c.apiKey},
 	}
 
 	result, err := c.doRequest(ctx, params)
@@ -61,7 +60,6 @@ func (c *Client) GetTokenBalance(ctx context.Context, address, tokenAddress stri
 		"contractaddress": {tokenAddress},
 		"address":         {address},
 		"tag":             {"latest"},
-		"apikey":          {c.apiKey},
 	}
 
 	result, err := c.doRequest(ctx, params)

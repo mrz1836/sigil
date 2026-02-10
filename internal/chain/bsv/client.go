@@ -305,6 +305,8 @@ func (c *Client) doListUTXOs(ctx context.Context, address string) ([]UTXO, error
 }
 
 // SelectUTXOs chooses UTXOs to fund a transaction.
+//
+//nolint:gocognit // Overflow checks add necessary complexity for fund safety
 func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []UTXO, change uint64, err error) {
 	if len(utxos) == 0 {
 		return nil, 0, ErrInsufficientFunds
@@ -321,10 +323,18 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 	var estimatedFee uint64
 	for _, utxo := range sorted {
 		selected = append(selected, utxo)
-		total += utxo.Amount
+
+		sum, addErr := checkedAdd(total, utxo.Amount)
+		if addErr != nil {
+			return nil, 0, fmt.Errorf("UTXO sum: %w", addErr)
+		}
+		total = sum
 
 		estimatedFee = (EstimateTxSize(len(selected), 2)*feeRate + 999) / 1000
-		target := amount + estimatedFee
+		target, targetErr := checkedAdd(amount, estimatedFee)
+		if targetErr != nil {
+			return nil, 0, fmt.Errorf("target amount: %w", targetErr)
+		}
 		if total >= target {
 			change = total - target
 			if change < chain.BSV.DustLimit() {
@@ -334,7 +344,7 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 		}
 	}
 
-	target := amount + estimatedFee
+	target, _ := checkedAdd(amount, estimatedFee)
 	return nil, 0, fmt.Errorf("%w: need %d satoshis, have %d", ErrInsufficientFunds, target, total)
 }
 

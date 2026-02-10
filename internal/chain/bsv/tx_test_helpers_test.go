@@ -24,7 +24,11 @@ var (
 	errTestAlreadyInMempool    = errors.New("Transaction already in mempool")     //nolint:staticcheck // matches real API error
 	errTestAlreadyInTheMempool = errors.New("Transaction already in the mempool") //nolint:staticcheck // matches real API error
 	errTestTxnAlreadyKnown     = errors.New("txn-already-known")
+	errTestMempoolBase         = errors.New("already in mempool")
 )
+
+// testValidTxID is a valid 64-hex-char transaction ID for test use.
+const testValidTxID = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
 
 // Test addresses - these are well-known Bitcoin addresses with valid checksums.
 const (

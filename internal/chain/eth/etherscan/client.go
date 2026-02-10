@@ -3,6 +3,7 @@ package etherscan
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,6 +91,9 @@ func NewClient(apiKey string, opts *ClientOptions) (*Client, error) {
 		chainID: DefaultChainID,
 		httpClient: &http.Client{
 			Timeout: httpTimeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			},
 		},
 		rateLimiter: chain.NewRateLimiter(5, 5), // 5 req/s, burst of 5 (Etherscan free tier)
 	}
@@ -125,6 +129,10 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("creating request: %w", err)
 	}
+
+	// Send API key in header rather than URL query parameters to avoid
+	// leaking it in server logs, proxy logs, and URL history.
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {

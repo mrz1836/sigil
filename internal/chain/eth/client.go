@@ -79,12 +79,13 @@ var (
 
 // Client provides Ethereum blockchain operations.
 type Client struct {
-	rpcURL    string
-	rpcClient *rpc.Client
-	chainID   *big.Int
-	transport *http.Transport
-	mu        sync.Mutex
-	initErr   error
+	rpcURL       string
+	rpcClient    *rpc.Client
+	chainID      *big.Int
+	transport    *http.Transport
+	mu           sync.Mutex
+	initErr      error
+	nonceManager *NonceManager
 }
 
 // NewClient creates a new ETH client.
@@ -94,7 +95,8 @@ func NewClient(rpcURL string, opts *ClientOptions) (*Client, error) {
 	}
 
 	c := &Client{
-		rpcURL: rpcURL,
+		rpcURL:       rpcURL,
+		nonceManager: NewNonceManager(),
 	}
 
 	if opts != nil {

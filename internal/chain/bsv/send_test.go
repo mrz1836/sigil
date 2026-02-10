@@ -144,7 +144,7 @@ func TestSend_UTXOFlow(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
-			BroadcastTxHash: "broadcast_tx_hash_here",
+			BroadcastTxHash: "aabbccdd00112233445566778899aabbccddeeff00112233445566778899aabb",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -175,7 +175,7 @@ func TestSend_UTXOFlow(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         120000,
-			BroadcastTxHash: "multi_input_tx_hash",
+			BroadcastTxHash: "1122334455667788990011223344556677889900aabbccddeeff001122334455",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -230,7 +230,7 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         100000,
-			BroadcastTxHash: "tx_change_hash",
+			BroadcastTxHash: "2233445566778899aabbccddeeff00112233445566778899aabbccddeeff0011",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -258,7 +258,7 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         50400,
-			BroadcastTxHash: "tx_small_change_hash",
+			BroadcastTxHash: "3344556677889900aabbccddeeff001122334455667788990011223344556677",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -290,7 +290,7 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
-			BroadcastTxHash: "tx_exact_match_hash",
+			BroadcastTxHash: "4455667788990011aabbccddeeff223344556677889900112233445566778899",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -310,7 +310,7 @@ func TestSend_TransactionBuilding(t *testing.T) {
 		// Should build and broadcast successfully
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "tx_exact_match_hash", result.Hash)
+		assert.Equal(t, "4455667788990011aabbccddeeff223344556677889900112233445566778899", result.Hash)
 	})
 }
 
@@ -412,7 +412,7 @@ func TestSend_AmountBoundaries(t *testing.T) {
 			mock := newMockWOCFromConfig(mockServerConfig{
 				UTXOs:           utxos,
 				Balance:         int64(utxoAmount), //nolint:gosec // Safe: test values are small
-				BroadcastTxHash: "broadcast_success",
+				BroadcastTxHash: "5566778899aabbccddeeff001122334455667788990011223344556677889900",
 			})
 
 			client := NewClient(context.Background(), &ClientOptions{
@@ -432,7 +432,7 @@ func TestSend_AmountBoundaries(t *testing.T) {
 			// Should successfully build and broadcast
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			assert.Equal(t, "broadcast_success", result.Hash)
+			assert.Equal(t, "5566778899aabbccddeeff001122334455667788990011223344556677889900", result.Hash)
 		})
 	}
 }
@@ -453,7 +453,7 @@ func TestSend_P2SHAddresses(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(50000) + int64(fee), //nolint:gosec // Test fixture with known safe values
-			BroadcastTxHash: "p2sh_output_tx",
+			BroadcastTxHash: "6677889900aabbccddeeff0011223344556677889900112233445566778899aa",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -491,7 +491,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
-			BroadcastTxHash: "sweep_single_tx",
+			BroadcastTxHash: "778899aabbccddeeff001122334455667788990011223344556677889900aabb",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -510,7 +510,7 @@ func TestSend_SweepAll(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "sweep_single_tx", result.Hash)
+		assert.Equal(t, "778899aabbccddeeff001122334455667788990011223344556677889900aabb", result.Hash)
 
 		// Verify fee is correct for 1 input, 1 output (no change)
 		expectedFee := EstimateFeeForTx(1, 1, DefaultFeeRate)
@@ -527,7 +527,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         120000,
-			BroadcastTxHash: "sweep_multi_tx",
+			BroadcastTxHash: "8899aabbccddeeff00112233445566778899001122334455667788990011aabb",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -613,7 +613,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         50000,
-			BroadcastTxHash: "sweep_no_amount_tx",
+			BroadcastTxHash: "99aabbccddeeff001122334455667788990011223344556677889900aabbccdd",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -634,7 +634,7 @@ func TestSend_SweepAll(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "sweep_no_amount_tx", result.Hash)
+		assert.Equal(t, "99aabbccddeeff001122334455667788990011223344556677889900aabbccdd", result.Hash)
 	})
 
 	t.Run("sweep with custom fee rate", func(t *testing.T) {
@@ -648,7 +648,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
-			BroadcastTxHash: "sweep_custom_fee_tx",
+			BroadcastTxHash: "aabbccddeeff001122334455667788990011223344556677889900aabbccddee",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -687,7 +687,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount), //nolint:gosec // Test fixture with known safe values
-			BroadcastTxHash: "sweep_min_viable_tx",
+			BroadcastTxHash: "bbccddeeff001122334455667788990011223344556677889900aabbccddeeff",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -720,7 +720,7 @@ func TestSend_SweepAll(t *testing.T) {
 		mock := newMockWOCFromConfig(mockServerConfig{
 			UTXOs:           utxos,
 			Balance:         int64(utxoAmount),
-			BroadcastTxHash: "sweep_ignore_amount_tx",
+			BroadcastTxHash: "ccddeeff001122334455667788990011223344556677889900aabbccddeeff00",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -954,7 +954,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 
 		// Mock only needed for broadcast (UTXOs are pre-fetched)
 		mock := newMockWOCFromConfig(mockServerConfig{
-			BroadcastTxHash: "multi_addr_sweep_tx",
+			BroadcastTxHash: "ddeeff001122334455667788990011223344556677889900aabbccddeeff0011",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -983,7 +983,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "multi_addr_sweep_tx", result.Hash)
+		assert.Equal(t, "ddeeff001122334455667788990011223344556677889900aabbccddeeff0011", result.Hash)
 
 		// Verify the full 120k (minus fee) was swept
 		totalInput := uint64(120000)
@@ -999,7 +999,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp2 := getTestKeyPair2()
 
 		mock := newMockWOCFromConfig(mockServerConfig{
-			BroadcastTxHash: "multi_addr_normal_tx",
+			BroadcastTxHash: "eeff001122334455667788990011223344556677889900aabbccddeeff001122",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -1028,7 +1028,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "multi_addr_normal_tx", result.Hash)
+		assert.Equal(t, "eeff001122334455667788990011223344556677889900aabbccddeeff001122", result.Hash)
 	})
 
 	t.Run("pre-fetched UTXOs with no matching key fails", func(t *testing.T) {
@@ -1038,7 +1038,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp2 := getTestKeyPair2()
 
 		mock := newMockWOCFromConfig(mockServerConfig{
-			BroadcastTxHash: "should_not_reach",
+			BroadcastTxHash: "ff001122334455667788990011223344556677889900aabbccddeeff00112233",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{
@@ -1074,7 +1074,7 @@ func TestSend_MultiAddressUTXOs(t *testing.T) {
 		kp2 := getTestKeyPair2()
 
 		mock := newMockWOCFromConfig(mockServerConfig{
-			BroadcastTxHash: "zero_test_tx",
+			BroadcastTxHash: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		})
 
 		client := NewClient(context.Background(), &ClientOptions{

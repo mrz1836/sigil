@@ -208,7 +208,9 @@ func multiplyBigInt(n *big.Int, multiplier float64) *big.Int {
 	return result
 }
 
-// GetNonce gets the pending nonce for an address.
+// GetNonce gets the next nonce for an address.
+// Uses a local nonce manager to prevent nonce collisions during rapid sends.
+// The local nonce is compared with the RPC pending nonce; the higher value is used.
 func (c *Client) GetNonce(ctx context.Context, address string) (uint64, error) {
 	if err := c.connect(ctx); err != nil {
 		return 0, err
@@ -222,13 +224,16 @@ func (c *Client) GetNonce(ctx context.Context, address string) (uint64, error) {
 		}
 	}
 
-	// Get pending nonce
-	nonce, err := c.rpcClient.GetTransactionCount(ctx, address, "pending")
+	// Get pending nonce from the network
+	rpcNonce, err := c.rpcClient.GetTransactionCount(ctx, address, "pending")
 	if err != nil {
 		return 0, fmt.Errorf("getting nonce: %w", err)
 	}
 
-	return nonce, nil
+	// Use the nonce manager to get the next nonce, taking into account
+	// locally-tracked nonces from recent sends that may not yet be visible
+	// to the RPC node's mempool.
+	return c.nonceManager.Next(address, rpcNonce), nil
 }
 
 // GetChainID returns the chain ID.

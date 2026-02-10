@@ -52,6 +52,7 @@ func (s *Service) Create(walletName string, password []byte) (*Backup, string, e
 	if err != nil {
 		return nil, "", fmt.Errorf("serializing wallet: %w", err)
 	}
+	defer wallet.ZeroBytes(walletJSON)
 
 	walletData := WalletData{
 		Seed:       seed,
@@ -62,6 +63,7 @@ func (s *Service) Create(walletName string, password []byte) (*Backup, string, e
 	if err != nil {
 		return nil, "", fmt.Errorf("serializing backup data: %w", err)
 	}
+	defer wallet.ZeroBytes(dataJSON)
 
 	// Encrypt the data
 	encryptedData, err := sigilcrypto.Encrypt(dataJSON, string(password))

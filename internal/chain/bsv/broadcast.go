@@ -7,10 +7,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
+
+// txIDRegex matches a valid 64-character hex transaction ID.
+var txIDRegex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+// txIDExtractRegex finds a 64-character hex string in text.
+var txIDExtractRegex = regexp.MustCompile(`[0-9a-fA-F]{64}`)
+
+// isValidTxID checks if a string is a valid 64-character hex transaction ID.
+func isValidTxID(s string) bool {
+	return txIDRegex.MatchString(s)
+}
+
+// extractTxID attempts to extract a valid txid from a string (e.g., an error message).
+func extractTxID(s string) string {
+	match := txIDExtractRegex.FindString(s)
+	return match
+}
 
 const (
 	// DefaultMaxResponseBody is the maximum response body size for broadcast endpoints.
@@ -48,13 +66,21 @@ func (w *WOCSDKBroadcaster) Broadcast(ctx context.Context, rawTxHex string) (str
 	if err != nil {
 		// Check for "already in mempool" in the error message.
 		if isAlreadyBroadcasted(err.Error()) {
-			return err.Error(), nil
+			// Try to extract a valid txid from the error message
+			if extracted := extractTxID(err.Error()); extracted != "" {
+				return extracted, nil
+			}
+			return "", fmt.Errorf("%w: transaction already in mempool", ErrBroadcastFailed)
 		}
 		return "", fmt.Errorf("%w: %w", ErrBroadcastFailed, err)
 	}
 
 	if txid == "" {
 		return "", fmt.Errorf("%w: empty txid in response", ErrBroadcastFailed)
+	}
+
+	if !isValidTxID(txid) {
+		return "", fmt.Errorf("%w: invalid txid format: %s", ErrBroadcastFailed, txid)
 	}
 
 	return txid, nil
@@ -147,6 +173,10 @@ func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, rawTxHex stri
 
 	if result.TxID == "" {
 		return "", fmt.Errorf("%w: empty txid in response", ErrBroadcastFailed)
+	}
+
+	if !isValidTxID(result.TxID) {
+		return "", fmt.Errorf("%w: invalid txid format: %s", ErrBroadcastFailed, result.TxID)
 	}
 
 	return result.TxID, nil

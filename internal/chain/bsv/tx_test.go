@@ -1,6 +1,7 @@
 package bsv
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -147,7 +148,9 @@ func TestTxBuilder_TotalInputAmount(t *testing.T) {
 	_ = builder.AddInput(UTXO{TxID: "tx1", Vout: 0, Amount: 100000})
 	_ = builder.AddInput(UTXO{TxID: "tx2", Vout: 1, Amount: 50000})
 
-	assert.Equal(t, uint64(150000), builder.TotalInputAmount())
+	total, err := builder.TotalInputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(150000), total)
 }
 
 func TestTxBuilder_TotalOutputAmount(t *testing.T) {
@@ -156,7 +159,9 @@ func TestTxBuilder_TotalOutputAmount(t *testing.T) {
 	_ = builder.AddOutput("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 60000)
 	_ = builder.AddOutput("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 40000)
 
-	assert.Equal(t, uint64(100000), builder.TotalOutputAmount())
+	total, err := builder.TotalOutputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(100000), total)
 }
 
 func TestZeroBytes(t *testing.T) {
@@ -339,7 +344,9 @@ func TestAddOutput_MultipleOutputs(t *testing.T) {
 			for _, out := range tt.outputs {
 				expectedTotal += out.amount
 			}
-			assert.Equal(t, expectedTotal, builder.TotalOutputAmount())
+			totalOutput, totalErr := builder.TotalOutputAmount()
+			require.NoError(t, totalErr)
+			assert.Equal(t, expectedTotal, totalOutput)
 		})
 	}
 }
@@ -361,7 +368,9 @@ func TestAddOutput_100Outputs(t *testing.T) {
 	}
 
 	assert.Len(t, builder.Outputs, 100)
-	assert.Equal(t, uint64(100)*dustLimit, builder.TotalOutputAmount())
+	totalOutput, totalErr := builder.TotalOutputAmount()
+	require.NoError(t, totalErr)
+	assert.Equal(t, uint64(100)*dustLimit, totalOutput)
 }
 
 // TestTxBuilder_Validate_EdgeCases tests validation edge cases.
@@ -581,8 +590,13 @@ func TestTxBuilder_TotalAmounts_Empty(t *testing.T) {
 	t.Parallel()
 	builder := NewTxBuilder()
 
-	assert.Equal(t, uint64(0), builder.TotalInputAmount())
-	assert.Equal(t, uint64(0), builder.TotalOutputAmount())
+	inputTotal, err := builder.TotalInputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), inputTotal)
+
+	outputTotal, err := builder.TotalOutputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), outputTotal)
 }
 
 // TestTxBuilder_TotalAmounts_Large tests totals with large amounts.
@@ -596,8 +610,42 @@ func TestTxBuilder_TotalAmounts_Large(t *testing.T) {
 	// Add output of 1 million BSV
 	_ = builder.AddOutput(validAddress(), 100000000000000)
 
-	assert.Equal(t, uint64(2100000000000000), builder.TotalInputAmount())
-	assert.Equal(t, uint64(100000000000000), builder.TotalOutputAmount())
+	inputTotal, err := builder.TotalInputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2100000000000000), inputTotal)
+
+	outputTotal, err := builder.TotalOutputAmount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(100000000000000), outputTotal)
+}
+
+// TestTxBuilder_TotalInputAmount_Overflow tests that overflow is detected.
+func TestTxBuilder_TotalInputAmount_Overflow(t *testing.T) {
+	t.Parallel()
+	builder := NewTxBuilder()
+
+	_ = builder.AddInput(makeUTXO(testTxID(1), math.MaxUint64))
+	_ = builder.AddInput(makeUTXO(testTxID(2), 1))
+
+	_, err := builder.TotalInputAmount()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "overflow")
+}
+
+// TestTxBuilder_TotalOutputAmount_Overflow tests that overflow is detected.
+func TestTxBuilder_TotalOutputAmount_Overflow(t *testing.T) {
+	t.Parallel()
+	builder := NewTxBuilder()
+
+	// Directly set outputs to bypass AddOutput validation
+	builder.Outputs = []TxOutput{
+		{Address: validAddress(), Amount: math.MaxUint64},
+		{Address: validAddress(), Amount: 1},
+	}
+
+	_, err := builder.TotalOutputAmount()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "overflow")
 }
 
 // TestZeroBytes_Empty tests zeroing an empty key.

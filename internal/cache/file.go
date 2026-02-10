@@ -11,10 +11,12 @@ import (
 
 const (
 	// cacheFilePermissions is the permission mode for cache files.
-	cacheFilePermissions = 0o640
+	// Owner-only access for wallet balance data.
+	cacheFilePermissions = 0o600
 
 	// cacheDirPermissions is the permission mode for cache directories.
-	cacheDirPermissions = 0o750
+	// Owner-only access for wallet balance data.
+	cacheDirPermissions = 0o700
 )
 
 // ErrCorruptCache indicates the cache file is malformed JSON.

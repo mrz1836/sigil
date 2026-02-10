@@ -70,23 +70,27 @@ func formatErrorJSON(w io.Writer, err error) error {
 // formatErrorText outputs error in text format.
 func formatErrorText(w io.Writer, err error) error {
 	var sb strings.Builder
-
 	var se *sigilerr.SigilError
-	if errors.As(err, &se) {
-		sb.WriteString(fmt.Sprintf("Error: %s\n", se.Message))
 
-		if len(se.Details) > 0 {
-			sb.WriteString("\nDetails:\n")
-			for k, v := range se.Details {
-				sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
-			}
-		}
-
-		if se.Suggestion != "" {
-			sb.WriteString(fmt.Sprintf("\nSuggestion: %s\n", se.Suggestion))
-		}
-	} else {
+	if !errors.As(err, &se) {
+		// Generic error
 		sb.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
+		_, writeErr := w.Write([]byte(sb.String()))
+		return writeErr
+	}
+
+	// Format SigilError with message and optional details/suggestion
+	sb.WriteString(fmt.Sprintf("Error: %s\n", se.Message))
+
+	if len(se.Details) > 0 {
+		sb.WriteString("\nDetails:\n")
+		for k, v := range se.Details {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		}
+	}
+
+	if se.Suggestion != "" {
+		sb.WriteString(fmt.Sprintf("\nSuggestion: %s\n", se.Suggestion))
 	}
 
 	_, writeErr := w.Write([]byte(sb.String()))

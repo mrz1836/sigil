@@ -217,6 +217,12 @@ var (
 		ExitCode: ExitInput,
 	}
 
+	ErrInvalidFeeStrategy = &SigilError{
+		Code:     "INVALID_FEE_STRATEGY",
+		Message:  "invalid fee strategy",
+		ExitCode: ExitInput,
+	}
+
 	ErrInvalidValue = &SigilError{
 		Code:     "INVALID_VALUE",
 		Message:  "invalid value",

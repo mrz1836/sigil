@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/mrz1836/sigil/internal/output"
 	walletservice "github.com/mrz1836/sigil/internal/service/wallet"
 	"github.com/mrz1836/sigil/internal/wallet"
-	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // formatEmptyWalletList formats empty wallet list based on output format.
@@ -23,22 +21,6 @@ func formatEmptyWalletList(w io.Writer, format output.Format) {
 		outln(w, "No wallets found.")
 		outln(w, "Create one with: sigil wallet create <name>")
 	}
-}
-
-// validateWalletExists checks if a wallet exists in storage.
-// Returns an error with helpful suggestion if wallet is not found.
-func validateWalletExists(name string, storage *wallet.FileStorage) error {
-	exists, existsErr := storage.Exists(name)
-	if existsErr != nil {
-		return existsErr
-	}
-	if !exists {
-		return sigilerr.WithSuggestion(
-			wallet.ErrWalletNotFound,
-			fmt.Sprintf("wallet '%s' not found. List wallets with: sigil wallet list", name),
-		)
-	}
-	return nil
 }
 
 // formatWalletListJSON outputs wallet names as JSON array.

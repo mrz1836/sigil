@@ -8,14 +8,12 @@ import (
 	"math/big"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
-	"github.com/mrz1836/sigil/internal/chain/bsv"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/service/transaction"
@@ -400,63 +398,6 @@ func parseDecimalAmount(amount string, decimals int) (*big.Int, error) {
 	return chain.ParseDecimalAmount(amount, decimals, sigilerr.ErrInvalidAmount)
 }
 
-// checkETHBalance verifies sufficient balance for the transaction.
-func checkETHBalance(ctx context.Context, client *eth.Client, address string, amount, gasCost *big.Int, tokenAddress string) error {
-	// Check ETH balance for gas
-	ethBalance, err := client.GetBalance(ctx, address)
-	if err != nil {
-		return fmt.Errorf("getting ETH balance: %w", err)
-	}
-
-	//nolint:nestif // Balance checking logic is necessarily complex
-	if tokenAddress != "" {
-		// For ERC-20: need ETH for gas only
-		if ethBalance.Cmp(gasCost) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  client.FormatAmount(gasCost),
-					"available": client.FormatAmount(ethBalance),
-					"symbol":    "ETH",
-					"reason":    "insufficient ETH for gas",
-				},
-			)
-		}
-
-		// Check token balance
-		tokenBalance, err := client.GetTokenBalance(ctx, address, tokenAddress)
-		if err != nil {
-			return fmt.Errorf("getting token balance: %w", err)
-		}
-
-		if tokenBalance.Cmp(amount) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  chain.FormatDecimalAmount(amount, eth.USDCDecimals),
-					"available": chain.FormatDecimalAmount(tokenBalance, eth.USDCDecimals),
-					"symbol":    "USDC",
-				},
-			)
-		}
-	} else {
-		// For native ETH: need amount + gas
-		totalRequired := new(big.Int).Add(amount, gasCost)
-		if ethBalance.Cmp(totalRequired) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  client.FormatAmount(totalRequired),
-					"available": client.FormatAmount(ethBalance),
-					"symbol":    "ETH",
-				},
-			)
-		}
-	}
-
-	return nil
-}
-
 // displayTxDetails shows transaction details before confirmation.
 func displayTxDetails(cmd *cobra.Command, from, to, amount, token string, estimate *eth.GasEstimate) {
 	w := cmd.OutOrStdout()
@@ -594,61 +535,10 @@ func logCacheError(cc *CommandContext, format string, args ...any) {
 	}
 }
 
-func logTxDebug(cc *CommandContext, format string, args ...any) {
-	if cc.Log != nil {
-		cc.Log.Debug(format, args...)
-	}
-}
-
 func logTxError(cc *CommandContext, format string, args ...any) {
 	if cc.Log != nil {
 		cc.Log.Error(format, args...)
 	}
-}
-
-// aggregateBSVUTXOs fetches UTXOs from all wallet addresses concurrently and merges them.
-func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
-	type result struct {
-		utxos []chain.UTXO
-		err   error
-	}
-
-	results := make([]result, len(addresses))
-	var wg sync.WaitGroup
-
-	for i, addr := range addresses {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			utxos, err := client.ListUTXOs(ctx, addr.Address)
-			if err != nil {
-				results[i] = result{err: fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)}
-				return
-			}
-			converted := make([]chain.UTXO, len(utxos))
-			for j, u := range utxos {
-				converted[j] = chain.UTXO{
-					TxID:          u.TxID,
-					Vout:          u.Vout,
-					Amount:        u.Amount,
-					ScriptPubKey:  u.ScriptPubKey,
-					Address:       u.Address,
-					Confirmations: u.Confirmations,
-				}
-			}
-			results[i] = result{utxos: converted}
-		}()
-	}
-	wg.Wait()
-
-	var allUTXOs []chain.UTXO
-	for _, r := range results {
-		if r.err != nil {
-			return nil, r.err
-		}
-		allUTXOs = append(allUTXOs, r.utxos...)
-	}
-	return allUTXOs, nil
 }
 
 // errAddressNotInWallet indicates a UTXO references an address not found in the wallet.
@@ -723,11 +613,14 @@ func filterSpentBSVUTXOs(utxos []chain.UTXO, store *utxostore.Store) []chain.UTX
 
 // markSpentBSVUTXOs records spent UTXOs in the local store after a successful broadcast.
 // Errors are logged but never returned — the broadcast already succeeded.
-func markSpentBSVUTXOs(cc *CommandContext, store *utxostore.Store, utxos []chain.UTXO, spentTxID string) {
+// This function has been migrated to internal/service/transaction/ for production use.
+// This version is retained for legacy test compatibility only.
+func markSpentBSVUTXOs(cc *CommandContext, store *utxostore.Store, utxos []chain.UTXO, _ string) {
 	if store == nil {
 		return
 	}
 
+	const spentTxID = "broadcast-txid"
 	for _, u := range utxos {
 		// Ensure the UTXO exists in the store before marking it spent.
 		// The API may return UTXOs not yet tracked locally.

@@ -14,9 +14,10 @@ import (
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
-//nolint:gocognit,gocyclo // Transaction flow is inherently complex (migrated from CLI)
 // sendETH handles the complete Ethereum transaction flow.
 // Migrated from cli/tx.go lines 183-395
+//
+//nolint:gocognit,gocyclo // Transaction flow is inherently complex (migrated from CLI)
 func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, error) {
 	// Validate ETH address
 	if err := eth.ValidateChecksumAddress(req.To); err != nil {

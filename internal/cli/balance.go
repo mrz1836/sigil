@@ -96,7 +96,7 @@ func init() {
 func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd)
 
-	// 1. Load wallet (CLI concern)
+	// 1. Load wallet
 	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
 	w, seed, err := loadWalletWithSession(balanceWalletName, storage, cmd)
 	if err != nil {
@@ -105,35 +105,9 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	defer wallet.ZeroBytes(seed)
 
 	// 2. Initialize service dependencies
-	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", balanceWalletName)
-	utxoStore := utxostore.New(walletDir)
-	if err = utxoStore.Load(); err != nil && cmdCtx.Log != nil {
-		cmdCtx.Log.Error("failed to load utxo store: %v", err)
-		// Continue without metadata (degrades to always-fetch behavior)
-	}
+	utxoStore := loadUTXOStore(cmdCtx, balanceWalletName)
+	balanceCache := loadBalanceCache(cmdCtx, cmd.ErrOrStderr())
 
-	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
-	cacheStorage := cache.NewFileStorage(cachePath)
-	var balanceCache *cache.BalanceCache
-	if balanceRefresh {
-		// --refresh: start with a clean cache so every address hits the network.
-		balanceCache = cache.NewBalanceCache()
-	} else {
-		balanceCache, err = cacheStorage.Load()
-		if err != nil {
-			if errors.Is(err, cache.ErrCorruptCache) {
-				if cmdCtx.Log != nil {
-					cmdCtx.Log.Error("balance cache file is corrupted: %v", err)
-				}
-				outln(cmd.ErrOrStderr(), "Warning: balance cache was corrupted and has been reset.")
-			} else if cmdCtx.Log != nil {
-				cmdCtx.Log.Error("failed to load balance cache: %v", err)
-			}
-			balanceCache = cache.NewBalanceCache()
-		}
-	}
-
-	// Create balance service
 	balanceService := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  balance.NewCacheAdapter(balanceCache),
@@ -141,21 +115,9 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		ForceRefresh:   balanceRefresh,
 	})
 
-	// 3. Build address list (CLI concern)
-	var addresses []balance.AddressInput
-	for chainID, addrs := range w.Addresses {
-		if balanceChainFilter != "" && string(chainID) != balanceChainFilter {
-			continue
-		}
-		for _, addr := range addrs {
-			addresses = append(addresses, balance.AddressInput{
-				ChainID: chainID,
-				Address: addr.Address,
-			})
-		}
-	}
+	// 3. Build address list and fetch balances
+	addresses := buildAddressList(w, balanceChainFilter)
 
-	// 4. Fetch via service (business logic)
 	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
 	defer cancel()
 
@@ -169,14 +131,83 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// 5. Save cache (CLI concern)
+	// 4. Save cache
+	saveBalanceCache(cmdCtx, balanceCache)
+
+	// 5. Convert and output results
+	response := convertToBalanceResponse(balanceWalletName, batchResult)
+	return outputBalanceResponse(cmd, cmdCtx, response)
+}
+
+// loadUTXOStore loads the UTXO store for the wallet, logging errors if load fails.
+func loadUTXOStore(cmdCtx *CommandContext, walletName string) *utxostore.Store {
+	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", walletName)
+	utxoStore := utxostore.New(walletDir)
+	if err := utxoStore.Load(); err != nil && cmdCtx.Log != nil {
+		cmdCtx.Log.Error("failed to load utxo store: %v", err)
+	}
+	return utxoStore
+}
+
+// loadBalanceCache loads or creates the balance cache based on refresh flag.
+func loadBalanceCache(cmdCtx *CommandContext, errWriter io.Writer) *cache.BalanceCache {
+	if balanceRefresh {
+		return cache.NewBalanceCache()
+	}
+
+	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
+	cacheStorage := cache.NewFileStorage(cachePath)
+	balanceCache, err := cacheStorage.Load()
+	if err != nil {
+		handleCacheLoadError(cmdCtx, errWriter, err)
+		return cache.NewBalanceCache()
+	}
+
+	return balanceCache
+}
+
+// handleCacheLoadError logs and displays cache load errors.
+func handleCacheLoadError(cmdCtx *CommandContext, errWriter io.Writer, err error) {
+	if errors.Is(err, cache.ErrCorruptCache) {
+		if cmdCtx.Log != nil {
+			cmdCtx.Log.Error("balance cache file is corrupted: %v", err)
+		}
+		outln(errWriter, "Warning: balance cache was corrupted and has been reset.")
+	} else if cmdCtx.Log != nil {
+		cmdCtx.Log.Error("failed to load balance cache: %v", err)
+	}
+}
+
+// buildAddressList builds the address input list from wallet, applying chain filter if set.
+func buildAddressList(w *wallet.Wallet, chainFilter string) []balance.AddressInput {
+	var addresses []balance.AddressInput
+	for chainID, addrs := range w.Addresses {
+		if chainFilter != "" && string(chainID) != chainFilter {
+			continue
+		}
+		for _, addr := range addrs {
+			addresses = append(addresses, balance.AddressInput{
+				ChainID: chainID,
+				Address: addr.Address,
+			})
+		}
+	}
+	return addresses
+}
+
+// saveBalanceCache saves the balance cache to storage, logging errors.
+func saveBalanceCache(cmdCtx *CommandContext, balanceCache *cache.BalanceCache) {
+	cachePath := filepath.Join(cmdCtx.Cfg.GetHome(), "cache", "balances.json")
+	cacheStorage := cache.NewFileStorage(cachePath)
 	if err := cacheStorage.Save(balanceCache); err != nil && cmdCtx.Log != nil {
 		cmdCtx.Log.Error("failed to save balance cache: %v", err)
 	}
+}
 
-	// 6. Convert to CLI output format (CLI concern)
+// convertToBalanceResponse converts service results to CLI response format.
+func convertToBalanceResponse(walletName string, batchResult *balance.FetchBatchResult) BalanceShowResponse {
 	response := BalanceShowResponse{
-		Wallet:    balanceWalletName,
+		Wallet:    walletName,
 		Balances:  make([]BalanceResult, 0),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -200,15 +231,19 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Add warning if any fetches failed
 	if len(batchResult.Errors) > 0 {
 		response.Warning = "Some balances could not be fetched. Showing cached data where available."
 	}
 
-	// Sort results
-	sort.Slice(response.Balances, func(i, j int) bool {
-		left := response.Balances[i]
-		right := response.Balances[j]
+	sortBalanceResults(response.Balances)
+	return response
+}
+
+// sortBalanceResults sorts balance results by chain, address, and token.
+func sortBalanceResults(balances []BalanceResult) {
+	sort.Slice(balances, func(i, j int) bool {
+		left := balances[i]
+		right := balances[j]
 		if left.Chain != right.Chain {
 			return left.Chain < right.Chain
 		}
@@ -217,8 +252,10 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		}
 		return left.Token < right.Token
 	})
+}
 
-	// 7. Output results (CLI concern)
+// outputBalanceResponse outputs the balance response in the requested format.
+func outputBalanceResponse(cmd *cobra.Command, cmdCtx *CommandContext, response BalanceShowResponse) error {
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		if err := outputBalanceJSON(cmd.OutOrStdout(), response); err != nil {
 			return fmt.Errorf("writing JSON output: %w", err)
@@ -226,7 +263,6 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	} else {
 		outputBalanceText(cmd.OutOrStdout(), response)
 	}
-
 	return nil
 }
 

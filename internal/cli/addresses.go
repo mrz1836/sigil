@@ -463,9 +463,31 @@ func findInAddresses(addresses []wallet.Address, target string) bool {
 // refreshTargetAddresses performs the actual refresh for all targets.
 // Returns any errors encountered during refresh.
 func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandContext, store *utxostore.Store, targets []refreshTarget, balanceCache *cache.BalanceCache) []refreshError {
-	var errs []refreshError
+	targetsByChain := groupTargetsByChain(targets)
 
-	// Group targets by chain
+	// Create discovery service with balance service
+	discoverySvc := createDiscoveryService(cmdCtx, store, balanceCache)
+
+	// Refresh each chain's addresses
+	errs := make([]refreshError, 0, len(targets))
+	for chainID, chainTargets := range targetsByChain {
+		addresses := extractAddresses(chainTargets)
+		displayRefreshProgress(w, addresses, chainID)
+
+		results, _ := discoverySvc.RefreshBatch(ctx, &discovery.RefreshRequest{
+			ChainID:   chainID,
+			Addresses: addresses,
+			Timeout:   30 * time.Second,
+		})
+
+		errs = append(errs, convertRefreshResults(results)...)
+	}
+
+	return errs
+}
+
+// groupTargetsByChain groups refresh targets by chain ID, excluding unsupported chains.
+func groupTargetsByChain(targets []refreshTarget) map[chain.ID][]refreshTarget {
 	targetsByChain := make(map[chain.ID][]refreshTarget)
 	for _, t := range targets {
 		if t.chainID == chain.BTC || t.chainID == chain.BCH {
@@ -474,8 +496,11 @@ func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandCon
 		}
 		targetsByChain[t.chainID] = append(targetsByChain[t.chainID], t)
 	}
+	return targetsByChain
+}
 
-	// Create balance service for discovery service
+// createDiscoveryService creates a discovery service with balance service integration.
+func createDiscoveryService(cmdCtx *CommandContext, store *utxostore.Store, balanceCache *cache.BalanceCache) *discovery.Service {
 	balanceSvc := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  balance.NewCacheAdapter(balanceCache),
@@ -483,41 +508,37 @@ func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandCon
 		ForceRefresh:   true,
 	})
 
-	// Create discovery service
-	discoverySvc := discovery.NewService(&discovery.Config{
+	return discovery.NewService(&discovery.Config{
 		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
 		BalanceService: balanceSvc,
 		Config:         cmdCtx.Cfg,
 	})
+}
 
-	// Refresh each chain's addresses
-	for chainID, chainTargets := range targetsByChain {
-		// Extract addresses
-		addresses := make([]string, len(chainTargets))
-		for i, t := range chainTargets {
-			addresses[i] = t.address
-		}
+// extractAddresses extracts address strings from refresh targets.
+func extractAddresses(targets []refreshTarget) []string {
+	addresses := make([]string, len(targets))
+	for i, t := range targets {
+		addresses[i] = t.address
+	}
+	return addresses
+}
 
-		// Display progress
-		for _, addr := range addresses {
-			out(w, "  Refreshing %s [%s]...\n", truncateAddressDisplay(addr), strings.ToUpper(string(chainID)))
-		}
+// displayRefreshProgress shows progress messages for addresses being refreshed.
+func displayRefreshProgress(w io.Writer, addresses []string, chainID chain.ID) {
+	for _, addr := range addresses {
+		out(w, "  Refreshing %s [%s]...\n", truncateAddressDisplay(addr), strings.ToUpper(string(chainID)))
+	}
+}
 
-		// Refresh via service
-		results, _ := discoverySvc.RefreshBatch(ctx, &discovery.RefreshRequest{
-			ChainID:   chainID,
-			Addresses: addresses,
-			Timeout:   30 * time.Second,
-		})
-
-		// Convert results to refreshError format
-		for _, result := range results {
-			if !result.Success {
-				errs = append(errs, refreshError{address: result.Address, err: result.Error})
-			}
+// convertRefreshResults converts discovery results to refreshError format.
+func convertRefreshResults(results []discovery.RefreshResult) []refreshError {
+	var errs []refreshError
+	for _, result := range results {
+		if !result.Success {
+			errs = append(errs, refreshError{address: result.Address, err: result.Error})
 		}
 	}
-
 	return errs
 }
 

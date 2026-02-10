@@ -11,7 +11,7 @@ require (
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mrz1836/go-sanitize v1.5.5
-	github.com/mrz1836/go-whatsonchain v1.0.4
+	github.com/mrz1836/go-whatsonchain v1.0.5
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.6
@@ -22,8 +22,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	rsc.io/qr v0.2.0
 )
-
-replace github.com/mrz1836/go-whatsonchain => ../go-whatsonchain
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.0 // indirect

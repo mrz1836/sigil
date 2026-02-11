@@ -551,7 +551,7 @@ func runAgentInfo(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runAgentRevoke(cmd *cobra.Command, _ []string) error {
+func runAgentRevoke(cmd *cobra.Command, _ []string) error { //nolint:gocognit // complexity from error handling paths
 	cc := GetCmdContext(cmd)
 	w := cmd.OutOrStdout()
 
@@ -573,6 +573,26 @@ func runAgentRevoke(cmd *cobra.Command, _ []string) error {
 		}
 		out(w, "Revoked %d agent(s) for wallet '%s'.\n", count, agentWallet)
 		return nil
+	}
+
+	// Check if agent exists before deleting
+	agents, err := agentStore.List(agentWallet)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, a := range agents {
+		if a.ID == agentID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return sigilerr.WithSuggestion(
+			sigilerr.ErrNotFound,
+			fmt.Sprintf("agent '%s' not found for wallet '%s'. List agents with: sigil agent list --wallet %s",
+				agentID, agentWallet, agentWallet),
+		)
 	}
 
 	if err := agentStore.Delete(agentWallet, agentID); err != nil {

@@ -18,7 +18,7 @@ import (
 // sendBSV handles the complete Bitcoin SV transaction flow.
 // Migrated from cli/tx.go lines 398-613
 //
-//nolint:gocognit,gocyclo // Transaction flow is inherently complex (migrated from CLI)
+//nolint:gocognit,gocyclo,nestif // Transaction flow is inherently complex (migrated from CLI)
 func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, error) {
 	// Validate BSV address
 	if err := bsv.ValidateBase58CheckAddress(req.To); err != nil {

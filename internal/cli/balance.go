@@ -212,11 +212,19 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		}
 	} else {
 		// Normal mode: fetch from network (with smart caching)
+
+		// Create progress callback for text mode only
+		var progressCallback balance.ProgressCallback
+		if cmdCtx.Fmt.Format() != output.FormatJSON {
+			progressCallback = createBalanceProgressCallback(cmd.ErrOrStderr())
+		}
+
 		batchResult, err = balanceService.FetchBalances(ctx, &balance.FetchBatchRequest{
-			Addresses:     addresses,
-			ForceRefresh:  balanceRefresh,
-			MaxConcurrent: 8,
-			Timeout:       30 * time.Second,
+			Addresses:        addresses,
+			ForceRefresh:     balanceRefresh,
+			MaxConcurrent:    8,
+			Timeout:          30 * time.Second,
+			ProgressCallback: progressCallback,
 		})
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			return err
@@ -224,6 +232,11 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 		// Save cache after network fetch
 		saveBalanceCache(cmdCtx, balanceCache)
+	}
+
+	// Add blank line after progress for better output separation
+	if cmdCtx.Fmt.Format() != output.FormatJSON && len(addresses) > 0 && !balanceCachedOnly && !balanceAsync {
+		outln(cmd.ErrOrStderr())
 	}
 
 	// 4.5. Validate BSV UTXOs if requested
@@ -239,6 +252,50 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	// 5. Convert and output results
 	response := convertToBalanceResponse(balanceWalletName, batchResult)
 	return outputBalanceResponse(cmd, cmdCtx, response)
+}
+
+// createBalanceProgressCallback creates a progress callback for balance fetching.
+// Only shows progress in text mode (not JSON). Writes to stderr to avoid
+// interfering with stdout output.
+//
+//nolint:gocognit,gocyclo // Phase-based progress logic requires complexity
+func createBalanceProgressCallback(w io.Writer) balance.ProgressCallback {
+	phaseStarted := make(map[string]bool)
+	var lastMessage string
+
+	return func(update balance.ProgressUpdate) {
+		// Skip duplicate messages
+		currentMsg := fmt.Sprintf("%s:%s", update.Phase, update.Message)
+		if currentMsg == lastMessage {
+			return
+		}
+		lastMessage = currentMsg
+
+		switch update.Phase {
+		case "building":
+			// Silent - too fast to show
+
+		case "fetching_bsv":
+			if !phaseStarted["fetching_bsv"] {
+				out(w, "Fetching BSV balances (%d addresses)...\n", update.TotalAddresses)
+				phaseStarted["fetching_bsv"] = true
+			}
+			if update.CompletedAddresses > 0 && update.CompletedAddresses == update.TotalAddresses {
+				out(w, "  ✓ BSV complete\n")
+			}
+
+		case "fetching_eth":
+			if !phaseStarted["fetching_eth"] {
+				out(w, "Fetching ETH balances (%d addresses)...\n", update.TotalAddresses)
+				phaseStarted["fetching_eth"] = true
+			}
+			// Show progress every 5 addresses or at completion
+			if update.CompletedAddresses > 0 &&
+				(update.CompletedAddresses%5 == 0 || update.CompletedAddresses == update.TotalAddresses) {
+				out(w, "  %d/%d addresses completed\n", update.CompletedAddresses, update.TotalAddresses)
+			}
+		}
+	}
 }
 
 // loadUTXOStore loads the UTXO store for the wallet, logging errors if load fails.

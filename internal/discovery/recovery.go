@@ -300,7 +300,7 @@ type ValidateAndRefreshCacheOptions struct {
 	ForceRefresh bool
 
 	// ProgressCallback receives updates during validation.
-	ProgressCallback func(validated, total int, spent int)
+	ProgressCallback func(validated, total, spent int)
 }
 
 // getGapLimitForMode returns the gap limit for a recovery mode.

@@ -124,8 +124,8 @@ func (s *Store) ValidateUTXOs(ctx context.Context, chainID chain.ID, bulkClient 
 		}
 	}
 
-	// Save updated store
-	if err := s.Save(); err != nil {
+	// Save updated store (lock already held, use unlocked version)
+	if err := s.saveUnlocked(); err != nil {
 		report.Duration = time.Since(start)
 		return report, fmt.Errorf("saving validated UTXOs: %w", err)
 	}
@@ -237,8 +237,8 @@ func (s *Store) ReconcileWithChain(ctx context.Context, chainID chain.ID, bulkCl
 		}
 	}
 
-	// Save reconciled state
-	if err := s.Save(); err != nil {
+	// Save reconciled state (lock already held, use unlocked version)
+	if err := s.saveUnlocked(); err != nil {
 		report.Duration = time.Since(start)
 		return report, fmt.Errorf("saving reconciled UTXOs: %w", err)
 	}

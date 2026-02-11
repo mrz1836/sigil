@@ -332,7 +332,7 @@ func promptBSVConfirmation(ctx context.Context, cmd *cobra.Command, req *transac
 // prepareBSVConfirmation fetches UTXOs and calculates actual amounts for confirmation display.
 // This runs BEFORE the user confirmation prompt, so they see accurate values.
 //
-//nolint:gocognit // BSV confirmation flow inherently complex with multiple validations
+//nolint:gocognit,gocyclo // BSV confirmation flow inherently complex with multiple validations
 func prepareBSVConfirmation(
 	ctx context.Context,
 	cmd *cobra.Command,

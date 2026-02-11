@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/cache"
@@ -104,7 +105,7 @@ func (s *Service) FetchBalance(ctx context.Context, req *FetchRequest) (*FetchRe
 // FetchBalances fetches balances for multiple addresses concurrently.
 // Uses bulk API for BSV addresses and individual calls for other chains.
 //
-//nolint:gocognit,gocyclo // Complex business logic for concurrent batch fetching
+//nolint:gocognit,gocyclo,nestif // Complex business logic for concurrent batch fetching
 func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*FetchBatchResult, error) {
 	// Group addresses by chain for bulk operations
 	bsvAddresses := make([]string, 0)
@@ -124,6 +125,16 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	var ethCompleted int32
+
+	// Report initial phase
+	if req.ProgressCallback != nil {
+		req.ProgressCallback(ProgressUpdate{
+			Phase:          "building",
+			TotalAddresses: len(req.Addresses),
+			Message:        fmt.Sprintf("Preparing to fetch %d addresses", len(req.Addresses)),
+		})
+	}
 
 	// Apply refresh policy to BSV addresses before bulk fetch
 	bsvAddressesToFetch := make([]string, 0, len(bsvAddresses))
@@ -138,6 +149,16 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 
 	// Fetch BSV addresses that need refresh (if any)
 	if len(bsvAddressesToFetch) > 0 {
+		// Report BSV fetch phase start
+		if req.ProgressCallback != nil {
+			req.ProgressCallback(ProgressUpdate{
+				Phase:          "fetching_bsv",
+				ChainID:        "bsv",
+				TotalAddresses: len(bsvAddressesToFetch),
+				Message:        fmt.Sprintf("Fetching %d BSV addresses (bulk)", len(bsvAddressesToFetch)),
+			})
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -162,11 +183,32 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 				}
 				batchResult.Results = append(batchResult.Results, result)
 			}
+
+			// Report BSV completion
+			if req.ProgressCallback != nil {
+				req.ProgressCallback(ProgressUpdate{
+					Phase:              "fetching_bsv",
+					ChainID:            "bsv",
+					TotalAddresses:     len(bsvAddressesToFetch),
+					CompletedAddresses: len(bsvAddressesToFetch),
+					Message:            fmt.Sprintf("Completed %d BSV addresses", len(bsvAddressesToFetch)),
+				})
+			}
 		}()
 	}
 
 	// Fetch other chain addresses individually with concurrency control
 	if len(otherAddresses) > 0 {
+		// Report ETH fetch phase start
+		if req.ProgressCallback != nil {
+			req.ProgressCallback(ProgressUpdate{
+				Phase:          "fetching_eth",
+				ChainID:        "eth",
+				TotalAddresses: len(otherAddresses),
+				Message:        fmt.Sprintf("Fetching %d ETH/token addresses", len(otherAddresses)),
+			})
+		}
+
 		maxConcurrent := req.MaxConcurrent
 		if maxConcurrent <= 0 {
 			maxConcurrent = 8
@@ -208,6 +250,18 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 				}
 				if result != nil {
 					batchResult.Results = append(batchResult.Results, result)
+				}
+
+				// Report ETH progress
+				if req.ProgressCallback != nil {
+					completed := atomic.AddInt32(&ethCompleted, 1)
+					req.ProgressCallback(ProgressUpdate{
+						Phase:              "fetching_eth",
+						ChainID:            input.ChainID,
+						TotalAddresses:     len(otherAddresses),
+						CompletedAddresses: int(completed),
+						CurrentAddress:     input.Address,
+					})
 				}
 			}(addr)
 		}

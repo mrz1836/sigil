@@ -47,10 +47,11 @@ type FetchResult struct {
 
 // FetchBatchRequest represents a request to fetch balances for multiple addresses concurrently.
 type FetchBatchRequest struct {
-	Addresses     []AddressInput
-	ForceRefresh  bool
-	MaxConcurrent int
-	Timeout       time.Duration
+	Addresses        []AddressInput
+	ForceRefresh     bool
+	MaxConcurrent    int
+	Timeout          time.Duration
+	ProgressCallback ProgressCallback
 }
 
 // FetchBatchResult represents the result of fetching balances for multiple addresses.
@@ -58,6 +59,30 @@ type FetchBatchResult struct {
 	Results []*FetchResult
 	Errors  []error
 }
+
+// ProgressUpdate provides feedback during balance fetching operations.
+type ProgressUpdate struct {
+	// Phase indicates the current phase: "building", "fetching_bsv", "fetching_eth"
+	Phase string
+
+	// TotalAddresses is the total number of addresses being processed
+	TotalAddresses int
+
+	// CompletedAddresses is the number of addresses completed so far
+	CompletedAddresses int
+
+	// ChainID is the chain currently being processed
+	ChainID chain.ID
+
+	// CurrentAddress is the address currently being fetched (for ETH)
+	CurrentAddress string
+
+	// Message provides additional context
+	Message string
+}
+
+// ProgressCallback is called during batch fetching to report progress.
+type ProgressCallback func(ProgressUpdate)
 
 // CacheEntry is the service-layer representation of a cached balance.
 // This decouples the service from the cache package implementation.

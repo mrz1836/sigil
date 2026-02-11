@@ -135,31 +135,7 @@ func (s *Store) Load() error {
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	s.data.UpdatedAt = time.Now()
-	s.data.Version = currentVersion
-
-	data, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling utxos: %w", err)
-	}
-
-	if err := os.MkdirAll(s.walletPath, 0o750); err != nil {
-		return fmt.Errorf("creating utxo directory: %w", err)
-	}
-
-	// Atomic write via temp file
-	tempPath := s.filePath() + ".tmp"
-	if err := os.WriteFile(tempPath, data, filePermissions); err != nil {
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-
-	if err := os.Rename(tempPath, s.filePath()); err != nil {
-		_ = os.Remove(tempPath) // Best effort cleanup
-		return fmt.Errorf("renaming temp file: %w", err)
-	}
-
-	return nil
+	return s.saveUnlocked()
 }
 
 // GetUTXOs returns unspent UTXOs for a chain and optional address filter.
@@ -345,6 +321,35 @@ func (s *Store) IsSpent(chainID chain.ID, txid string, vout uint32) bool {
 		return false
 	}
 	return utxo.Spent
+}
+
+// saveUnlocked writes UTXOs to disk without acquiring the lock.
+// Caller must hold s.mu.Lock().
+func (s *Store) saveUnlocked() error {
+	s.data.UpdatedAt = time.Now()
+	s.data.Version = currentVersion
+
+	data, err := json.MarshalIndent(s.data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling utxos: %w", err)
+	}
+
+	if err := os.MkdirAll(s.walletPath, 0o750); err != nil {
+		return fmt.Errorf("creating utxo directory: %w", err)
+	}
+
+	// Atomic write via temp file
+	tempPath := s.filePath() + ".tmp"
+	if err := os.WriteFile(tempPath, data, filePermissions); err != nil {
+		return fmt.Errorf("writing temp file: %w", err)
+	}
+
+	if err := os.Rename(tempPath, s.filePath()); err != nil {
+		_ = os.Remove(tempPath) // Best effort cleanup
+		return fmt.Errorf("renaming temp file: %w", err)
+	}
+
+	return nil
 }
 
 // filePath returns the full path to utxos.json

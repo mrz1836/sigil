@@ -210,7 +210,7 @@ func TestGetNativeBalance(t *testing.T) {
 	t.Run("handles context cancellation", func(t *testing.T) {
 		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(2 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 			resp := apiResponse{Status: "1", Message: "OK", Result: "0"}
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
@@ -219,7 +219,7 @@ func TestGetNativeBalance(t *testing.T) {
 		client, err := NewClient("test-key", &ClientOptions{BaseURL: server.URL})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
 
 		_, err = client.GetNativeBalance(ctx, "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")

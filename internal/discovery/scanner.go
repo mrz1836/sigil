@@ -188,6 +188,8 @@ func (s *Scanner) scanScheme(ctx context.Context, seed []byte, scheme PathScheme
 }
 
 // scanChain scans a single chain (external or internal) within a scheme.
+//
+//nolint:funcorder // Helper method grouped with caller
 func (s *Scanner) scanChain(ctx context.Context, seed []byte, scheme PathScheme, account, change uint32, gapLimit int) (*schemeResult, error) {
 	// Use bulk scanning if available
 	if s.bulkOps != nil {

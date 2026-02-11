@@ -205,14 +205,14 @@ func TestBulkOperations_BulkUTXOValidation(t *testing.T) {
 
 func TestBulkOperations_RateLimiting(t *testing.T) {
 	mock := &mockWOCClient{
-		bulkHistoryFunc: func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error) {
+		bulkHistoryFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error) {
 			return whatsonchain.BulkAddressHistoryResponse{}, nil
 		},
 	}
 
 	bulkOps := NewBulkOperations(mock, &BulkOperationsOptions{
-		RateLimit: 5.0, // 5 req/sec
-		RateBurst: 1,   // No burst
+		RateLimit: 100.0, // 100 req/sec - fast enough for tests
+		RateBurst: 1,     // No burst
 	})
 
 	ctx := context.Background()
@@ -228,14 +228,14 @@ func TestBulkOperations_RateLimiting(t *testing.T) {
 
 	duration := time.Since(start)
 
-	// 3 requests at 5/sec = minimum 400ms
+	// 3 requests at 100/sec = minimum 20ms
 	// Allow some tolerance for test execution overhead
-	assert.GreaterOrEqual(t, duration, 300*time.Millisecond)
+	assert.GreaterOrEqual(t, duration, 10*time.Millisecond)
 }
 
 func TestBulkOperations_Metrics(t *testing.T) {
 	mock := &mockWOCClient{
-		bulkHistoryFunc: func(ctx context.Context, list *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error) {
+		bulkHistoryFunc: func(_ context.Context, _ *whatsonchain.AddressList) (whatsonchain.BulkAddressHistoryResponse, error) {
 			return whatsonchain.BulkAddressHistoryResponse{}, nil
 		},
 	}

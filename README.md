@@ -133,6 +133,8 @@ sigil wallet create main
 
 Creates a new HD wallet with BIP39 mnemonic phrase.
 
+<br>
+
 ### Check balances
 
 ```bash
@@ -141,21 +143,28 @@ sigil balance show --wallet main
 
 Displays balances across all supported chains (ETH, USDC, BSV).
 
+<br>
+
 ### Get a receiving address
 
 ```bash
-sigil receive --wallet main --chain bsv
+sigil receive --wallet main --chain bsv --qr --label "Re-up time!"
 ```
 
 Generates a new receiving address for the specified chain.
 
+<br>
+
 ### Send a transaction
 
 ```bash
-sigil tx send --wallet main --to 0x742d35Cc663... --amount 0.001 --chain eth
+sigil tx send --wallet main --to 0x742d35Cc663... --amount 0.00001 --chain eth
+sigil tx send --wallet main --to 1A1zP1eP5QGef... --amount 0.00001 --chain bsv
 ```
 
 Sends cryptocurrency to the specified address.
+
+<br>
 
 ### Back up your wallet
 
@@ -192,9 +201,9 @@ View the comprehensive documentation for Sigil:
 
 | Chain | Status | Description |
 |-------|--------|-------------|
+| ✅ Bitcoin SV (BSV) | **Supported** | UTXO-based transaction support |
 | ✅ Ethereum (ETH) | **Supported** | Full transaction and balance support |
 | ✅ USDC | **Supported** | ERC-20 token on Ethereum network |
-| ✅ Bitcoin SV (BSV) | **Supported** | UTXO-based transaction support |
 | 🚧 Bitcoin (BTC) | **Planned** | Coming in future release |
 | 🚧 Bitcoin Cash (BCH) | **Planned** | Coming in future release |
 

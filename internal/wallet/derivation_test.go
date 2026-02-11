@@ -572,6 +572,125 @@ func TestDeriveAddressWithCoinType_MultipleAccounts(t *testing.T) {
 	assert.NotEqual(t, addr1, addr2)
 }
 
+func TestDeriveAddress_AllCoinTypes(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	tests := []struct {
+		name     string
+		coinType uint32
+		wantErr  bool
+	}{
+		{"BTC (Bitcoin)", 0, false},
+		{"LTC (Litecoin)", 2, false},
+		{"DOGE (Dogecoin)", 3, false},
+		{"DASH", 5, false},
+		{"ETH (Ethereum)", 60, false},
+		{"ETC (Ethereum Classic)", 61, false},
+		{"BCH (Bitcoin Cash)", 145, false},
+		{"BSV (Bitcoin SV)", 236, false},
+		{"Large coin type", 999999, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			addr, pubKey, path, err := DeriveAddressWithCoinType(seed, tt.coinType, 0, 0, 0)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.NotEmpty(t, addr)
+			assert.NotEmpty(t, pubKey)
+			assert.NotEmpty(t, path)
+			assert.Contains(t, path, "m/44'")
+		})
+	}
+}
+
+func TestDeriveAddress_InvalidSeed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		seed    []byte
+		wantErr bool
+	}{
+		{"nil seed", nil, true},
+		{"empty seed", []byte{}, true},
+		{"too short seed", []byte{1, 2, 3}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := DeriveAddress(tt.seed, ChainBSV, 0, 0)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDeriveAddress_EdgeCaseIndices(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	tests := []struct {
+		name    string
+		account uint32
+		index   uint32
+		wantErr bool
+	}{
+		{"zero index", 0, 0, false},
+		{"index 1", 0, 1, false},
+		{"large index", 0, 100000, false},
+		{"large account", 999, 0, false},
+		{"both large", 999, 100000, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			addr, err := DeriveAddress(seed, ChainBSV, tt.account, tt.index)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, addr.Address)
+				assert.NotEmpty(t, addr.PublicKey)
+			}
+		})
+	}
+}
+
+func TestDerivePrivateKeyWithChange(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	// Test external chain (change = 0)
+	extKey, err := DerivePrivateKeyWithChange(seed, ChainBSV, 0, 0, 0)
+	require.NoError(t, err)
+	defer ZeroBytes(extKey)
+	assert.Len(t, extKey, 32)
+
+	// Test internal/change chain (change = 1)
+	intKey, err := DerivePrivateKeyWithChange(seed, ChainBSV, 0, 1, 0)
+	require.NoError(t, err)
+	defer ZeroBytes(intKey)
+	assert.Len(t, intKey, 32)
+
+	// Keys from different chains should differ
+	assert.NotEqual(t, extKey, intKey)
+}
+
 // Benchmark tests
 
 func BenchmarkDeriveAddressWithCoinType(b *testing.B) {

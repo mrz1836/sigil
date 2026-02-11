@@ -294,6 +294,134 @@ func TestStorage_UpdateMetadata_WalletNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrWalletNotFound)
 }
 
+func TestStorage_PermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	err = os.Mkdir(readOnlyDir, 0o500) // r-x------ (read and execute only)
+	require.NoError(t, err)
+
+	storage := NewFileStorage(readOnlyDir)
+
+	// Create test wallet
+	wallet, err := NewWallet("test", []ChainID{ChainBSV})
+	require.NoError(t, err)
+
+	mnemonic, err := GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+
+	// Attempt to save should fail due to permission denied
+	err = storage.Save(wallet, seed, []byte("password"))
+	require.Error(t, err, "Should fail to save in read-only directory")
+
+	// Restore write permission for cleanup
+	_ = os.Chmod(readOnlyDir, 0o700) //nolint:gosec // directory needs execute permission
+}
+
+func TestStorage_ConcurrentLoadSave(t *testing.T) { //nolint:gocognit // concurrency test complexity acceptable
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	storage := NewFileStorage(tmpDir)
+	password := []byte("test-password")
+
+	// Create and save initial wallet
+	wallet, err := NewWallet("concurrent", []ChainID{ChainBSV})
+	require.NoError(t, err)
+
+	mnemonic, err := GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+
+	err = wallet.DeriveAddresses(seed, 1)
+	require.NoError(t, err)
+
+	err = storage.Save(wallet, seed, password)
+	require.NoError(t, err)
+
+	// Run concurrent operations
+	const numGoroutines = 10
+	done := make(chan bool, numGoroutines)
+
+	// Half goroutines do Load, half do Save
+	for i := 0; i < numGoroutines; i++ {
+		if i%2 == 0 {
+			// Load operation
+			go func() {
+				defer func() { done <- true }()
+				_, loadedSeed, loadErr := storage.Load("concurrent", password)
+				if loadErr == nil {
+					ZeroBytes(loadedSeed)
+				}
+			}()
+		} else {
+			// UpdateMetadata operation (doesn't modify seed)
+			go func() {
+				defer func() { done <- true }()
+				w, walletErr := NewWallet("concurrent", []ChainID{ChainBSV})
+				if walletErr == nil {
+					_ = storage.UpdateMetadata(w)
+				}
+			}()
+		}
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Verify wallet is still intact and loadable
+	finalWallet, finalSeed, err := storage.Load("concurrent", password)
+	require.NoError(t, err)
+	assert.NotNil(t, finalWallet)
+	assert.NotNil(t, finalSeed)
+	ZeroBytes(finalSeed)
+}
+
+func TestStorage_NonexistentDirectory(t *testing.T) {
+	t.Parallel()
+
+	// Use a directory that doesn't exist
+	tmpDir, err := os.MkdirTemp("", "sigil-wallet-test")
+	require.NoError(t, err)
+	nonexistentDir := filepath.Join(tmpDir, "nonexistent", "nested", "path")
+	// Don't create it
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	storage := NewFileStorage(nonexistentDir)
+
+	// Create test wallet
+	wallet, err := NewWallet("test", []ChainID{ChainBSV})
+	require.NoError(t, err)
+
+	mnemonic, err := GenerateMnemonic(12)
+	require.NoError(t, err)
+	seed, err := MnemonicToSeed(mnemonic, "")
+	require.NoError(t, err)
+
+	// Save should create the directory structure
+	err = storage.Save(wallet, seed, []byte("password"))
+	require.NoError(t, err, "Save should create directory structure")
+
+	// Verify directory was created with correct permissions
+	info, err := os.Stat(nonexistentDir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
 func TestValidateWalletName(t *testing.T) {
 	t.Parallel()
 	// Create valid 64-char name

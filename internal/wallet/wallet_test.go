@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSuggestWalletName tests the wallet name sanitization function.
@@ -269,4 +270,106 @@ func TestSuggestWalletName_ValidatesAfterSanitization(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWallet_NilChangeAddresses tests backward compatibility when ChangeAddresses is nil.
+func TestWallet_NilChangeAddresses(t *testing.T) {
+	t.Parallel()
+	seed, err := MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create wallet with nil ChangeAddresses (simulates old wallet format)
+	w := &Wallet{
+		Name:            "test",
+		EnabledChains:   []ChainID{ChainBSV},
+		Addresses:       make(map[ChainID][]Address),
+		ChangeAddresses: nil, // Explicitly nil to simulate old format
+	}
+
+	// GetChangeAddressCount should return 0 for nil map
+	count := w.GetChangeAddressCount(ChainBSV)
+	assert.Equal(t, 0, count)
+
+	// GetChangeAddress should return nil for nil map
+	addr := w.GetChangeAddress(ChainBSV, 0)
+	assert.Nil(t, addr)
+
+	// DeriveNextChangeAddress should initialize the map and work
+	changeAddr, err := w.DeriveNextChangeAddress(seed, ChainBSV)
+	require.NoError(t, err)
+	assert.NotNil(t, changeAddr)
+	assert.NotNil(t, w.ChangeAddresses, "ChangeAddresses should be initialized")
+
+	// After initialization, GetChangeAddressCount should work
+	count = w.GetChangeAddressCount(ChainBSV)
+	assert.Equal(t, 1, count)
+
+	// GetChangeAddress should now return the address
+	retrievedAddr := w.GetChangeAddress(ChainBSV, 0)
+	assert.NotNil(t, retrievedAddr)
+	assert.Equal(t, changeAddr.Address, retrievedAddr.Address)
+}
+
+// TestWallet_DeriveNextAddress_MaxIndex tests the MaxAddressDerivation limit.
+func TestWallet_DeriveNextAddress_MaxIndex(t *testing.T) {
+	t.Parallel()
+	seed, err := MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := &Wallet{
+		Name:            "test",
+		EnabledChains:   []ChainID{ChainBSV},
+		Addresses:       make(map[ChainID][]Address),
+		ChangeAddresses: make(map[ChainID][]Address),
+	}
+
+	// Pre-fill with MaxAddressDerivation addresses (this would be slow in practice,
+	// so we'll simulate by setting the count to near the limit)
+	// Create addresses up to MaxAddressDerivation - 1
+	addresses := make([]Address, MaxAddressDerivation-1)
+	for i := range addresses {
+		addresses[i] = Address{
+			Address:   "dummy",
+			Index:     uint32(i), //nolint:gosec // i is bounded by MaxAddressDerivation (100000), safe for uint32
+			Path:      "m/44'/236'/0'/0/0",
+			PublicKey: "dummy",
+		}
+	}
+	w.Addresses[ChainBSV] = addresses
+
+	// Deriving one more should work (index MaxAddressDerivation - 1)
+	addr, err := w.DeriveNextReceiveAddress(seed, ChainBSV)
+	require.NoError(t, err)
+	assert.NotNil(t, addr)
+	assert.Len(t, w.Addresses[ChainBSV], MaxAddressDerivation)
+
+	// Attempting to derive at MaxAddressDerivation should fail
+	_, err = w.DeriveNextReceiveAddress(seed, ChainBSV)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "100000") // Should mention the limit
+
+	// Same test for change addresses
+	w.ChangeAddresses[ChainBSV] = make([]Address, MaxAddressDerivation-1)
+	for i := range w.ChangeAddresses[ChainBSV] {
+		w.ChangeAddresses[ChainBSV][i] = Address{
+			Address:   "dummy",
+			Index:     uint32(i), //nolint:gosec // i is bounded by MaxAddressDerivation (100000), safe for uint32
+			Path:      "m/44'/236'/0'/1/0",
+			PublicKey: "dummy",
+		}
+	}
+
+	// Deriving one more change address should work
+	changeAddr, err := w.DeriveNextChangeAddress(seed, ChainBSV)
+	require.NoError(t, err)
+	assert.NotNil(t, changeAddr)
+
+	// Attempting to derive beyond limit should fail
+	_, err = w.DeriveNextChangeAddress(seed, ChainBSV)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "100000")
 }

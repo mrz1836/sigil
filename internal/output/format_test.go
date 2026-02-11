@@ -231,3 +231,49 @@ func TestFormatSuccess(t *testing.T) {
 	assert.Equal(t, "success", result["status"])
 	assert.Equal(t, "Operation completed", result["message"])
 }
+
+func TestFormatter_Format(t *testing.T) {
+	t.Parallel()
+	f := output.NewFormatter(output.FormatJSON, nil)
+	assert.Equal(t, output.FormatJSON, f.Format())
+
+	f2 := output.NewFormatter(output.FormatText, nil)
+	assert.Equal(t, output.FormatText, f2.Format())
+}
+
+func TestFormatter_Writer(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	f := output.NewFormatter(output.FormatJSON, &buf)
+	assert.Equal(t, &buf, f.Writer())
+}
+
+func TestFormatter_Println(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	f := output.NewFormatter(output.FormatText, &buf)
+
+	err := f.Println("hello", "world")
+	require.NoError(t, err)
+	assert.Equal(t, "hello world\n", buf.String())
+}
+
+func TestTable_SetSeparator(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("A", "B")
+	table.AddRow("1", "2")
+	table.SetSeparator(" | ")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), " | ")
+}
+
+func TestFormatSuccess_Text(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	err := output.FormatSuccess(&buf, "Operation completed", output.FormatText)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Operation completed")
+}

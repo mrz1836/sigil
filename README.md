@@ -249,6 +249,68 @@ magex update:install
 </details>
 
 <details>
+<summary><strong><code>Wallet Discovery & Migration</code></strong></summary>
+<br/>
+
+Sigil can discover and sweep funds from other BSV wallets by scanning multiple BIP44 derivation paths. This is essential for recovering funds from defunct providers or migrating from other wallets.
+
+### Supported Derivation Schemes
+
+Sigil automatically scans these derivation paths to find your funds:
+
+| Derivation Scheme | Path | Supported Wallets |
+|-------------------|------|-------------------|
+| **BSV Standard** | `m/44'/236'/0'/...` | [RelayX](https://relayx.com/), [RockWallet](https://rockwallet.com/), [Twetch](https://twetch.com/), Trezor, Ledger, KeepKey |
+| **Bitcoin Legacy** | `m/44'/0'/0'/...` | [MoneyButton](https://www.moneybutton.com/) †, [ElectrumSV](https://electrumsv.io/) |
+| **Bitcoin Cash** | `m/44'/145'/0'/...` | [Exodus](https://www.exodus.com/), Simply.Cash †, BCH fork splits |
+| **HandCash Legacy** | `m/0'/...` | [HandCash 1.x](https://handcash.io/) (legacy version only) |
+
+† *Service discontinued or shut down*
+
+### Defunct BSV Services Supported
+
+Sigil provides a recovery path for users of these defunct BSV services:
+
+- **[MoneyButton](https://www.moneybutton.com/)** — Popular BSV wallet and identity provider that shut down in 2023. Used Bitcoin Legacy derivation (`m/44'/0'/...`).
+- **Simply.Cash** — Mobile BSV wallet that ceased operations. Used Bitcoin Cash derivation path (`m/44'/145'/...`).
+- **[HandCash 1.x](https://handcash.io/)** — Early versions of HandCash used a non-standard legacy path (`m/0'/...`). Note: HandCash 2.0+ uses proprietary non-exportable keys and cannot be imported.
+
+### Active Wallets Supported
+
+Sigil also supports migrating from active BSV wallets:
+
+- **[RelayX](https://relayx.com/)** — BSV wallet and token platform
+- **[RockWallet](https://rockwallet.com/)** — Multi-chain mobile wallet with BSV support
+- **[Twetch](https://twetch.com/)** — BSV social media platform with integrated wallet
+- **[Centbee](https://www.centbee.com/)** — BSV mobile wallet (requires 4-digit PIN as BIP39 passphrase)
+- **[ElectrumSV](https://electrumsv.io/)** — Desktop BSV wallet
+- **[Exodus](https://www.exodus.com/)** — Multi-chain desktop/mobile wallet
+
+### Hardware Wallets
+
+- **Trezor** — Hardware wallet with BSV support
+- **Ledger** — Hardware wallet with BSV support
+- **KeepKey** — Hardware wallet with BSV support
+
+### Usage
+
+Discover funds from another wallet's mnemonic:
+
+```bash
+sigil wallet discover --mnemonic "your twelve or twenty-four word phrase"
+```
+
+For Centbee wallets (uses 4-digit PIN as passphrase):
+
+```bash
+sigil wallet discover --mnemonic "your phrase" --passphrase "1234"
+```
+
+See the [CLI Documentation](docs/CLI.md#wallet-discover) for complete details on wallet discovery and fund recovery.
+
+</details>
+
+<details>
 <summary><strong><code>Binary Deployment</code></strong></summary>
 <br/>
 

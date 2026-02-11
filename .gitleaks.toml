@@ -1,0 +1,15 @@
+# Gitleaks configuration
+title = "gitleaks config"
+
+# Allow test private keys
+[allowlist]
+description = "Allow test fixtures and test private keys"
+paths = [
+  '''.*_test\.go$''',
+]
+
+# Allow specific test private key used across crypto tests
+regexTarget = "match"
+regexes = [
+  '''4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318''',
+]

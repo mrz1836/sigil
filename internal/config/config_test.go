@@ -676,3 +676,216 @@ func TestLoadSave_RoundTrip_WithEtherscan(t *testing.T) {
 	assert.Equal(t, "etherscan", loaded.Networks.ETH.Provider)
 	assert.Equal(t, "test-api-key-123", loaded.Networks.ETH.EtherscanAPIKey)
 }
+
+// TestDefaults_ComprehensiveValidation verifies ALL fields have expected default values.
+func TestDefaults_ComprehensiveValidation(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	// Top-level fields
+	assert.Equal(t, 1, cfg.Version)
+	assert.Equal(t, "~/.sigil", cfg.Home)
+
+	// Encryption
+	assert.Equal(t, "age", cfg.Encryption.Method)
+
+	// Networks - ETH
+	assert.True(t, cfg.Networks.ETH.Enabled)
+	assert.Equal(t, config.DefaultETHRPCURL, cfg.Networks.ETH.RPC)
+	assert.Equal(t, "https://ethereum-rpc.publicnode.com", cfg.Networks.ETH.RPC)
+	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
+	assert.Empty(t, cfg.Networks.ETH.EtherscanAPIKey)
+
+	// Networks - ETH Fallback RPCs
+	assert.Len(t, cfg.Networks.ETH.FallbackRPCs, 2)
+	assert.Equal(t, "https://rpc.ankr.com/eth", cfg.Networks.ETH.FallbackRPCs[0])
+	assert.Equal(t, "https://1rpc.io/eth", cfg.Networks.ETH.FallbackRPCs[1])
+
+	// Networks - ETH Tokens
+	require.Len(t, cfg.Networks.ETH.Tokens, 1)
+	assert.Equal(t, "USDC", cfg.Networks.ETH.Tokens[0].Symbol)
+	assert.Equal(t, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", cfg.Networks.ETH.Tokens[0].Address)
+	assert.Equal(t, 6, cfg.Networks.ETH.Tokens[0].Decimals)
+
+	// Networks - BSV
+	assert.True(t, cfg.Networks.BSV.Enabled)
+	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.API)
+	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.Broadcast)
+	assert.Empty(t, cfg.Networks.BSV.APIKey)
+
+	// Networks - BTC
+	assert.False(t, cfg.Networks.BTC.Enabled)
+
+	// Networks - BCH
+	assert.False(t, cfg.Networks.BCH.Enabled)
+
+	// Derivation
+	assert.Equal(t, 20, cfg.Derivation.AddressGap)
+
+	// Security
+	assert.True(t, cfg.Security.MemoryLock)
+	assert.True(t, cfg.Security.SessionEnabled)
+	assert.Equal(t, 15, cfg.Security.SessionTTLMinutes)
+	assert.Equal(t, 0, cfg.Security.AutoLockSeconds)
+	assert.InDelta(t, 0.0, cfg.Security.RequireConfirmAbove, 0.001)
+
+	// Output
+	assert.Equal(t, "auto", cfg.Output.DefaultFormat)
+	assert.False(t, cfg.Output.Verbose)
+	assert.Equal(t, "auto", cfg.Output.Color)
+
+	// Logging
+	assert.Equal(t, "error", cfg.Logging.Level)
+	assert.Equal(t, "~/.sigil/sigil.log", cfg.Logging.File)
+
+	// Fees
+	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
+	assert.Equal(t, 3, cfg.Fees.BSVMinMiners)
+}
+
+// TestDefaults_Determinism verifies Defaults() returns identical configs.
+func TestDefaults_Determinism(t *testing.T) {
+	t.Parallel()
+
+	// Call Defaults() 3 times
+	cfg1 := config.Defaults()
+	cfg2 := config.Defaults()
+	cfg3 := config.Defaults()
+
+	// Verify all return identical top-level values
+	assert.Equal(t, cfg1.Version, cfg2.Version)
+	assert.Equal(t, cfg1.Version, cfg3.Version)
+	assert.Equal(t, cfg1.Home, cfg2.Home)
+	assert.Equal(t, cfg1.Home, cfg3.Home)
+	assert.Equal(t, cfg1.Encryption.Method, cfg2.Encryption.Method)
+	assert.Equal(t, cfg1.Encryption.Method, cfg3.Encryption.Method)
+
+	// Verify slice ordering is consistent (ETH tokens)
+	require.Len(t, cfg1.Networks.ETH.Tokens, 1)
+	require.Len(t, cfg2.Networks.ETH.Tokens, 1)
+	require.Len(t, cfg3.Networks.ETH.Tokens, 1)
+	assert.Equal(t, cfg1.Networks.ETH.Tokens[0].Symbol, cfg2.Networks.ETH.Tokens[0].Symbol)
+	assert.Equal(t, cfg1.Networks.ETH.Tokens[0].Symbol, cfg3.Networks.ETH.Tokens[0].Symbol)
+
+	// Verify slice ordering is consistent (ETH fallback RPCs)
+	assert.Equal(t, cfg1.Networks.ETH.FallbackRPCs, cfg2.Networks.ETH.FallbackRPCs)
+	assert.Equal(t, cfg1.Networks.ETH.FallbackRPCs, cfg3.Networks.ETH.FallbackRPCs)
+}
+
+// TestDefaults_ETHTokensOrdering verifies token slice ordering is stable.
+func TestDefaults_ETHTokensOrdering(t *testing.T) {
+	t.Parallel()
+
+	// Generate 5 configs
+	configs := make([]*config.Config, 5)
+	for i := 0; i < 5; i++ {
+		configs[i] = config.Defaults()
+	}
+
+	// Verify all have same token ordering
+	for i := 1; i < 5; i++ {
+		assert.Equal(t, configs[0].Networks.ETH.Tokens, configs[i].Networks.ETH.Tokens,
+			"config %d has different token ordering", i)
+	}
+}
+
+// TestDefaults_FallbackRPCsOrdering verifies fallback RPC slice ordering is stable.
+func TestDefaults_FallbackRPCsOrdering(t *testing.T) {
+	t.Parallel()
+
+	// Generate 5 configs
+	configs := make([]*config.Config, 5)
+	for i := 0; i < 5; i++ {
+		configs[i] = config.Defaults()
+	}
+
+	// Verify all have same RPC ordering
+	for i := 1; i < 5; i++ {
+		assert.Equal(t, configs[0].Networks.ETH.FallbackRPCs, configs[i].Networks.ETH.FallbackRPCs,
+			"config %d has different RPC ordering", i)
+	}
+}
+
+// TestDefaults_NetworkDefaults verifies all network-specific defaults.
+func TestDefaults_NetworkDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	// ETH network defaults
+	t.Run("ETH", func(t *testing.T) {
+		eth := cfg.Networks.ETH
+		assert.True(t, eth.Enabled, "ETH should be enabled by default")
+		assert.NotEmpty(t, eth.RPC, "ETH RPC should be set")
+		assert.NotEmpty(t, eth.FallbackRPCs, "ETH fallback RPCs should be set")
+		assert.NotEmpty(t, eth.Tokens, "ETH tokens should include at least USDC")
+		assert.Equal(t, "etherscan", eth.Provider, "ETH provider should default to etherscan")
+	})
+
+	// BSV network defaults
+	t.Run("BSV", func(t *testing.T) {
+		bsv := cfg.Networks.BSV
+		assert.True(t, bsv.Enabled, "BSV should be enabled by default")
+		assert.Equal(t, "whatsonchain", bsv.API, "BSV API should default to whatsonchain")
+		assert.Equal(t, "whatsonchain", bsv.Broadcast, "BSV broadcast should default to whatsonchain")
+	})
+
+	// BTC network defaults
+	t.Run("BTC", func(t *testing.T) {
+		btc := cfg.Networks.BTC
+		assert.False(t, btc.Enabled, "BTC should be disabled by default")
+	})
+
+	// BCH network defaults
+	t.Run("BCH", func(t *testing.T) {
+		bch := cfg.Networks.BCH
+		assert.False(t, bch.Enabled, "BCH should be disabled by default")
+	})
+}
+
+// TestDefaults_SecurityDefaults verifies all security-related defaults.
+func TestDefaults_SecurityDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	assert.True(t, cfg.Security.MemoryLock, "MemoryLock should be enabled by default")
+	assert.True(t, cfg.Security.SessionEnabled, "SessionEnabled should be enabled by default")
+	assert.Equal(t, 15, cfg.Security.SessionTTLMinutes, "SessionTTL should default to 15 minutes")
+	assert.Equal(t, 0, cfg.Security.AutoLockSeconds, "AutoLockSeconds should default to 0 (disabled)")
+	assert.InDelta(t, 0.0, cfg.Security.RequireConfirmAbove, 0.001, "RequireConfirmAbove should default to 0 (disabled)")
+}
+
+// TestDefaults_OutputDefaults verifies all output-related defaults.
+func TestDefaults_OutputDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	assert.Equal(t, "auto", cfg.Output.DefaultFormat, "DefaultFormat should be auto")
+	assert.False(t, cfg.Output.Verbose, "Verbose should be false by default")
+	assert.Equal(t, "auto", cfg.Output.Color, "Color should be auto by default")
+}
+
+// TestDefaults_FeeDefaults verifies all fee-related defaults.
+func TestDefaults_FeeDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy, "BSVFeeStrategy should default to normal")
+	assert.Equal(t, 3, cfg.Fees.BSVMinMiners, "BSVMinMiners should default to 3")
+}
+
+// TestDefaults_LoggingDefaults verifies all logging-related defaults.
+func TestDefaults_LoggingDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	assert.Equal(t, "error", cfg.Logging.Level, "Logging level should default to error")
+	assert.Equal(t, "~/.sigil/sigil.log", cfg.Logging.File, "Logging file should default to ~/.sigil/sigil.log")
+}
+
+// TestDefaults_DerivationDefaults verifies all derivation-related defaults.
+func TestDefaults_DerivationDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+
+	assert.Equal(t, 20, cfg.Derivation.AddressGap, "AddressGap should default to 20")
+}

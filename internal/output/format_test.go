@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -276,4 +277,223 @@ func TestFormatSuccess_Text(t *testing.T) {
 	err := output.FormatSuccess(&buf, "Operation completed", output.FormatText)
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "Operation completed")
+}
+
+// TestTable_EmptyTable tests rendering of an empty table (no headers, no rows).
+func TestTable_EmptyTable(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable()
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+	assert.Empty(t, buf.String())
+}
+
+// TestTable_HeadersOnly tests rendering a table with headers but no rows.
+func TestTable_HeadersOnly(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Name", "Value", "Status")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Name")
+	assert.Contains(t, result, "Value")
+	assert.Contains(t, result, "Status")
+	assert.Contains(t, result, "---") // Separator line
+}
+
+// TestTable_RaggedRows tests rows with mismatched column counts.
+func TestTable_RaggedRows(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("A", "B", "C")
+	table.AddRow("1", "2")      // Missing column
+	table.AddRow("3", "4", "5") // Complete
+	table.AddRow("6")           // Only one column
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	// Should still render without panic
+	assert.Contains(t, result, "1")
+	assert.Contains(t, result, "3")
+	assert.Contains(t, result, "6")
+}
+
+// TestTable_EmptyCells tests tables with empty cells.
+func TestTable_EmptyCells(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Name", "Value")
+	table.AddRow("", "value1")
+	table.AddRow("name2", "")
+	table.AddRow("", "")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Name")
+	assert.Contains(t, result, "Value")
+}
+
+// TestTable_SingleCell tests a minimal 1x1 table.
+func TestTable_SingleCell(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Header")
+	table.AddRow("Value")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "Header")
+	assert.Contains(t, result, "Value")
+}
+
+// TestTable_VeryLongContent tests handling of very long content (1000+ chars).
+func TestTable_VeryLongContent(t *testing.T) {
+	t.Parallel()
+	longValue := strings.Repeat("a", 1000)
+	table := output.NewTable("Name", "Value")
+	table.AddRow("test", longValue)
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, longValue)
+}
+
+// TestTable_UnicodeContent tests Unicode characters (Chinese, emoji).
+func TestTable_UnicodeContent(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Name", "Description")
+	//nolint:gosmopolitan // Intentional unicode test
+	table.AddRow("测试", "Test in Chinese")
+	table.AddRow("Emoji", "🚀 🎉 ✨")
+	//nolint:gosmopolitan // Intentional unicode test
+	table.AddRow("Mixed", "English 中文 🔥")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	//nolint:gosmopolitan // Intentional unicode test
+	assert.Contains(t, result, "测试")
+	assert.Contains(t, result, "🚀")
+	//nolint:gosmopolitan // Intentional unicode test
+	assert.Contains(t, result, "中文")
+}
+
+// TestTable_MultiCharSeparator tests using multi-character separators.
+func TestTable_MultiCharSeparator(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		separator string
+	}{
+		{"pipe with spaces", " | "},
+		{"tab", "\t"},
+		{"arrow", " -> "},
+		{"double space", "  "},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			table := output.NewTable("A", "B")
+			table.AddRow("1", "2")
+			table.SetSeparator(tc.separator)
+
+			var buf bytes.Buffer
+			err := table.Render(&buf)
+			require.NoError(t, err)
+			assert.Contains(t, buf.String(), tc.separator)
+		})
+	}
+}
+
+// TestTable_SpecialCharacters tests special characters in cells.
+func TestTable_SpecialCharacters(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Name", "Value")
+	table.AddRow("quotes", `"test"`)
+	table.AddRow("newline", "line1\nline2")
+	table.AddRow("tab", "col1\tcol2")
+	table.AddRow("special", "<>&\"'")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	// Should handle without error
+	assert.NotEmpty(t, result)
+}
+
+// TestTable_ManyColumns tests tables with many columns.
+func TestTable_ManyColumns(t *testing.T) {
+	t.Parallel()
+	headers := make([]string, 20)
+	row := make([]string, 20)
+	for i := 0; i < 20; i++ {
+		headers[i] = "Col" + string(rune('A'+i))
+		row[i] = "val" + string(rune('A'+i))
+	}
+
+	table := output.NewTable(headers...)
+	table.AddRow(row...)
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.Contains(t, result, "ColA")
+	assert.Contains(t, result, "ColT") // 20th column
+}
+
+// TestTable_ManyRows tests tables with many rows.
+func TestTable_ManyRows(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Index", "Value")
+	for i := 0; i < 100; i++ {
+		table.AddRow(string(rune('0'+i%10)), "value"+string(rune('0'+i%10)))
+	}
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	assert.NotEmpty(t, result)
+	// Just verify it doesn't crash with many rows
+}
+
+// TestTable_WhitespaceContent tests content with leading/trailing whitespace.
+func TestTable_WhitespaceContent(t *testing.T) {
+	t.Parallel()
+	table := output.NewTable("Name", "Value")
+	table.AddRow("  leading", "trailing  ")
+	table.AddRow("\tTab", "Space ")
+	table.AddRow("", "   ")
+
+	var buf bytes.Buffer
+	err := table.Render(&buf)
+	require.NoError(t, err)
+
+	result := buf.String()
+	// Whitespace should be preserved
+	assert.Contains(t, result, "  leading")
+	assert.Contains(t, result, "trailing  ")
 }

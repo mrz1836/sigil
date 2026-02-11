@@ -100,7 +100,10 @@ func TestRetry_CustomConfig(t *testing.T) {
 	assert.Equal(t, 2, attempts)
 }
 
-var errSomeError = errors.New("some error")
+var (
+	errSomeError      = errors.New("some error")
+	errTemporaryError = errors.New("temporary error")
+)
 
 func TestIsRetryable(t *testing.T) {
 	assert.True(t, chain.IsRetryable(chain.ErrRetryable))
@@ -130,4 +133,34 @@ func TestParseRetryAfter(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestWrapRetryable(t *testing.T) {
+	t.Run("wraps error as retryable", func(t *testing.T) {
+		err := errSomeError
+		wrapped := chain.WrapRetryable(err)
+
+		require.Error(t, wrapped)
+		assert.True(t, chain.IsRetryable(wrapped))
+		assert.Contains(t, wrapped.Error(), "some error")
+	})
+
+	t.Run("returns nil for nil input", func(t *testing.T) {
+		wrapped := chain.WrapRetryable(nil)
+		assert.NoError(t, wrapped)
+	})
+
+	t.Run("works with Retry function for retries", func(t *testing.T) {
+		attempts := 0
+		_, err := chain.Retry(context.Background(), func() (string, error) {
+			attempts++
+			if attempts < 3 {
+				return "", chain.WrapRetryable(errTemporaryError)
+			}
+			return "success", nil
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 3, attempts)
+	})
 }

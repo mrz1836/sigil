@@ -104,3 +104,61 @@ func TestRateLimiter_Concurrent(t *testing.T) {
 	assert.GreaterOrEqual(t, count, 90)
 	assert.LessOrEqual(t, count, 110)
 }
+
+func TestDefaultRateLimiter(t *testing.T) {
+	rl := chain.DefaultRateLimiter()
+
+	require.NotNil(t, rl)
+
+	// Default allows burst of 10
+	for i := 0; i < 10; i++ {
+		allowed := rl.Allow("test")
+		assert.True(t, allowed, "should allow request %d in default burst", i)
+	}
+
+	// 11th request should be denied
+	allowed := rl.Allow("test")
+	assert.False(t, allowed, "should deny request after default burst exhausted")
+}
+
+func TestRateLimiter_Reserve(t *testing.T) {
+	t.Run("returns valid reservation", func(t *testing.T) {
+		rl := chain.NewRateLimiter(10, 5)
+		reservation := rl.Reserve("test")
+
+		require.NotNil(t, reservation)
+		assert.True(t, reservation.OK())
+	})
+
+	t.Run("multiple reservations work", func(t *testing.T) {
+		rl := chain.NewRateLimiter(10, 3)
+
+		// Reserve 3 tokens
+		r1 := rl.Reserve("test")
+		r2 := rl.Reserve("test")
+		r3 := rl.Reserve("test")
+
+		assert.True(t, r1.OK())
+		assert.True(t, r2.OK())
+		assert.True(t, r3.OK())
+
+		// 4th reservation should require delay
+		r4 := rl.Reserve("test")
+		assert.True(t, r4.OK())
+		assert.Greater(t, r4.Delay(), time.Duration(0))
+	})
+
+	t.Run("different endpoints independent", func(t *testing.T) {
+		rl := chain.NewRateLimiter(10, 2)
+
+		// Exhaust endpoint1
+		rl.Reserve("endpoint1")
+		rl.Reserve("endpoint1")
+		r1 := rl.Reserve("endpoint1")
+		assert.Greater(t, r1.Delay(), time.Duration(0))
+
+		// endpoint2 should still have tokens
+		r2 := rl.Reserve("endpoint2")
+		assert.Equal(t, time.Duration(0), r2.Delay())
+	})
+}

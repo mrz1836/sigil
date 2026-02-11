@@ -125,3 +125,26 @@ func mustBigInt(s string) *big.Int {
 	}
 	return n
 }
+
+func TestAmountToBigInt(t *testing.T) {
+	tests := []struct {
+		name   string
+		amount uint64
+		want   string
+	}{
+		{"zero", 0, "0"},
+		{"small amount", 1, "1"},
+		{"medium amount", 100, "100"},
+		{"1 BTC in satoshis", 100000000, "100000000"},
+		{"max uint64", ^uint64(0), "18446744073709551615"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AmountToBigInt(tt.amount)
+			if got.String() != tt.want {
+				t.Errorf("AmountToBigInt(%d) = %s, want %s", tt.amount, got.String(), tt.want)
+			}
+		})
+	}
+}

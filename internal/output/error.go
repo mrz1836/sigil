@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
@@ -84,8 +85,14 @@ func formatErrorText(w io.Writer, err error) error {
 
 	if len(se.Details) > 0 {
 		sb.WriteString("\nDetails:\n")
-		for k, v := range se.Details {
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		// Sort keys for deterministic output
+		keys := make([]string, 0, len(se.Details))
+		for k := range se.Details {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, se.Details[k]))
 		}
 	}
 

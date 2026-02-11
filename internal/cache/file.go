@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,7 @@ var ErrCorruptCache = errors.New("cache file is corrupted")
 
 // FileStorage implements cache persistence using the filesystem.
 type FileStorage struct {
+	mu   sync.RWMutex // Protects concurrent access to the cache file
 	path string
 }
 
@@ -34,6 +36,9 @@ func NewFileStorage(path string) *FileStorage {
 
 // Save writes the cache to the filesystem.
 func (s *FileStorage) Save(cache *BalanceCache) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Ensure directory exists
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, cacheDirPermissions); err != nil {
@@ -57,6 +62,9 @@ func (s *FileStorage) Save(cache *BalanceCache) error {
 // Load reads the cache from the filesystem.
 // Returns an empty cache if the file doesn't exist.
 func (s *FileStorage) Load() (*BalanceCache, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	// Check if file exists
 	if _, err := os.Stat(s.path); os.IsNotExist(err) {
 		return NewBalanceCache(), nil
@@ -88,6 +96,9 @@ func (s *FileStorage) Load() (*BalanceCache, error) {
 
 // Delete removes the cache file.
 func (s *FileStorage) Delete() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if _, err := os.Stat(s.path); os.IsNotExist(err) {
 		return nil // Already doesn't exist
 	}
@@ -101,6 +112,9 @@ func (s *FileStorage) Delete() error {
 
 // Exists checks if the cache file exists.
 func (s *FileStorage) Exists() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	_, err := os.Stat(s.path)
 	return err == nil
 }

@@ -63,6 +63,15 @@ func ValidateMnemonic(mnemonic string) error {
 	}
 
 	normalized := NormalizeMnemonicInput(mnemonic)
+
+	// Early exit: Fast word count check before expensive BIP39 validation
+	// BIP39 only supports 12 or 24-word mnemonics
+	words := strings.Fields(normalized)
+	wordCount := len(words)
+	if wordCount != 12 && wordCount != 24 {
+		return ErrInvalidMnemonic
+	}
+
 	// MnemonicToByteArray validates word count, word validity, AND checksum
 	if _, err := bip39.MnemonicToByteArray(normalized); err != nil {
 		return ErrInvalidMnemonic

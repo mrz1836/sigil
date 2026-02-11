@@ -454,3 +454,226 @@ func TestGetAddresses(t *testing.T) {
 	bchAddrs := store.GetAddresses(chain.BCH)
 	assert.Empty(t, bchAddrs)
 }
+
+// ========== GetAddressesByLabel Tests ==========
+
+func TestGetAddressesByLabel_WithMatches(t *testing.T) {
+	t.Parallel()
+	store := New("/tmp/test")
+
+	// Add addresses with same label
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr1",
+		Label:   "savings",
+	})
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr2",
+		Label:   "savings",
+	})
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr3",
+		Label:   "spending",
+	})
+
+	results := store.GetAddressesByLabel(chain.BSV, "savings")
+	require.Len(t, results, 2)
+
+	// Check both addresses are present (order is non-deterministic due to map iteration)
+	addresses := make(map[string]bool)
+	for _, r := range results {
+		addresses[r.Address] = true
+	}
+	assert.True(t, addresses["addr1"])
+	assert.True(t, addresses["addr2"])
+}
+
+func TestGetAddressesByLabel_NoMatches(t *testing.T) {
+	t.Parallel()
+	store := New("/tmp/test")
+
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr1",
+		Label:   "savings",
+	})
+
+	results := store.GetAddressesByLabel(chain.BSV, "nonexistent")
+	assert.Empty(t, results)
+}
+
+func TestGetAddressesByLabel_EmptyLabel(t *testing.T) {
+	t.Parallel()
+	store := New("/tmp/test")
+
+	// Add addresses, some with empty label
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr1",
+		Label:   "",
+	})
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "addr2",
+		Label:   "savings",
+	})
+
+	results := store.GetAddressesByLabel(chain.BSV, "")
+	require.Len(t, results, 1)
+	assert.Equal(t, "addr1", results[0].Address)
+}
+
+func TestGetAddressesByLabel_MultipleChains(t *testing.T) {
+	t.Parallel()
+	store := New("/tmp/test")
+
+	// Add addresses with same label on different chains
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "bsvaddr",
+		Label:   "savings",
+	})
+	store.AddAddress(&AddressMetadata{
+		ChainID: chain.BTC,
+		Address: "btcaddr",
+		Label:   "savings",
+	})
+
+	// Should only return BSV addresses
+	results := store.GetAddressesByLabel(chain.BSV, "savings")
+	require.Len(t, results, 1)
+	assert.Equal(t, "bsvaddr", results[0].Address)
+
+	// Should only return BTC addresses
+	results = store.GetAddressesByLabel(chain.BTC, "savings")
+	require.Len(t, results, 1)
+	assert.Equal(t, "btcaddr", results[0].Address)
+}
+
+// ========== Error Path Tests ==========
+
+func TestLoad_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Write invalid JSON
+	filePath := filepath.Join(tmpDir, utxoFileName)
+	err := os.WriteFile(filePath, []byte("not valid json {{{"), filePermissions)
+	require.NoError(t, err)
+
+	store := New(tmpDir)
+	err = store.Load()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing utxos.json")
+}
+
+func TestLoad_CorruptedFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Write binary garbage data
+	filePath := filepath.Join(tmpDir, utxoFileName)
+	err := os.WriteFile(filePath, []byte{0xFF, 0xFE, 0x00, 0x01, 0x02}, filePermissions)
+	require.NoError(t, err)
+
+	store := New(tmpDir)
+	err = store.Load()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing utxos.json")
+}
+
+func TestLoad_PermissionDenied(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a valid file first
+	filePath := filepath.Join(tmpDir, utxoFileName)
+	err := os.WriteFile(filePath, []byte(`{"version": 1, "updated_at": "2026-01-01T00:00:00Z", "utxos": {}, "addresses": {}}`), filePermissions)
+	require.NoError(t, err)
+
+	// Make file unreadable
+	err = os.Chmod(filePath, 0o000)
+	require.NoError(t, err)
+	defer os.Chmod(filePath, filePermissions) //nolint:errcheck // cleanup
+
+	store := New(tmpDir)
+	err = store.Load()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading utxos.json")
+}
+
+func TestSaveUnlocked_MkdirError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a file with the same name as the wallet directory to prevent mkdir
+	walletPath := filepath.Join(tmpDir, "wallet")
+	err := os.WriteFile(walletPath, []byte("blocking file"), 0o600)
+	require.NoError(t, err)
+
+	store := New(walletPath)
+	store.AddUTXO(&StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "tx1",
+		Vout:    0,
+		Amount:  1000,
+	})
+
+	err = store.Save()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "creating utxo directory")
+}
+
+func TestSaveUnlocked_WriteFileError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	store := New(tmpDir)
+	store.AddUTXO(&StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "tx1",
+		Vout:    0,
+		Amount:  1000,
+	})
+
+	// Make directory read-only to prevent writing
+	err := os.Chmod(tmpDir, 0o400)
+	require.NoError(t, err)
+	defer os.Chmod(tmpDir, 0o700) //nolint:errcheck,gosec // cleanup
+
+	err = store.Save()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writing temp file")
+}
+
+func TestSaveUnlocked_RenameError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	store := New(tmpDir)
+	store.AddUTXO(&StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "tx1",
+		Vout:    0,
+		Amount:  1000,
+	})
+
+	// Create a directory where the utxos.json file should be to prevent rename
+	utxoPath := filepath.Join(tmpDir, utxoFileName)
+	err := os.Mkdir(utxoPath, 0o700)
+	require.NoError(t, err)
+
+	err = store.Save()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "renaming temp file")
+
+	// Verify temp file was cleaned up
+	tempPath := utxoPath + ".tmp"
+	_, err = os.Stat(tempPath)
+	assert.True(t, os.IsNotExist(err), "temp file should be cleaned up")
+}

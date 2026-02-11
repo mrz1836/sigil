@@ -2,6 +2,7 @@ package utxostore
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -282,4 +283,222 @@ func TestValidationReport_Duration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, report.Duration, time.Duration(0))
 	assert.LessOrEqual(t, report.Duration, elapsed+10*time.Millisecond)
+}
+
+// ========== Error Path Tests ==========
+
+func TestReconcileWithChain_BulkFetchError(t *testing.T) {
+	t.Parallel()
+	store := New(t.TempDir())
+
+	// Add an address
+	store.AddAddress(&AddressMetadata{
+		Address: "addr1",
+		ChainID: chain.BSV,
+	})
+
+	// Mock returns error
+	mock := &mockBulkOperationsClient{
+		fetchFunc: func(_ context.Context, _ []string) ([]bsv.BulkUTXOResult, error) {
+			return nil, errNetwork
+		},
+	}
+	ctx := context.Background()
+
+	report, err := store.ReconcileWithChain(ctx, chain.BSV, mock)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bulk UTXO fetch")
+	assert.Len(t, report.Errors, 1)
+}
+
+func TestReconcileWithChain_PartialAddressErrors(t *testing.T) {
+	t.Parallel()
+	store := New(t.TempDir())
+
+	// Add addresses
+	store.AddAddress(&AddressMetadata{Address: "addr1", ChainID: chain.BSV})
+	store.AddAddress(&AddressMetadata{Address: "addr2", ChainID: chain.BSV})
+
+	// Mock returns partial errors
+	mock := &mockBulkOperationsClient{
+		fetchFunc: func(_ context.Context, _ []string) ([]bsv.BulkUTXOResult, error) {
+			return []bsv.BulkUTXOResult{
+				{
+					Address: "addr1",
+					ConfirmedUTXOs: []bsv.UTXO{
+						{TxID: "tx1", Vout: 0, Amount: 1000},
+					},
+				},
+				{
+					Address: "addr2",
+					Error:   errNetwork,
+				},
+			}, nil
+		},
+	}
+	ctx := context.Background()
+
+	report, err := store.ReconcileWithChain(ctx, chain.BSV, mock)
+
+	require.NoError(t, err) // Partial errors don't fail the whole operation
+	assert.Equal(t, 1, report.NewUTXOs)
+	assert.Len(t, report.Errors, 1)
+	assert.ErrorIs(t, report.Errors[0], errNetwork)
+}
+
+func TestReconcileWithChain_SaveError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	store := New(tmpDir)
+
+	// Add an address
+	store.AddAddress(&AddressMetadata{Address: "addr1", ChainID: chain.BSV})
+
+	mock := &mockBulkOperationsClient{
+		fetchFunc: func(_ context.Context, _ []string) ([]bsv.BulkUTXOResult, error) {
+			return []bsv.BulkUTXOResult{
+				{
+					Address: "addr1",
+					ConfirmedUTXOs: []bsv.UTXO{
+						{TxID: "tx1", Vout: 0, Amount: 1000},
+					},
+				},
+			}, nil
+		},
+	}
+
+	// Make directory read-only to trigger save error
+	require.NoError(t, os.Chmod(tmpDir, 0o400))
+	defer os.Chmod(tmpDir, 0o700) //nolint:errcheck,gosec // cleanup
+
+	ctx := context.Background()
+	report, err := store.ReconcileWithChain(ctx, chain.BSV, mock)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "saving reconciled UTXOs")
+	assert.Equal(t, 1, report.NewUTXOs) // Data was processed before save failed
+}
+
+func TestReconcileWithChain_NoAddresses(t *testing.T) {
+	t.Parallel()
+	store := New(t.TempDir())
+
+	mock := &mockBulkOperationsClient{}
+	ctx := context.Background()
+
+	report, err := store.ReconcileWithChain(ctx, chain.BSV, mock)
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, report.AddressesScanned)
+	assert.Equal(t, 0, report.NewUTXOs)
+}
+
+func TestReconcileWithChain_MixedConfirmationLevels(t *testing.T) {
+	t.Parallel()
+	store := New(t.TempDir())
+
+	// Add an address
+	store.AddAddress(&AddressMetadata{Address: "addr1", ChainID: chain.BSV})
+
+	// Mock returns both confirmed and unconfirmed UTXOs
+	mock := &mockBulkOperationsClient{
+		fetchFunc: func(_ context.Context, _ []string) ([]bsv.BulkUTXOResult, error) {
+			return []bsv.BulkUTXOResult{
+				{
+					Address: "addr1",
+					ConfirmedUTXOs: []bsv.UTXO{
+						{TxID: "confirmed1", Vout: 0, Amount: 1000, Confirmations: 6},
+						{TxID: "confirmed2", Vout: 0, Amount: 2000, Confirmations: 3},
+					},
+					UnconfirmedUTXOs: []bsv.UTXO{
+						{TxID: "unconfirmed1", Vout: 0, Amount: 500, Confirmations: 0},
+						{TxID: "unconfirmed2", Vout: 0, Amount: 300, Confirmations: 0},
+					},
+				},
+			}, nil
+		},
+	}
+	ctx := context.Background()
+
+	report, err := store.ReconcileWithChain(ctx, chain.BSV, mock)
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, report.NewUTXOs) // 2 confirmed + 2 unconfirmed
+	assert.Equal(t, int64(3800), report.UpdatedBalance)
+
+	// Verify confirmations are correct
+	store.mu.RLock()
+	confirmed1 := store.data.UTXOs["bsv:confirmed1:0"]
+	unconfirmed1 := store.data.UTXOs["bsv:unconfirmed1:0"]
+	store.mu.RUnlock()
+
+	require.NotNil(t, confirmed1)
+	require.NotNil(t, unconfirmed1)
+	assert.Equal(t, uint32(6), confirmed1.Confirmations)
+	assert.Equal(t, uint32(0), unconfirmed1.Confirmations)
+}
+
+func TestValidateUTXOs_BulkValidationError(t *testing.T) {
+	t.Parallel()
+	store := New(t.TempDir())
+
+	// Add some UTXOs
+	store.AddUTXO(&StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "tx1",
+		Vout:    0,
+		Amount:  1000,
+		Spent:   false,
+	})
+
+	// Mock returns error
+	mock := &mockBulkOperationsClient{
+		validateFunc: func(_ context.Context, _ []bsv.UTXO) ([]bsv.UTXOSpentStatus, error) {
+			return nil, errNetwork
+		},
+	}
+	ctx := context.Background()
+
+	report, err := store.ValidateUTXOs(ctx, chain.BSV, mock)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bulk UTXO validation")
+	assert.Len(t, report.ValidationErrors, 1)
+	assert.Equal(t, 1, report.TotalChecked)
+}
+
+func TestValidateUTXOs_SaveError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	store := New(tmpDir)
+
+	// Add some UTXOs
+	store.AddUTXO(&StoredUTXO{
+		ChainID: chain.BSV,
+		TxID:    "tx1",
+		Vout:    0,
+		Amount:  1000,
+		Spent:   false,
+	})
+
+	// Mock marks UTXO as spent
+	mock := &mockBulkOperationsClient{
+		validateFunc: func(_ context.Context, _ []bsv.UTXO) ([]bsv.UTXOSpentStatus, error) {
+			return []bsv.UTXOSpentStatus{
+				{TxID: "tx1", Vout: 0, Spent: true},
+			}, nil
+		},
+	}
+
+	// Make directory read-only to trigger save error
+	require.NoError(t, os.Chmod(tmpDir, 0o400))
+	defer os.Chmod(tmpDir, 0o700) //nolint:errcheck,gosec // cleanup
+
+	ctx := context.Background()
+	report, err := store.ValidateUTXOs(ctx, chain.BSV, mock)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "saving validated UTXOs")
+	assert.Equal(t, 1, report.NowSpent) // Data was processed before save failed
 }

@@ -1,6 +1,7 @@
 package utxostore
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -107,4 +108,55 @@ func createLargeScaleStore(t *testing.T, chainID chain.ID, numAddresses, utxosPe
 	}
 
 	return store, total
+}
+
+// mockBulkChainClient implements BulkChainClient for testing bulk operations.
+type mockBulkChainClient struct {
+	*mockChainClient
+
+	// Bulk operation functions
+	bulkFetchFunc func(addresses []string) ([]BulkUTXOResult, error)
+
+	// Call tracking
+	bulkFetchCallCount int
+}
+
+func newMockBulkClient() *mockBulkChainClient {
+	return &mockBulkChainClient{
+		mockChainClient: newMockClient(),
+	}
+}
+
+func (m *mockBulkChainClient) BulkAddressUTXOFetch(_ context.Context, addresses []string) ([]BulkUTXOResult, error) {
+	m.bulkFetchCallCount++
+
+	// Use custom function if provided
+	if m.bulkFetchFunc != nil {
+		return m.bulkFetchFunc(addresses)
+	}
+
+	// Default behavior: convert individual lookups to bulk results
+	results := make([]BulkUTXOResult, len(addresses))
+	for i, addr := range addresses {
+		if err, ok := m.errors[addr]; ok {
+			results[i] = BulkUTXOResult{
+				Address: addr,
+				Error:   err,
+			}
+			continue
+		}
+
+		utxos := m.utxosByAddress[addr]
+		results[i] = BulkUTXOResult{
+			Address:          addr,
+			ConfirmedUTXOs:   utxos,
+			UnconfirmedUTXOs: []chain.UTXO{},
+		}
+	}
+
+	return results, nil
+}
+
+func (m *mockBulkChainClient) setBulkFetchFunc(fn func(addresses []string) ([]BulkUTXOResult, error)) {
+	m.bulkFetchFunc = fn
 }

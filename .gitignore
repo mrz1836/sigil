@@ -59,3 +59,4 @@ node_modules/
 
 # Sigil
 /sigil
+coverage_integration.txt

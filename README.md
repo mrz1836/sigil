@@ -8,7 +8,7 @@
 
 <a href="https://github.com/mrz1836/sigil/releases"><img src="https://img.shields.io/github/release-pre/mrz1836/sigil?include_prereleases&style=flat-square&logo=github&color=black" alt="Release"></a>
 <a href="https://golang.org/"><img src="https://img.shields.io/github/go-mod/go-version/mrz1836/sigil?style=flat-square&logo=go&color=00ADD8" alt="Go Version"></a>
-<a href="https://github.com/mrz1836/sigil/blob/master/LICENSE"><img src="https://img.shields.io/github/license/mrz1836/sigil?style=flat-square&color=blue" alt="License"></a>
+<a href="https://github.com/mrz1836/sigil/blob/master/LICENSE"><img src="https://img.shields.io/github/license/mrz1836/sigil?style=flat-square&color=blue&v=1" alt="License"></a>
 
 <br/>
 
@@ -459,4 +459,4 @@ or by making a [**bitcoin donation**](https://mrz1818.com/?tab=tips&utm_source=g
 
 ## 📝 License
 
-[![License](https://img.shields.io/github/license/mrz1836/sigil.svg?style=flat)](LICENSE)
+[![License](https://img.shields.io/github/license/mrz1836/sigil.svg?style=flat&v=1)](LICENSE)

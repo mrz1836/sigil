@@ -305,6 +305,129 @@ func TestCheckAddress_UnknownChain(t *testing.T) {
 	assert.ErrorIs(t, err, ErrUnknownChain)
 }
 
+func TestCheckAddress_UnsupportedChain(t *testing.T) {
+	t.Parallel()
+
+	utxoProvider := newMockUTXOProvider()
+	balanceProvider := newMockBalanceProvider()
+	configProvider := newMockConfigProvider()
+
+	service := NewService(&Config{
+		UTXOStore:      utxoProvider,
+		BalanceService: balanceProvider,
+		Config:         configProvider,
+	})
+
+	tests := []struct {
+		name    string
+		chainID chain.ID
+		address string
+	}{
+		{
+			name:    "BTC unsupported",
+			chainID: chain.BTC,
+			address: "1BTCAddress",
+		},
+		{
+			name:    "BCH unsupported",
+			chainID: chain.BCH,
+			address: "1BCHAddress",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := &CheckRequest{
+				ChainID: tt.chainID,
+				Address: tt.address,
+			}
+
+			result, err := service.CheckAddress(context.Background(), req)
+			require.Error(t, err)
+			assert.Nil(t, result)
+			require.ErrorIs(t, err, ErrUnsupportedChain)
+			assert.Contains(t, err.Error(), string(tt.chainID))
+		})
+	}
+}
+
+func TestCheckAddress_BSV_RefreshError(t *testing.T) {
+	t.Parallel()
+
+	utxoProvider := newMockUTXOProvider()
+	balanceProvider := newMockBalanceProvider()
+	configProvider := newMockConfigProvider()
+
+	// Set up refresh error
+	utxoProvider.refreshErr = errors.New("network timeout") //nolint:err113 // Test error
+
+	service := NewService(&Config{
+		UTXOStore:      utxoProvider,
+		BalanceService: balanceProvider,
+		Config:         configProvider,
+	})
+
+	req := &CheckRequest{
+		ChainID: chain.BSV,
+		Address: "1FAIL",
+	}
+
+	result, err := service.CheckAddress(context.Background(), req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "refreshing BSV address")
+	assert.Contains(t, err.Error(), "network timeout")
+}
+
+func TestCheckAddress_BSV_WithLabel(t *testing.T) {
+	t.Parallel()
+
+	utxoProvider := newMockUTXOProvider()
+	balanceProvider := newMockBalanceProvider()
+	configProvider := newMockConfigProvider()
+
+	// Add address with label
+	key := string(chain.BSV) + ":1LABELED"
+	utxoProvider.addresses[key] = &utxostore.AddressMetadata{
+		ChainID:     chain.BSV,
+		Address:     "1LABELED",
+		HasActivity: true,
+		Label:       "My Wallet",
+	}
+	utxoProvider.utxos[key] = []*utxostore.StoredUTXO{
+		{
+			ChainID: chain.BSV,
+			Address: "1LABELED",
+			TxID:    "tx1",
+			Vout:    0,
+			Amount:  50000,
+			Spent:   false,
+		},
+	}
+
+	service := NewService(&Config{
+		UTXOStore:      utxoProvider,
+		BalanceService: balanceProvider,
+		Config:         configProvider,
+	})
+
+	req := &CheckRequest{
+		ChainID: chain.BSV,
+		Address: "1LABELED",
+	}
+
+	result, err := service.CheckAddress(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, "1LABELED", result.Address)
+	assert.Equal(t, uint64(50000), result.Balance)
+	assert.Equal(t, "My Wallet", result.Label)
+	assert.True(t, result.HasActivity)
+}
+
 func TestRefreshBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -361,6 +484,42 @@ func TestRefreshBatch_WithTimeout(t *testing.T) {
 
 	// Should succeed within timeout
 	assert.True(t, results[0].Success)
+}
+
+// TestGetLabel_Nil tests getLabel with nil metadata.
+func TestGetLabel_Nil(t *testing.T) {
+	t.Parallel()
+
+	label := getLabel(nil)
+	assert.Empty(t, label)
+}
+
+// TestGetLabel_WithLabel tests getLabel with non-nil metadata.
+func TestGetLabel_WithLabel(t *testing.T) {
+	t.Parallel()
+
+	meta := &utxostore.AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "1ABC",
+		Label:   "Test Label",
+	}
+
+	label := getLabel(meta)
+	assert.Equal(t, "Test Label", label)
+}
+
+// TestGetLabel_EmptyLabel tests getLabel with empty label in metadata.
+func TestGetLabel_EmptyLabel(t *testing.T) {
+	t.Parallel()
+
+	meta := &utxostore.AddressMetadata{
+		ChainID: chain.BSV,
+		Address: "1ABC",
+		Label:   "",
+	}
+
+	label := getLabel(meta)
+	assert.Empty(t, label)
 }
 
 // Mock implementations
@@ -438,8 +597,10 @@ func (m *mockUTXOProvider) addAddress(chainID chain.ID, address string, satoshis
 }
 
 type mockBalanceProvider struct {
-	balances map[string]*balance.FetchResult
-	fetchErr error
+	balances       map[string]*balance.FetchResult
+	fetchErr       error
+	fetchDelay     time.Duration
+	fetchDelayFunc func(address string) time.Duration
 }
 
 func newMockBalanceProvider() *mockBalanceProvider {
@@ -448,7 +609,21 @@ func newMockBalanceProvider() *mockBalanceProvider {
 	}
 }
 
-func (m *mockBalanceProvider) FetchBalance(_ context.Context, req *balance.FetchRequest) (*balance.FetchResult, error) {
+func (m *mockBalanceProvider) FetchBalance(ctx context.Context, req *balance.FetchRequest) (*balance.FetchResult, error) {
+	// Apply delay if specified
+	delay := m.fetchDelay
+	if m.fetchDelayFunc != nil {
+		delay = m.fetchDelayFunc(req.Address)
+	}
+
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
 	if m.fetchErr != nil {
 		return nil, m.fetchErr
 	}

@@ -230,6 +230,7 @@ View the comprehensive documentation for Sigil:
 ### Key Features
 
 - 🔑 **HD Wallet Support** — BIP39 mnemonic phrases with BIP32/BIP44 derivation
+- 🛡️ **Shamir's Secret Sharing** — Split your wallet seed into multiple shares for enhanced security
 - 💰 **Multi-Chain Balances** — Check balances across all supported networks
 - 📤 **Transaction Management** — Create, sign, and broadcast transactions
 - 🔐 **Secure Sessions** — Encrypted session management using OS keychain

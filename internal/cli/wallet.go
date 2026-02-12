@@ -35,6 +35,14 @@ var (
 	restorePassphrase bool
 	// restoreScan indicates whether to scan for existing UTXOs after restore.
 	restoreScan bool
+	// createShamir indicates whether to use Shamir Secret Sharing.
+	createShamir bool
+	// createThreshold is the number of shares required to reconstruct the wallet.
+	createThreshold int
+	// createShareCount is the total number of shares to generate.
+	createShareCount int
+	// restoreShamir indicates whether to restore from Shamir shares.
+	restoreShamir bool
 )
 
 // walletCmd is the parent command for wallet operations.
@@ -122,8 +130,12 @@ func init() {
 	walletCreateCmd.Flags().IntVar(&createWords, "words", 12, "mnemonic word count (12 or 24)")
 	walletCreateCmd.Flags().BoolVar(&createPassphrase, "passphrase", false, "use a BIP39 passphrase")
 	walletCreateCmd.Flags().BoolVar(&createScan, "scan", false, "scan for existing UTXOs after creation")
+	walletCreateCmd.Flags().BoolVar(&createShamir, "shamir", false, "use Shamir Secret Sharing")
+	walletCreateCmd.Flags().IntVar(&createThreshold, "threshold", 3, "number of shares required to restore (default 3)")
+	walletCreateCmd.Flags().IntVar(&createShareCount, "shares", 5, "total number of shares to generate (default 5)")
 
 	walletRestoreCmd.Flags().StringVar(&restoreInput, "input", "", "seed material (mnemonic, WIF, or hex)")
 	walletRestoreCmd.Flags().BoolVar(&restorePassphrase, "passphrase", false, "use a BIP39 passphrase (for mnemonic only)")
 	walletRestoreCmd.Flags().BoolVar(&restoreScan, "scan", true, "scan for existing UTXOs after restore")
+	walletRestoreCmd.Flags().BoolVar(&restoreShamir, "shamir", false, "restore from Shamir shares")
 }

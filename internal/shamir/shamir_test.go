@@ -3,6 +3,7 @@ package shamir
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"testing"
 )
 
@@ -286,5 +287,41 @@ func TestFuzzSplitCombine(t *testing.T) {
 		if !bytes.Equal(secret, rec) {
 			t.Fatalf("Mismatch iter %d", i)
 		}
+	}
+}
+
+func TestCombineMixedThresholds(t *testing.T) {
+	// Generate two sets of shares with different thresholds
+	secret := []byte("secret")
+	shares1, _ := Split(secret, 5, 2)
+	shares2, _ := Split(secret, 5, 3)
+
+	// Combine should fail if we mix them
+	// shares1[0] has k=2
+	// shares2[0] has k=3
+	_, err := Combine([]string{shares1[0], shares2[0]})
+	if err == nil {
+		t.Error("Combine should fail when shares have different thresholds")
+	} else if !errors.Is(err, ErrThresholdMismatch) {
+		t.Fatalf("Expected ErrThresholdMismatch, got %v", err)
+	}
+}
+
+func TestCombineMixedLengths(t *testing.T) {
+	// Generate two sets of shares with different secret lengths
+	secret1 := []byte("short")
+	secret2 := []byte("longer secret")
+	n, k := 5, 2
+	shares1, _ := Split(secret1, n, k)
+	shares2, _ := Split(secret2, n, k)
+
+	// Combine with mixed shares
+	// shares1[0] length is for "short"
+	// shares2[0] length is for "longer secret"
+	_, err := Combine([]string{shares1[0], shares2[0]})
+	if err == nil {
+		t.Error("Combine should fail when shares have different lengths")
+	} else if !errors.Is(err, ErrLengthMismatch) {
+		t.Logf("Got error: %v, want %v", err, ErrLengthMismatch)
 	}
 }

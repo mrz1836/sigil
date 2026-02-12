@@ -3,18 +3,28 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
+	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/balance"
 	"github.com/mrz1836/sigil/internal/wallet"
+)
+
+// Test error variables for err113 compliance
+var (
+	errTestError = fmt.Errorf("test error")
+	errReadError = fmt.Errorf("read error")
 )
 
 // mockConfigProvider implements ConfigProvider for testing.
@@ -501,3 +511,283 @@ func TestOutputBalanceJSON_NilBalancesSlice(t *testing.T) {
 // - TestFetchETHBalances*
 // - TestFetchBSVBalances*
 // - TestFetchBalancesForAddress*
+
+func TestSortBalanceResults(t *testing.T) {
+	t.Parallel()
+
+	input := []BalanceResult{
+		{Chain: "eth", Address: "0xb", Token: "t2"},
+		{Chain: "eth", Address: "0xa", Token: "t1"},
+		{Chain: "bsv", Address: "1a"},
+		{Chain: "eth", Address: "0xb", Token: "t1"},
+	}
+
+	sortBalanceResults(input)
+
+	// Expected order:
+	// 1. bsv, 1a (chain bsv < eth)
+	// 2. eth, 0xa, t1 (address 0xa < 0xb)
+	// 3. eth, 0xb, t1 (token t1 < t2)
+	// 4. eth, 0xb, t2
+
+	assert.Equal(t, "bsv", input[0].Chain)
+	assert.Equal(t, "1a", input[0].Address)
+
+	assert.Equal(t, "eth", input[1].Chain)
+	assert.Equal(t, "0xa", input[1].Address)
+
+	assert.Equal(t, "eth", input[2].Chain)
+	assert.Equal(t, "0xb", input[2].Address)
+	assert.Equal(t, "t1", input[2].Token)
+
+	assert.Equal(t, "eth", input[3].Chain)
+	assert.Equal(t, "0xb", input[3].Address)
+	assert.Equal(t, "t2", input[3].Token)
+}
+
+func TestBuildAddressList(t *testing.T) {
+	t.Parallel()
+
+	w := &wallet.Wallet{
+		Addresses: map[wallet.ChainID][]wallet.Address{
+			wallet.ChainETH: {
+				{Address: "0x1"},
+				{Address: "0x2"},
+			},
+			wallet.ChainBSV: {
+				{Address: "1a"},
+			},
+		},
+	}
+
+	// Test no filter
+	list := buildAddressList(w, "")
+	assert.Len(t, list, 3)
+	// Order is not guaranteed due to map iteration, so we check existence
+	foundETH := 0
+	foundBSV := 0
+	for _, a := range list {
+		switch a.ChainID {
+		case wallet.ChainETH:
+			foundETH++
+		case wallet.ChainBSV:
+			foundBSV++
+		case wallet.ChainBTC, wallet.ChainBCH:
+			// Other chains not counted in this test
+		}
+	}
+	assert.Equal(t, 2, foundETH)
+	assert.Equal(t, 1, foundBSV)
+
+	// Test filter ETH
+	listETH := buildAddressList(w, "eth")
+	assert.Len(t, listETH, 2)
+	for _, a := range listETH {
+		assert.Equal(t, wallet.ChainETH, a.ChainID)
+	}
+
+	// Test filter BSV
+	listBSV := buildAddressList(w, "bsv")
+	assert.Len(t, listBSV, 1)
+	assert.Equal(t, wallet.ChainBSV, listBSV[0].ChainID)
+	assert.Equal(t, "1a", listBSV[0].Address)
+}
+
+func TestConvertToBalanceResponse(t *testing.T) {
+	t.Parallel()
+
+	batchResult := &balance.FetchBatchResult{
+		Results: []*balance.FetchResult{
+			{
+				ChainID: "eth",
+				Address: "0x1",
+				Balances: []balance.BalanceEntry{
+					{
+						Chain:     wallet.ChainETH,
+						Address:   "0x1",
+						Balance:   "1.0",
+						Symbol:    "ETH",
+						UpdatedAt: time.Now(),
+					},
+				},
+			},
+			{
+				ChainID: "bsv",
+				Address: "1a",
+				Balances: []balance.BalanceEntry{
+					{
+						Chain:     wallet.ChainBSV,
+						Address:   "1a",
+						Balance:   "0.5",
+						Symbol:    "BSV",
+						Stale:     true,
+						UpdatedAt: time.Now().Add(-10 * time.Minute),
+					},
+				},
+			},
+		},
+		Errors: []error{},
+	}
+
+	resp := convertToBalanceResponse("testwallet", batchResult)
+
+	assert.Equal(t, "testwallet", resp.Wallet)
+	assert.Len(t, resp.Balances, 2)
+	assert.Empty(t, resp.Warning)
+
+	// Check sorting (BSV first)
+	assert.Equal(t, "bsv", resp.Balances[0].Chain)
+	assert.Equal(t, "1a", resp.Balances[0].Address)
+	assert.True(t, resp.Balances[0].Stale)
+	assert.NotEmpty(t, resp.Balances[0].CacheAge)
+
+	assert.Equal(t, "eth", resp.Balances[1].Chain)
+	assert.Equal(t, "0x1", resp.Balances[1].Address)
+	assert.False(t, resp.Balances[1].Stale)
+
+	// Test with errors
+	batchResultWithError := &balance.FetchBatchResult{
+		Results: []*balance.FetchResult{},
+		Errors:  []error{errTestError},
+	}
+	respErr := convertToBalanceResponse("testwallet", batchResultWithError)
+	assert.NotEmpty(t, respErr.Warning)
+}
+
+func TestOutputBalanceResponse(t *testing.T) {
+	// Mock cmdCtx with JSON output
+	mockCfg := &mockConfigProvider{
+		outputFormat: "json",
+	}
+	mockFmt := &mockFormatProvider{format: output.FormatJSON}
+
+	testCmdCtx := &CommandContext{
+		Cfg: mockCfg,
+		Fmt: mockFmt,
+	}
+
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	response := BalanceShowResponse{
+		Wallet: "test",
+		Balances: []BalanceResult{
+			{Chain: "eth", Address: "0x1", Balance: "1.0", Symbol: "ETH"},
+		},
+	}
+
+	err := outputBalanceResponse(cmd, testCmdCtx, response)
+	require.NoError(t, err)
+
+	// Verify JSON output
+	var parsed BalanceShowResponse
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	assert.Equal(t, "test", parsed.Wallet)
+
+	// Test Text output
+	mockFmt.format = output.FormatText
+	mockCfg.outputFormat = "text"
+	buf.Reset()
+
+	err = outputBalanceResponse(cmd, testCmdCtx, response)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Balances for wallet: test")
+}
+
+func TestLoadUTXOStore(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sigil-test-utxo-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	mockCfg := &mockConfigProvider{home: tmpDir}
+	testCmdCtx := &CommandContext{Cfg: mockCfg}
+
+	// Should not panic and return store
+	store := loadUTXOStore(testCmdCtx, "testwallet")
+	assert.NotNil(t, store)
+}
+
+func TestHandleCacheLoadError(t *testing.T) {
+	mockLog := &mockLogger{}
+	testCmdCtx := &CommandContext{Log: mockLog}
+	var buf bytes.Buffer
+
+	// Test Corrupt Error
+	handleCacheLoadError(testCmdCtx, &buf, cache.ErrCorruptCache)
+	assert.Contains(t, buf.String(), "cache was corrupted")
+	assert.NotEmpty(t, mockLog.errors)
+
+	// Test Other Error
+	buf.Reset()
+	mockLog.errors = nil
+	handleCacheLoadError(testCmdCtx, &buf, errReadError)
+	assert.Empty(t, buf.String()) // No output to stderr for general errors
+	assert.NotEmpty(t, mockLog.errors)
+}
+
+// mockLogger implements LogWriter for testing
+type mockLogger struct {
+	info   []string
+	errors []string
+	debug  []string
+}
+
+func (m *mockLogger) Info(format string, v ...interface{}) {
+	m.info = append(m.info, fmt.Sprintf(format, v...))
+}
+
+func (m *mockLogger) Error(format string, v ...interface{}) {
+	m.errors = append(m.errors, fmt.Sprintf(format, v...))
+}
+
+func (m *mockLogger) Debug(format string, v ...interface{}) {
+	m.debug = append(m.debug, fmt.Sprintf(format, v...))
+}
+
+func TestLoadBalanceCache(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sigil-test-cache-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	mockCfg := &mockConfigProvider{home: tmpDir}
+	// Create cache dir
+	_ = os.MkdirAll(filepath.Join(tmpDir, "cache"), 0o700)
+
+	// Test load missing file (should return new cache)
+	testCmdCtx := &CommandContext{Cfg: mockCfg}
+	cacheVal := loadBalanceCache(testCmdCtx, nil)
+	assert.NotNil(t, cacheVal)
+	assert.Equal(t, 0, cacheVal.Size())
+
+	// Test with refresh flag
+	balanceRefresh = true
+	cacheVal = loadBalanceCache(testCmdCtx, nil)
+	assert.NotNil(t, cacheVal)
+	balanceRefresh = false
+}
+
+func TestSaveBalanceCache(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sigil-test-cache-save-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	mockCfg := &mockConfigProvider{home: tmpDir}
+	// Create cache dir
+	_ = os.MkdirAll(filepath.Join(tmpDir, "cache"), 0o700)
+
+	testCmdCtx2 := &CommandContext{Cfg: mockCfg}
+	balanceCache := cache.NewBalanceCache()
+	balanceCache.Set(cache.BalanceCacheEntry{Chain: chain.ETH, Address: "0x1", Balance: "1.0"})
+
+	saveBalanceCache(testCmdCtx2, balanceCache)
+
+	// Verify file exists
+	cachePath := filepath.Join(tmpDir, "cache", "balances.json")
+	_, err = os.Stat(cachePath)
+	assert.NoError(t, err)
+}
+
+func (m *mockLogger) Close() error {
+	return nil
+}

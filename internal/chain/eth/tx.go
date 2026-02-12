@@ -115,10 +115,6 @@ func BuildERC20TransferData(to string, amount *big.Int) ([]byte, error) {
 
 // BuildTransaction creates an unsigned transaction from parameters.
 func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*ethtypes.LegacyTx, error) {
-	if err := params.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid params: %w", err)
-	}
-
 	// Get nonce if not explicitly set
 	if !params.NonceSet {
 		nonce, err := c.GetNonce(ctx, params.From)
@@ -136,6 +132,10 @@ func (c *Client) BuildTransaction(ctx context.Context, params *TxParams) (*ethty
 			return nil, fmt.Errorf("getting chain ID: %w", err)
 		}
 		params.ChainID = chainID
+	}
+
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 
 	toAddr, err := ethcrypto.HexToAddress(params.To)

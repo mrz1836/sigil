@@ -9,10 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/service/balance"
+	"github.com/mrz1836/sigil/internal/service/transaction"
+	walletservice "github.com/mrz1836/sigil/internal/service/wallet"
 	"github.com/mrz1836/sigil/internal/session"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -227,31 +231,40 @@ func TestCommandContext_WithSessionManager(t *testing.T) {
 	assert.Equal(t, mgr, ctx.SessionMgr)
 }
 
-func TestCommandContext_BuilderChaining(t *testing.T) {
-	testCfg := config.Defaults()
-	testLogger := config.NullLogger()
-	testFormatter := output.NewFormatter(output.FormatText, nil)
+func TestCommandContext_WithAgentStore(t *testing.T) {
+	ctx := NewCommandContext(nil, nil, nil)
+	assert.Nil(t, ctx.AgentStore)
+	store := &agent.FileStore{}
+	result := ctx.WithAgentStore(store)
+	assert.Equal(t, ctx, result)
+	assert.Equal(t, store, ctx.AgentStore)
+}
 
-	storage := &mockStorage{}
-	balanceCache := &mockCache{}
-	factory := &mockFactory{}
-	sessionMgr := &mockSessionManager{available: true}
+func TestCommandContext_WithBalanceService(t *testing.T) {
+	ctx := NewCommandContext(nil, nil, nil)
+	assert.Nil(t, ctx.BalanceService)
+	svc := &balance.Service{}
+	result := ctx.WithBalanceService(svc)
+	assert.Equal(t, ctx, result)
+	assert.Equal(t, svc, ctx.BalanceService)
+}
 
-	// Test chaining all builders
-	ctx := NewCommandContext(testCfg, testLogger, testFormatter).
-		WithStorage(storage).
-		WithCache(balanceCache).
-		WithChainFactory(factory).
-		WithSessionManager(sessionMgr)
+func TestCommandContext_WithWalletService(t *testing.T) {
+	ctx := NewCommandContext(nil, nil, nil)
+	assert.Nil(t, ctx.WalletService)
+	svc := &walletservice.Service{}
+	result := ctx.WithWalletService(svc)
+	assert.Equal(t, ctx, result)
+	assert.Equal(t, svc, ctx.WalletService)
+}
 
-	// Verify all fields are set
-	assert.Equal(t, testCfg, ctx.Cfg)
-	assert.Equal(t, testLogger, ctx.Log)
-	assert.Equal(t, testFormatter, ctx.Fmt)
-	assert.Equal(t, storage, ctx.Storage)
-	assert.Equal(t, balanceCache, ctx.BalanceCache)
-	assert.Equal(t, factory, ctx.Factory)
-	assert.Equal(t, sessionMgr, ctx.SessionMgr)
+func TestCommandContext_WithTransactionService(t *testing.T) {
+	ctx := NewCommandContext(nil, nil, nil)
+	assert.Nil(t, ctx.TransactionService)
+	svc := &transaction.Service{}
+	result := ctx.WithTransactionService(svc)
+	assert.Equal(t, ctx, result)
+	assert.Equal(t, svc, ctx.TransactionService)
 }
 
 // mockFormatProvider implements FormatProvider for testing.

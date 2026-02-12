@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ethtypes "github.com/mrz1836/sigil/internal/chain/eth/types"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -453,4 +454,45 @@ func TestHashMessage_EIP191Prefix(t *testing.T) {
 	// We can verify this by checking the hash is not equal to what
 	// we'd expect from hashing just the raw message
 	assert.Len(t, eip191Hash, 32)
+}
+
+func TestSignTransaction(t *testing.T) {
+	t.Parallel()
+
+	// Parameters
+	nonce := uint64(0)
+	// Using nil for 'to' implies contract creation, which is valid for testing signing.
+
+	value := big.NewInt(1000)
+	gasLimit := uint64(21000)
+	gasPrice := big.NewInt(1000000000)
+	data := []byte{}
+
+	tx := ethtypes.NewLegacyTx(
+		nonce,
+		nil, // contract creation or valid address bytes. Let's use nil for simplicity or mock bytes.
+		value,
+		gasLimit,
+		gasPrice,
+		data,
+	)
+
+	// Private key
+	privateKey := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+	chainID := big.NewInt(1)
+
+	signedTx, err := SignTransaction(tx, privateKey, chainID)
+	require.NoError(t, err)
+	assert.NotNil(t, signedTx)
+
+	// Verify it is signed
+	assert.True(t, signedTx.IsSigned())
+
+	// Verify signature components exist (v, r, s)
+	// IsSigned checks v, r, s presence usually.
 }

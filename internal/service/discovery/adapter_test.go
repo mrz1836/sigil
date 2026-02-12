@@ -115,8 +115,14 @@ func TestUTXOStoreAdapter_GetUTXOs(t *testing.T) {
 	utxos := adapter.GetUTXOs(chain.BSV, "1ABC")
 
 	assert.Len(t, utxos, 2)
-	assert.Equal(t, "tx1", utxos[0].TxID)
-	assert.Equal(t, "tx2", utxos[1].TxID)
+
+	// Check both UTXOs are present (order is non-deterministic due to map iteration)
+	txIDs := make(map[string]bool)
+	for _, utxo := range utxos {
+		txIDs[utxo.TxID] = true
+	}
+	assert.True(t, txIDs["tx1"], "tx1 should be present")
+	assert.True(t, txIDs["tx2"], "tx2 should be present")
 }
 
 // TestUTXOStoreAdapter_GetAddress tests delegation of GetAddress.

@@ -105,10 +105,14 @@ func TestAggregateBSVUTXOs_SingleAddress(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, utxos)
 	assert.Len(t, utxos, 2)
-	assert.Equal(t, "tx1", utxos[0].TxID)
-	assert.Equal(t, "tx2", utxos[1].TxID)
-	assert.Equal(t, uint64(100000), utxos[0].Amount)
-	assert.Equal(t, uint64(200000), utxos[1].Amount)
+
+	// Check both UTXOs are present with correct amounts (order is non-deterministic)
+	utxoData := make(map[string]uint64)
+	for _, utxo := range utxos {
+		utxoData[utxo.TxID] = utxo.Amount
+	}
+	assert.Equal(t, uint64(100000), utxoData["tx1"], "tx1 should have amount 100000")
+	assert.Equal(t, uint64(200000), utxoData["tx2"], "tx2 should have amount 200000")
 	assert.Equal(t, 1, mockWOC.getCallCount(), "should call ListUTXOs once")
 }
 

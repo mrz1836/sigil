@@ -140,6 +140,9 @@ func (s *Store) Save() error {
 
 // GetUTXOs returns unspent UTXOs for a chain and optional address filter.
 // If address is empty, returns all unspent UTXOs for the chain.
+// Results are returned in an unspecified order due to map iteration.
+// Callers requiring specific ordering should sort results based on their
+// needs (e.g., by amount for coin selection, by txid for consistency).
 func (s *Store) GetUTXOs(chainID chain.ID, address string) []*StoredUTXO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

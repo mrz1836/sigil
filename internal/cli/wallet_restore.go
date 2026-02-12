@@ -1,15 +1,21 @@
 package cli
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/shamir"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
+
+// ErrMinSharesRequired is returned when < 2 shares are provided.
+var ErrMinSharesRequired = errors.New("at least 2 shares are required")
 
 // runWalletRestore handles the wallet restore command.
 func runWalletRestore(cmd *cobra.Command, args []string) error {
@@ -72,6 +78,10 @@ func validateRestoreTarget(name string, storage *wallet.FileStorage) error {
 
 // getSeedForRestore gets seed material from flag or interactive prompt.
 func getSeedForRestore(cmd *cobra.Command) ([]byte, error) {
+	if restoreShamir {
+		return processShamirRestore(cmd)
+	}
+
 	input := restoreInput
 	if input == "" {
 		var err error
@@ -81,6 +91,44 @@ func getSeedForRestore(cmd *cobra.Command) ([]byte, error) {
 		}
 	}
 	return processSeedInput(input, restorePassphrase, cmd)
+}
+
+// processShamirRestore handles the interactive collection and combination of Shamir shares.
+func processShamirRestore(cmd *cobra.Command) ([]byte, error) {
+	outln(cmd.OutOrStdout(), "Enter your Shamir shares one by one.")
+	outln(cmd.OutOrStdout(), "Press Enter on an empty line when finished.")
+	outln(cmd.OutOrStdout())
+
+	var shares []string
+	scanner := bufio.NewScanner(cmd.InOrStdin())
+
+	for i := 1; ; i++ {
+		out(cmd.OutOrStdout(), "Share %d: ", i)
+		if !scanner.Scan() {
+			break
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			break
+		}
+		shares = append(shares, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
+
+	if len(shares) < 2 {
+		return nil, ErrMinSharesRequired
+	}
+
+	mnemonicBytes, err := shamir.Combine(shares)
+	if err != nil {
+		return nil, fmt.Errorf("failed to combine shares: %w", err)
+	}
+
+	// Treat the combined secret as the mnemonic
+	return processMnemonicInput(string(mnemonicBytes), restorePassphrase, cmd)
 }
 
 // createWalletWithAddresses creates a new wallet and derives addresses.

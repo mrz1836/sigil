@@ -216,11 +216,13 @@ The `discover` command scans all these paths automatically to find your funds, r
 
 | Scheme | Derivation Path | Wallets |
 |--------|-----------------|---------|
-| BSV Standard | `m/44'/236'/0'/...` | RelayX, RockWallet, Twetch, Trezor, Ledger |
-| Bitcoin Legacy | `m/44'/0'/0'/...` | MoneyButton, ElectrumSV imports |
-| Bitcoin Cash | `m/44'/145'/0'/...` | Exodus, Simply.Cash, BCH fork splits |
+| BSV Standard | `m/44'/236'/0'/...` | RelayX, RockWallet, Twetch, Centbee †, Trezor, Ledger |
+| Bitcoin Legacy | `m/44'/0'/0'/...` | MoneyButton †, ElectrumSV imports |
+| Bitcoin Cash | `m/44'/145'/0'/...` | Exodus, Simply.Cash †, BCH fork splits |
 | HandCash Legacy | `m/0'/...` | HandCash 1.x only |
 | Multi-Account | `m/44'/236'/1-4'/...` | Power users with multiple accounts |
+
+† *Service discontinued or shut down*
 
 **Examples:**
 ```bash
@@ -279,7 +281,9 @@ Use --migrate --wallet <name> to consolidate funds.
 | Wallet | Status | Notes |
 |--------|--------|-------|
 | HandCash 2.0+ | Not supported | Uses proprietary non-exportable keys |
-| Centbee | Partial | Uses 4-digit PIN as BIP39 passphrase |
+| Centbee | Supported † | Uses 4-digit PIN as BIP39 passphrase (use `--passphrase`) |
+
+† *Service discontinued — full recovery supported with mnemonic + PIN*
 
 > **Tip:** If you're migrating from HandCash 2.0 or later, you'll need to use the HandCash app to transfer funds to another wallet first, as these versions don't allow mnemonic export.
 

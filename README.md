@@ -280,7 +280,7 @@ Sigil automatically scans these derivation paths to find your funds:
 
 | Derivation Scheme | Path | Supported Wallets |
 |-------------------|------|-------------------|
-| **BSV Standard** | `m/44'/236'/0'/...` | [RelayX](https://relayx.com/), [RockWallet](https://rockwallet.com/), [Twetch](https://twetch.com/), Trezor, Ledger, KeepKey |
+| **BSV Standard** | `m/44'/236'/0'/...` | [RelayX](https://relayx.com/), [RockWallet](https://rockwallet.com/), [Twetch](https://twetch.com/), [Centbee](https://www.centbee.com/) †, Trezor, Ledger, KeepKey |
 | **Bitcoin Legacy** | `m/44'/0'/0'/...` | [MoneyButton](https://www.moneybutton.com/) †, [ElectrumSV](https://electrumsv.io/) |
 | **Bitcoin Cash** | `m/44'/145'/0'/...` | [Exodus](https://www.exodus.com/), Simply.Cash †, BCH fork splits |
 | **HandCash Legacy** | `m/0'/...` | [HandCash 1.x](https://handcash.io/) (legacy version only) |
@@ -291,6 +291,7 @@ Sigil automatically scans these derivation paths to find your funds:
 
 Sigil provides a recovery path for users of these defunct BSV services:
 
+- **[Centbee](https://www.centbee.com/)** — Popular BSV mobile wallet that ceased operations in 2026. Uses BSV Standard derivation (`m/44'/236'/...`) with 4-digit PIN as BIP39 passphrase.
 - **[MoneyButton](https://www.moneybutton.com/)** — Popular BSV wallet and identity provider that shut down in 2023. Used Bitcoin Legacy derivation (`m/44'/0'/...`).
 - **Simply.Cash** — Mobile BSV wallet that ceased operations. Used Bitcoin Cash derivation path (`m/44'/145'/...`).
 - **[HandCash 1.x](https://handcash.io/)** — Early versions of HandCash used a non-standard legacy path (`m/0'/...`). Note: HandCash 2.0+ uses proprietary non-exportable keys and cannot be imported.
@@ -302,7 +303,6 @@ Sigil also supports migrating from active BSV wallets:
 - **[RelayX](https://relayx.com/)** — BSV wallet and token platform
 - **[RockWallet](https://rockwallet.com/)** — Multi-chain mobile wallet with BSV support
 - **[Twetch](https://twetch.com/)** — BSV social media platform with integrated wallet
-- **[Centbee](https://www.centbee.com/)** — BSV mobile wallet (requires 4-digit PIN as BIP39 passphrase)
 - **[ElectrumSV](https://electrumsv.io/)** — Desktop BSV wallet
 - **[Exodus](https://www.exodus.com/)** — Multi-chain desktop/mobile wallet
 

@@ -194,7 +194,14 @@ func runWalletCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display results
-	displayMnemonic(mnemonic, cmd)
+	if createShamir {
+		if err := handleShamirCreation(mnemonic, cmd); err != nil {
+			return err
+		}
+	} else {
+		displayMnemonic(mnemonic, cmd)
+	}
+
 	displayWalletAddresses(w, cmd)
 
 	// Scan for UTXOs if requested
@@ -230,6 +237,28 @@ func displayMnemonic(mnemonic string, cmd *cobra.Command) {
 	}
 
 	outln(w)
+	outln(w, "===================================================================")
+	outln(w)
+}
+
+// displayShamirShares shows the generated Shamir shares.
+func displayShamirShares(shares []string, threshold int, cmd *cobra.Command) {
+	w := cmd.OutOrStdout()
+	outln(w)
+	outln(w, "===================================================================")
+	outln(w, "                    SHAMIR SECRET SHARES")
+	outln(w, "===================================================================")
+	outln(w)
+	out(w, "Your wallet seed has been split into %d shares.\n", len(shares))
+	out(w, "You need any %d of them to recover your wallet.\n", threshold)
+	outln(w)
+	outln(w, "Store each share in a separate, secure location.")
+	outln(w)
+
+	for i, share := range shares {
+		out(w, "Share %d:\n%s\n\n", i+1, share)
+	}
+
 	outln(w, "===================================================================")
 	outln(w)
 }

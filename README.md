@@ -99,6 +99,13 @@
     </td>
   </tr>
 </table>
+
+<br/>
+
+### 🎥 Demo
+
+<img src="examples/demo.gif" alt="Sigil Demo" title="Sigil Demo"/>
+
 <br/>
 
 ## 🚀 Installation

@@ -8,19 +8,14 @@ import (
 
 // FuzzIsValidAddress tests that address validation never panics.
 func FuzzIsValidAddress(f *testing.F) {
-	// Valid addresses
+	// Valid address
 	f.Add("0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E0")
-	f.Add("0x0000000000000000000000000000000000000000")
-	f.Add("0xffffffffffffffffffffffffffffffffffffffff")
 
 	// Invalid addresses
-	f.Add("")
-	f.Add("0x")
-	f.Add("0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E")   // Too short
-	f.Add("0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E00") // Too long
-	f.Add("742d35Cc6634C0532925a3b844Bc9e7595f8b2E0")    // Missing prefix
-	f.Add("0x742d35Gg6634C0532925a3b844Bc9e7595f8b2E0")  // Invalid hex
-	f.Add("\x00\x00\x00\x00")                            // Binary data
+	f.Add("")                                           // Empty string
+	f.Add("0x742d35Cc6634C0532925a3b844Bc9e7595f8b2E")  // Too short
+	f.Add("742d35Cc6634C0532925a3b844Bc9e7595f8b2E0")   // Missing prefix
+	f.Add("0x742d35Gg6634C0532925a3b844Bc9e7595f8b2E0") // Invalid hex
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Should not panic

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"syscall"
 
 	"golang.org/x/term"
 
@@ -28,7 +27,7 @@ var (
 func promptPassword(prompt string) ([]byte, error) {
 	out(os.Stderr, "%s", prompt)
 
-	password, err := term.ReadPassword(syscall.Stdin)
+	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	outln(os.Stderr) // Add newline after hidden input
 
 	if err != nil {

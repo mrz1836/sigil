@@ -157,6 +157,15 @@ Generates a new receiving address for the specified chain.
 
 <br>
 
+### Check for incoming funds
+
+```bash
+sigil receive --wallet main --chain bsv --check
+```
+Checks for incoming transactions to your wallet.
+
+<br>
+
 ### Send a transaction
 
 ```bash

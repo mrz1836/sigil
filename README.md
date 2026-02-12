@@ -125,6 +125,8 @@ go build -o bin/sigil ./cmd/sigil
 
 Get up and running with these essential commands:
 
+<br>
+
 ### Create a wallet
 
 ```bash

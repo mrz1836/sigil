@@ -117,6 +117,9 @@ sigil wallet create <name> [flags]
 | `--words` | `12` | Mnemonic word count (12 or 24) |
 | `--passphrase` | `false` | Use a BIP39 passphrase |
 | `--scan` | `false` | Scan for existing UTXOs after creation |
+| `--shamir` | `false` | Use Shamir Secret Sharing |
+| `--threshold` | `3` | Number of shares required to restore |
+| `--shares` | `5` | Total number of shares to generate |
 
 **Examples:**
 ```bash
@@ -124,6 +127,7 @@ sigil wallet create main
 sigil wallet create main --words 24
 sigil wallet create main --passphrase
 sigil wallet create main --scan
+sigil wallet create main --shamir --threshold 2 --shares 3
 ```
 
 #### wallet list
@@ -174,12 +178,14 @@ sigil wallet restore <name> [flags]
 | `--input` | - | Seed material (mnemonic, WIF, or hex) |
 | `--passphrase` | `false` | Use a BIP39 passphrase (for mnemonic only) |
 | `--scan` | `true` | Scan for existing UTXOs after restore |
+| `--shamir` | `false` | Restore from Shamir shares |
 
 **Examples:**
 ```bash
 sigil wallet restore backup --input "abandon abandon ... about"
 sigil wallet restore imported --input "5HueCGU8rMjxEXxiPuD5BDku..."
 sigil wallet restore backup  # Interactive mode
+sigil wallet restore backup --shamir # Interactive Shamir restore
 sigil wallet restore backup --input "..." --scan=false  # Skip UTXO scan
 ```
 

@@ -94,9 +94,9 @@ func FuzzValidateChecksumAddress(f *testing.F) {
 func FuzzNormalizeAddress(f *testing.F) {
 	f.Add("0x742d35cc6634c0532925a3b844bc9e7595f8b2e0") // valid lowercase
 	f.Add("0x742D35CC6634C0532925A3B844BC9E7595F8B2E0") // valid uppercase
-	f.Add("")                                              // empty string
-	f.Add("invalid")                                       // short invalid
-	f.Add("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")  // correct length, invalid hex
+	f.Add("")                                           // empty string
+	f.Add("invalid")                                    // short invalid
+	f.Add("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG") // correct length, invalid hex
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Early exit: Fast length check before validation

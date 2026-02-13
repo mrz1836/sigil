@@ -7,8 +7,6 @@ import (
 
 // AddressInfo holds display information for an address.
 // This is a framework-agnostic representation suitable for CLI, API, or TUI display.
-//
-//nolint:revive // AddressInfo name is intentionally explicit for clarity when used as address.AddressInfo
 type AddressInfo struct {
 	ChainID     chain.ID
 	Address     string
@@ -23,8 +21,6 @@ type AddressInfo struct {
 }
 
 // AddressType represents the type of address (receive or change).
-//
-//nolint:revive // AddressType name is intentionally explicit for clarity when used as address.AddressType
 type AddressType int
 
 const (

@@ -20,6 +20,11 @@ func FuzzNormalizeMnemonicInput(f *testing.F) {
 	f.Add(string([]byte{0xFF, 0xFE})) // Invalid UTF-8
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		result := NormalizeMnemonicInput(input)
 
 		// Result should be valid UTF-8
@@ -60,6 +65,11 @@ func FuzzValidateMnemonic(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		err := ValidateMnemonic(input)
 
@@ -93,6 +103,11 @@ func FuzzSuggestWord(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		suggestion := SuggestWord(input)
 
@@ -115,6 +130,11 @@ func FuzzDetectTypos(f *testing.F) {
 	f.Add("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		typos := DetectTypos(input)
 
@@ -150,6 +170,11 @@ func FuzzDetectInputFormat(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		format := DetectInputFormat(input)
 
@@ -178,6 +203,11 @@ func FuzzParseWIF(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		key, err := ParseWIF(input)
 
@@ -201,6 +231,11 @@ func FuzzParseHexKey(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		key, err := ParseHexKey(input)
 

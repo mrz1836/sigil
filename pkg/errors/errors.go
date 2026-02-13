@@ -1,8 +1,6 @@
 // Package errors provides structured error handling for Sigil.
 // It defines sentinel errors, exit codes, and helpers for adding
 // context, details, and suggestions to errors.
-//
-//nolint:revive // Package name intentionally shadows stdlib for domain-specific error handling
 package errors
 
 import (

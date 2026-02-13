@@ -207,6 +207,18 @@
                 "range-loops": true,
                 "simple": true
             },
+            "revive": {
+                "rules": [
+                    {
+                        "name": "var-naming",
+                        "arguments": [
+                            [],
+                            [],
+                            [{"skipPackageNameChecks": true}]
+                        ]
+                    }
+                ]
+            },
             "unparam": {
                 "check-exported": false
             },

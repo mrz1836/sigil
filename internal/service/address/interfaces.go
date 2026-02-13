@@ -11,8 +11,6 @@ type MetadataProvider interface {
 }
 
 // AddressMetadata contains metadata about an address.
-//
-//nolint:revive // AddressMetadata name is intentionally explicit for clarity when used as address.AddressMetadata
 type AddressMetadata struct {
 	HasActivity bool
 	Label       string

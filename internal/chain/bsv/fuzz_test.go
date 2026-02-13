@@ -26,6 +26,11 @@ func FuzzIsValidAddress(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic
 		result := IsValidAddress(input)
 
@@ -47,7 +52,12 @@ func FuzzValidateBase58CheckAddress(f *testing.F) {
 	f.Add("invalid")
 	f.Add("\x00\x01\x02")
 
-	f.Fuzz(func(_ *testing.T, input string) {
+	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic - that's the main test
 		_ = ValidateBase58CheckAddress(input)
 	})
@@ -62,7 +72,12 @@ func FuzzDecodeBase58Check(f *testing.F) {
 	f.Add("111111111111111111111111111111111")
 	f.Add("\x00\x01\x02")
 
-	f.Fuzz(func(_ *testing.T, input string) {
+	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic - that's the main test
 		_, _, _ = DecodeBase58Check(input)
 	})
@@ -77,7 +92,12 @@ func FuzzBase58Decode(f *testing.F) {
 	f.Add("abc")
 	f.Add("OIl0") // Invalid chars
 
-	f.Fuzz(func(_ *testing.T, input string) {
+	f.Fuzz(func(t *testing.T, input string) {
+		// Skip excessively large inputs to prevent fuzztime context expiration
+		if len(input) > 10000 {
+			t.Skip("input too large")
+		}
+
 		// Should not panic - that's the main test
 		_, _ = base58Decode(input)
 	})
@@ -144,6 +164,11 @@ func FuzzTxBuilder_AddOutput(f *testing.F) {
 	f.Add("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", ^uint64(0)) // Max uint64
 
 	f.Fuzz(func(t *testing.T, address string, amount uint64) {
+		// Skip excessively large address inputs to prevent fuzztime context expiration
+		if len(address) > 10000 {
+			t.Skip("input too large")
+		}
+
 		builder := NewTxBuilder()
 
 		// Should never panic

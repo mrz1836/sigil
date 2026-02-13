@@ -14,8 +14,6 @@ type AddressInput struct {
 
 // BalanceEntry represents a balance for a single address (native or token).
 // This is the framework-agnostic domain type returned by the service.
-//
-//nolint:revive // BalanceEntry name is intentionally explicit for clarity when used as balance.BalanceEntry
 type BalanceEntry struct {
 	Chain       chain.ID
 	Address     string

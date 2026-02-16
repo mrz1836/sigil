@@ -5,7 +5,7 @@ go 1.25.6
 require (
 	filippo.io/age v1.3.1
 	github.com/agnivade/levenshtein v1.2.1
-	github.com/bsv-blockchain/go-sdk v1.2.17
+	github.com/bsv-blockchain/go-sdk v1.2.18
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3

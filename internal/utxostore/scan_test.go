@@ -101,7 +101,7 @@ func TestScanWalletGapLimit(t *testing.T) {
 	for i := range 30 {
 		addresses[i] = wallet.Address{
 			Address: "addr" + string(rune('A'+i)),
-			Index:   uint32(i), //nolint:gosec // test code, i is bounded by loop
+			Index:   uint32(i),
 		}
 	}
 
@@ -135,7 +135,7 @@ func TestScanWalletGapLimitReset(t *testing.T) {
 	for i := range 50 {
 		addresses[i] = wallet.Address{
 			Address: "addr" + string(rune('0'+i/10)) + string(rune('0'+i%10)),
-			Index:   uint32(i), //nolint:gosec // test code, i is bounded by loop
+			Index:   uint32(i),
 		}
 	}
 
@@ -379,7 +379,7 @@ func TestScanWalletBulk_GapLimitRespect(t *testing.T) {
 	for i := range 30 {
 		addresses[i] = wallet.Address{
 			Address: "addr" + string(rune('A'+i)),
-			Index:   uint32(i), //nolint:gosec // test code, i is bounded by loop
+			Index:   uint32(i),
 		}
 	}
 

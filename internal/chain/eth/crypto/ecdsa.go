@@ -58,7 +58,6 @@ func Sign(hash, privateKey []byte) ([]byte, error) {
 	result := make([]byte, 65)
 	copy(result[0:32], r)
 	copy(result[32:64], s)
-	//nolint:gosec // Safe: result is allocated as 65 bytes
 	result[len(result)-1] = v
 
 	return result, nil

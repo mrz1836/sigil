@@ -76,12 +76,12 @@ func encodeList(items []any) []byte {
 // encodeLength encodes the length prefix for strings (offset=0x80) or lists (offset=0xc0).
 func encodeLength(length int, offset byte) []byte {
 	if length < 56 {
-		return []byte{offset + byte(length)}
+		return []byte{offset + byte(length)} //nolint:gosec // G115: length < 56, safe conversion
 	}
 
 	// For lengths >= 56, encode the length as big-endian bytes
 	lenBytes := bigEndianBytes(uint64(length))
-	return append([]byte{offset + 55 + byte(len(lenBytes))}, lenBytes...)
+	return append([]byte{offset + 55 + byte(len(lenBytes))}, lenBytes...) //nolint:gosec // G115: len(lenBytes) <= 8 for any uint64
 }
 
 // bigEndianBytes converts a uint64 to minimal big-endian bytes (no leading zeros).

@@ -80,7 +80,7 @@ func decodeBase58Payload(s string, zeros int) ([]byte, error) {
 		}
 		for j := len(b256) - 1; j >= 0; j-- {
 			carry += int(b256[j]) * 58
-			b256[j] = byte(carry % 256)
+			b256[j] = byte(carry % 256) //nolint:gosec // G115: carry % 256 is always in [0,255], safe conversion
 			carry /= 256
 		}
 	}

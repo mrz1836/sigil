@@ -86,8 +86,6 @@ func assertAddressCount(t *testing.T, store *Store, chainID chain.ID, expected i
 }
 
 // createLargeScaleStore creates a store with many addresses and UTXOs for performance testing.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func createLargeScaleStore(t *testing.T, chainID chain.ID, numAddresses, utxosPerAddress int, amountPerUTXO uint64) (*Store, uint64) {
 	t.Helper()
 	store := createTestStore(t)

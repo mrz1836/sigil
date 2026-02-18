@@ -245,7 +245,7 @@ func TestScanParallel_WorkerPoolSaturation(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		schemes[i] = PathScheme{
 			Name:       string(rune('A' + i)),
-			CoinType:   uint32(i), //nolint:gosec // test value, always 0-9
+			CoinType:   uint32(i),
 			Purpose:    44,
 			Accounts:   []uint32{0},
 			ScanChange: false,

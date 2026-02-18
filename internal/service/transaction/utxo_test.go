@@ -185,8 +185,8 @@ func TestAggregateBSVUTXOs_ConcurrentFetch(t *testing.T) {
 	}
 	for i := 0; i < 20; i++ {
 		addresses[i] = wallet.Address{
-			Address: validAddrs[i%len(validAddrs)], //nolint:gosec // Test data, i < 20 and len(validAddrs) = 4
-			Index:   uint32(i),                     //nolint:gosec // Test data, i < 20 fits in uint32
+			Address: validAddrs[i%len(validAddrs)],
+			Index:   uint32(i),
 			Path:    fmt.Sprintf("m/44'/236'/0'/0/%d", i),
 		}
 	}

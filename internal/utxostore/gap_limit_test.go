@@ -12,8 +12,6 @@ import (
 // DefaultGapLimit is defined in scan.go (20 addresses).
 
 // TestGapLimit_FundsAtIndex19 tests finding funds at the edge of the gap limit.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_FundsAtIndex19(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -51,8 +49,6 @@ func TestGapLimit_FundsAtIndex19(t *testing.T) {
 
 // TestGapLimit_FundsAtIndex20 tests missing funds beyond the initial gap limit.
 // This simulates what would happen if scanning stopped at gap limit.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_FundsAtIndex20(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -86,8 +82,6 @@ func TestGapLimit_FundsAtIndex20(t *testing.T) {
 }
 
 // TestGapLimit_FundsAt0And25 tests finding funds at beginning and beyond gap.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_FundsAt0And25(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -123,8 +117,6 @@ func TestGapLimit_FundsAt0And25(t *testing.T) {
 }
 
 // TestGapLimit_MultipleGaps tests funds scattered with multiple gaps.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_MultipleGaps(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -156,8 +148,6 @@ func TestGapLimit_MultipleGaps(t *testing.T) {
 }
 
 // TestGapLimit_ResetOnActivity tests gap counter reset when activity is found.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_ResetOnActivity(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -220,8 +210,6 @@ func TestGapLimit_ConsecutiveFunds(t *testing.T) {
 }
 
 // TestGapLimit_ChangeAddresses tests gap limit behavior for change addresses.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_ChangeAddresses(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -265,8 +253,6 @@ func TestGapLimit_ChangeAddresses(t *testing.T) {
 }
 
 // TestGapLimit_NoFundsInRange tests scanning when no funds exist.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_NoFundsInRange(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -287,8 +273,6 @@ func TestGapLimit_NoFundsInRange(t *testing.T) {
 }
 
 // TestGapLimit_UnusedAddressesQuery tests querying unused addresses.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_UnusedAddressesQuery(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -319,8 +303,6 @@ func TestGapLimit_UnusedAddressesQuery(t *testing.T) {
 }
 
 // TestGapLimit_LargeGapScenario tests a scenario with many empty addresses.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestGapLimit_LargeGapScenario(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)

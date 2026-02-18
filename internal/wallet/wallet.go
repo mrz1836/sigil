@@ -149,7 +149,6 @@ func (w *Wallet) DeriveAddresses(seed []byte, count int) error {
 
 		// Safe conversion: count validated to be in [0, MaxAddressDerivation]
 		for i := 0; i < count; i++ {
-			//nolint:gosec // G115: Safe conversion - i < count <= 100000 < MaxUint32
 			idx := uint32(i)
 
 			addr, err := DeriveAddress(seed, chain,

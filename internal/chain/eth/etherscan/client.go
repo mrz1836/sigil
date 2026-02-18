@@ -134,7 +134,7 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) (string, erro
 	// leaking it in server logs, proxy logs, and URL history.
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: URL is constructed from validated config, not user input
 	if err != nil {
 		return "", fmt.Errorf("sending request: %w", err)
 	}

@@ -157,7 +157,7 @@ func TestBalanceCache(t *testing.T) {
 		})
 
 		// Set USDC balance
-		cache.Set(BalanceCacheEntry{
+		cache.Set(BalanceCacheEntry{ //nolint:gosec // G101: test data, not real credentials
 			Chain:    chain.ETH,
 			Address:  "0x123",
 			Balance:  "500.0",
@@ -288,7 +288,7 @@ func TestFileStorage_ConcurrentAccess(t *testing.T) {
 			cache := NewBalanceCache()
 			cache.Set(BalanceCacheEntry{
 				Chain:   chain.ETH,
-				Address: "0xwriter" + string(rune('0'+id)),
+				Address: "0xwriter" + string(rune('0'+id)), //nolint:gosec // G115: id is bounded by test goroutine count
 				Balance: "1.0",
 			})
 			_ = storage.Save(cache)

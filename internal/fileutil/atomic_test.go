@@ -63,7 +63,7 @@ func TestWriteAtomic_Concurrent(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
-			data := []byte("writer-" + string(rune('0'+id)))
+			data := []byte("writer-" + string(rune('0'+id))) //nolint:gosec // G115: id is bounded by test goroutine count
 			err := WriteAtomic(target, data, 0o600)
 			assert.NoError(t, err)
 			done <- id

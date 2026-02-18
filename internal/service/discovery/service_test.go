@@ -659,7 +659,7 @@ type mockConfigProvider struct {
 }
 
 func newMockConfigProvider() *mockConfigProvider {
-	return &mockConfigProvider{
+	return &mockConfigProvider{ //nolint:gosec // G101: test data, not real credentials
 		bsvAPIKey:          "test-bsv-key",
 		ethEtherscanAPIKey: "test-etherscan-key",
 	}

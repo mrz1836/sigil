@@ -484,7 +484,7 @@ func (m *mockUTXOProvider) Save() error {
 }
 
 func (m *mockUTXOProvider) IsSpent(chainID chain.ID, txid string, vout uint32) bool {
-	key := string(chainID) + ":" + txid + ":" + string(rune(vout+'0'))
+	key := string(chainID) + ":" + txid + ":" + string(rune(vout+'0')) //nolint:gosec // G115: vout is a small index value
 	return m.spent[key]
 }
 
@@ -493,7 +493,7 @@ func (m *mockUTXOProvider) AddUTXO(_ *utxostore.StoredUTXO) {
 }
 
 func (m *mockUTXOProvider) MarkSpent(chainID chain.ID, txid string, vout uint32, _ string) bool {
-	key := string(chainID) + ":" + txid + ":" + string(rune(vout+'0'))
+	key := string(chainID) + ":" + txid + ":" + string(rune(vout+'0')) //nolint:gosec // G115: vout is a small index value
 	wasUnspent := !m.spent[key]
 	m.spent[key] = true
 	return wasUnspent

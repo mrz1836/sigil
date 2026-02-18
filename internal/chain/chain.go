@@ -226,7 +226,7 @@ type SendRequest struct {
 	From          string   // Sender address (primary/display for multi-address sends)
 	To            string   // Recipient address
 	Amount        *big.Int // Value in smallest units
-	PrivateKey    []byte   // Signing key for single-address sends (will be zeroed after use)
+	PrivateKey    []byte   //nolint:gosec // G117: signing key field, managed securely and zeroed after use
 	Token         string   // ERC-20 token address (ETH only, empty for native)
 	GasLimit      uint64   // Optional gas limit override (ETH only)
 	FeeRate       uint64   // Optional fee rate override (satoshis per kilobyte)

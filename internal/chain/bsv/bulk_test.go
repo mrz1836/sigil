@@ -187,7 +187,6 @@ func TestBulkOperations_BulkUTXOValidation(t *testing.T) {
 		// 50 UTXOs = 3 batches (20 + 20 + 10)
 		utxos := make([]UTXO, 50)
 		for i := range utxos {
-			//nolint:gosec // Test data, no overflow risk with small index values
 			utxos[i] = UTXO{TxID: "tx", Vout: uint32(i), Amount: 1000}
 		}
 

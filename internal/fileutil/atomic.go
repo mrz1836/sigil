@@ -52,7 +52,7 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	closed = true
 
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec // G703: path is validated by caller, not from user input
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
 

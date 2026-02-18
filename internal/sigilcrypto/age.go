@@ -30,7 +30,7 @@ func SetScryptWorkFactor(factor int) {
 	} else if factor > 22 {
 		factor = 22
 	}
-	scryptWorkFactor.Store(int32(factor)) //nolint:gosec // Range is clamped above
+	scryptWorkFactor.Store(int32(factor))
 }
 
 // Encrypt encrypts plaintext using age with a password-based recipient.

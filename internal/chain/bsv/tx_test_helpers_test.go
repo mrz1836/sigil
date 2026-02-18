@@ -149,7 +149,7 @@ func mockErrorClient() *mockWOCClient {
 
 // testKeyPair holds a valid private key and its corresponding address for testing.
 type testKeyPair struct {
-	PrivateKey []byte
+	PrivateKey []byte //nolint:gosec // G117: test helper struct field
 	Address    string
 }
 

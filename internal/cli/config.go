@@ -489,7 +489,7 @@ func displayConfigJSON(w interface {
 ) error {
 	type networkJSON struct {
 		RPC    string `json:"rpc,omitempty"`
-		APIKey string `json:"api_key,omitempty"`
+		APIKey string `json:"api_key,omitempty"` //nolint:gosec // G117: configuration field, not a hardcoded secret
 	}
 	type configJSON struct {
 		Version int    `json:"version"`

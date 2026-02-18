@@ -498,7 +498,6 @@ func TestNonceManager_RapidSuccession(t *testing.T) {
 
 	// Verify nonces are sequential
 	for i := 0; i < numTxs; i++ {
-		//nolint:gosec // Loop index conversion is safe for test
 		assert.Equal(t, uint64(i), nonces[i], "nonce at index %d", i)
 	}
 }

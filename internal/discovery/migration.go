@@ -67,7 +67,7 @@ type MigrationSource struct {
 
 	// PrivateKey is the derived private key for signing.
 	// This is populated during migration execution.
-	PrivateKey []byte
+	PrivateKey []byte //nolint:gosec // G117: struct field for signing key, managed securely
 }
 
 // MigrationPlan describes a consolidation transaction.
@@ -192,7 +192,7 @@ type TxInput struct {
 	Amount       uint64
 	ScriptPubKey string
 	Address      string
-	PrivateKey   []byte
+	PrivateKey   []byte //nolint:gosec // G117: struct field for signing key, managed securely
 }
 
 // MigrationResult contains the outcome of a migration operation.

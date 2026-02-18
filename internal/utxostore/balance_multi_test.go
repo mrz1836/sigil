@@ -10,8 +10,6 @@ import (
 )
 
 // TestMultiAddressBalance_5Addresses tests balance aggregation across 5 addresses.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestMultiAddressBalance_5Addresses(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -81,8 +79,6 @@ func TestMultiAddressBalance_50Addresses(t *testing.T) {
 }
 
 // TestMultiAddressBalance_MixedReceiveChange tests balance with both receive and change addresses.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestMultiAddressBalance_MixedReceiveChange(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -128,8 +124,6 @@ func TestMultiAddressBalance_MixedReceiveChange(t *testing.T) {
 }
 
 // TestMultiAddressBalance_PartiallySpent tests balance with some UTXOs spent.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestMultiAddressBalance_PartiallySpent(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -170,8 +164,6 @@ func TestMultiAddressBalance_PartiallySpent(t *testing.T) {
 }
 
 // TestMultiAddressBalance_ZeroBalanceMixed tests balance when some addresses have zero balance.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestMultiAddressBalance_ZeroBalanceMixed(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -233,8 +225,6 @@ func TestMultiAddressBalance_SingleSatoshiUTXOs(t *testing.T) {
 }
 
 // TestMultiAddressBalance_LargeAmounts tests balance with large amounts.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestMultiAddressBalance_LargeAmounts(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)

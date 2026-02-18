@@ -54,8 +54,6 @@ func TestState_MarkSpentUpdatesBalance(t *testing.T) {
 }
 
 // TestState_ConcurrentReads tests concurrent read operations don't cause races.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestState_ConcurrentReads(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -97,8 +95,6 @@ func TestState_ConcurrentReads(t *testing.T) {
 }
 
 // TestState_ConcurrentReadsWrites tests concurrent read and write operations.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestState_ConcurrentReadsWrites(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)
@@ -155,7 +151,7 @@ func TestState_ConcurrentReadsWrites(t *testing.T) {
 
 // TestState_PersistReload tests that complex state survives save/load cycle.
 //
-//nolint:gocognit,gosec // Complex test setup required for thorough state testing
+//nolint:gocognit // Complex test setup required for thorough state testing
 func TestState_PersistReload(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)

@@ -263,7 +263,6 @@ func TestValidationReport_Duration(t *testing.T) {
 
 	// Add some UTXOs
 	for i := 0; i < 10; i++ {
-		//nolint:gosec // Test data, no overflow risk with small index values
 		store.AddUTXO(&StoredUTXO{
 			ChainID: chain.BSV,
 			TxID:    "tx",

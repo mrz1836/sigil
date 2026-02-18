@@ -390,7 +390,7 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpResp, err := c.httpClient.Do(httpReq)
+	httpResp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: URL is constructed from validated config, not user input
 	if err != nil {
 		return nil, fmt.Errorf("sending HTTP request: %w", err)
 	}

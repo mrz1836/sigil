@@ -106,7 +106,7 @@ type ClientOptions struct {
 	Broadcasters []Broadcaster
 
 	// APIKey is the optional WhatsOnChain API key for higher rate limits.
-	APIKey string
+	APIKey string //nolint:gosec // G117: configuration field, not a hardcoded secret
 
 	// Network specifies mainnet or testnet.
 	Network Network

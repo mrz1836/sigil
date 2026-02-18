@@ -11,7 +11,7 @@ import (
 //
 //nolint:errcheck // CLI output writes to stdout are intentionally unchecked
 func out(w io.Writer, format string, args ...interface{}) {
-	fmt.Fprintf(w, format, args...)
+	fmt.Fprintf(w, format, args...) //nolint:gosec // G705: format strings are from internal code, not user input
 }
 
 // outln is a helper for CLI output with newline.

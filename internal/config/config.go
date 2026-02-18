@@ -62,7 +62,7 @@ type BSVNetworkConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	API       string `yaml:"api"`
 	Broadcast string `yaml:"broadcast"`
-	APIKey    string `yaml:"api_key"`
+	APIKey    string `yaml:"api_key"` //nolint:gosec // G117: configuration field, not a hardcoded secret
 }
 
 // BTCNetworkConfig defines BTC network settings.

@@ -52,10 +52,8 @@ func ToChecksumAddress(address string) string {
 		// If the hash nibble is >= 8, uppercase the character
 		hashNibble := hash[i]
 		if hashNibble >= '8' && c >= 'a' && c <= 'f' {
-			//nolint:gosec // Safe: i bounded by loop [0,40), result size is 42
 			result[i+2] = c - 32 // Convert to uppercase
 		} else {
-			//nolint:gosec // Safe: i bounded by loop [0,40), result size is 42
 			result[i+2] = c
 		}
 	}

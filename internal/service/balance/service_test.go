@@ -532,7 +532,7 @@ func TestFetchCachedBalances_TokenBalance(t *testing.T) {
 	})
 
 	// Add token balance
-	cache.Set(CacheEntry{
+	cache.Set(CacheEntry{ //nolint:gosec // G101: test data, not real credentials
 		Chain:     chain.ETH,
 		Address:   "0x123",
 		Balance:   "100",

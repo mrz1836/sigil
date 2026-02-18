@@ -136,7 +136,7 @@ type RecoverBeyondGapOptions struct {
 // RecoverBeyondGap scans a specific range of addresses beyond the gap limit.
 // Useful when funds are known to exist at specific indices.
 //
-//nolint:gocognit,gocyclo,nestif,gosec // Recovery logic inherently complex; G115 false positive for index conversion
+//nolint:gocognit,gocyclo,nestif // Recovery logic inherently complex
 func (r *RecoveryScenarios) RecoverBeyondGap(ctx context.Context, seed []byte, opts *RecoverBeyondGapOptions) (*Result, error) {
 	if opts == nil {
 		return nil, sigilerr.WithDetails(sigilerr.ErrInvalidInput, map[string]string{

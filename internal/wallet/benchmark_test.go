@@ -23,7 +23,6 @@ func BenchmarkDeriveAddressETH(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		//nolint:gosec // Benchmark index conversion is safe, i%100 fits in uint32
 		_, _ = DeriveAddress(seed, ChainETH, 0, uint32(i%100))
 	}
 }
@@ -35,7 +34,6 @@ func BenchmarkDeriveAddressBSV(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		//nolint:gosec // Benchmark index conversion is safe, i%100 fits in uint32
 		_, _ = DeriveAddress(seed, ChainBSV, 0, uint32(i%100))
 	}
 }
@@ -64,7 +62,6 @@ func BenchmarkDerivePrivateKey(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		//nolint:gosec // Benchmark index conversion is safe, i%100 fits in uint32
 		key, _ := DerivePrivateKey(seed, ChainETH, 0, uint32(i%100))
 		ZeroBytes(key)
 	}

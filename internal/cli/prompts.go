@@ -27,8 +27,8 @@ var (
 func promptPassword(prompt string) ([]byte, error) {
 	out(os.Stderr, "%s", prompt)
 
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	outln(os.Stderr) // Add newline after hidden input
+	password, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // G115: Fd() returns uintptr, safe conversion for term.ReadPassword
+	outln(os.Stderr)                                       // Add newline after hidden input
 
 	if err != nil {
 		return nil, fmt.Errorf("reading password: %w", err)

@@ -156,7 +156,7 @@ func (g *GorillaPoolARCBroadcaster) Broadcast(ctx context.Context, rawTxHex stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req) //nolint:gosec // G704: URL is constructed from validated config, not user input
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err)
 	}

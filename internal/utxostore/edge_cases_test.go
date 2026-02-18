@@ -69,8 +69,6 @@ func TestEdge_MaxFeeEatsChange(t *testing.T) {
 
 // TestEdge_AllAddressesDust tests consolidating many dust-level UTXOs.
 // With BTC's 546-satoshi dust limit, consolidation may not be economical.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestEdge_AllAddressesDust(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)

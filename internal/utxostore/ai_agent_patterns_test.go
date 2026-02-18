@@ -142,7 +142,6 @@ func TestAIAgent_RapidAddressGeneration(t *testing.T) {
 
 	for i := 0; i < numAddresses; i++ {
 		addr := testAddressN(i)
-		//nolint:gosec // Test code - i is bounded by numAddresses (150)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), i%5 == 0) // Every 5th is change
 
 		// Verify uniqueness
@@ -177,12 +176,10 @@ func TestAIAgent_ConcurrentOperations(t *testing.T) {
 
 	for i := 0; i < numAddresses; i++ {
 		addr := testAddressN(i)
-		//nolint:gosec // Test code - i is bounded by numAddresses (100)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
 
 		for j := 0; j < utxosPerAddress; j++ {
-			//nolint:gosec // Test code - j is bounded by utxosPerAddress (10)
 			utxo := createTestUTXO(chain.BSV, addr, testTxID(i*100+j), uint32(j), 100, false)
 			store.AddUTXO(utxo)
 		}
@@ -267,8 +264,6 @@ func TestAIAgent_BatchPayments(t *testing.T) {
 }
 
 // TestAIAgent_UTXOConsolidation tests consolidating many small UTXOs into fewer large ones.
-//
-//nolint:gosec // Test code uses bounded loop variables for uint32 conversions
 func TestAIAgent_UTXOConsolidation(t *testing.T) {
 	t.Parallel()
 	store := createTestStore(t)

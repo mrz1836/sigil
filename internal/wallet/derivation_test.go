@@ -698,7 +698,7 @@ func BenchmarkDeriveAddressWithCoinType(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _, _ = DeriveAddressWithCoinType(seed, 236, 0, 0, uint32(i%1000)) //nolint:gosec // Benchmark uses modulo to avoid overflow
+		_, _, _, _ = DeriveAddressWithCoinType(seed, 236, 0, 0, uint32(i%1000))
 	}
 }
 
@@ -707,6 +707,6 @@ func BenchmarkDeriveLegacyAddress(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _, _ = DeriveLegacyAddress(seed, uint32(i%1000)) //nolint:gosec // Benchmark uses modulo to avoid overflow
+		_, _, _, _ = DeriveLegacyAddress(seed, uint32(i%1000))
 	}
 }

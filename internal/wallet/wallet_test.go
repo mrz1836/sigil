@@ -334,7 +334,7 @@ func TestWallet_DeriveNextAddress_MaxIndex(t *testing.T) {
 	for i := range addresses {
 		addresses[i] = Address{
 			Address:   "dummy",
-			Index:     uint32(i), //nolint:gosec // i is bounded by MaxAddressDerivation (100000), safe for uint32
+			Index:     uint32(i),
 			Path:      "m/44'/236'/0'/0/0",
 			PublicKey: "dummy",
 		}
@@ -357,7 +357,7 @@ func TestWallet_DeriveNextAddress_MaxIndex(t *testing.T) {
 	for i := range w.ChangeAddresses[ChainBSV] {
 		w.ChangeAddresses[ChainBSV][i] = Address{
 			Address:   "dummy",
-			Index:     uint32(i), //nolint:gosec // i is bounded by MaxAddressDerivation (100000), safe for uint32
+			Index:     uint32(i),
 			Path:      "m/44'/236'/0'/1/0",
 			PublicKey: "dummy",
 		}

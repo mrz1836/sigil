@@ -381,7 +381,7 @@ func TestOutputBalanceJSON_TokenAndStale(t *testing.T) {
 		Timestamp: "2026-01-31T12:00:00Z",
 		Warning:   "Some balances could not be fetched",
 		Balances: []BalanceResult{
-			{
+			{ //nolint:gosec // G101: test data, not real credentials
 				Chain:    "eth",
 				Address:  "0x123",
 				Balance:  "100.0",

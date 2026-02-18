@@ -75,13 +75,13 @@ func formatErrorText(w io.Writer, err error) error {
 
 	if !errors.As(err, &se) {
 		// Generic error
-		sb.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
+		fmt.Fprintf(&sb, "Error: %s\n", err.Error())
 		_, writeErr := w.Write([]byte(sb.String()))
 		return writeErr
 	}
 
 	// Format SigilError with message and optional details/suggestion
-	sb.WriteString(fmt.Sprintf("Error: %s\n", se.Message))
+	fmt.Fprintf(&sb, "Error: %s\n", se.Message)
 
 	if len(se.Details) > 0 {
 		sb.WriteString("\nDetails:\n")
@@ -92,12 +92,12 @@ func formatErrorText(w io.Writer, err error) error {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, se.Details[k]))
+			fmt.Fprintf(&sb, "  %s: %s\n", k, se.Details[k])
 		}
 	}
 
 	if se.Suggestion != "" {
-		sb.WriteString(fmt.Sprintf("\nSuggestion: %s\n", se.Suggestion))
+		fmt.Fprintf(&sb, "\nSuggestion: %s\n", se.Suggestion)
 	}
 
 	_, writeErr := w.Write([]byte(sb.String()))

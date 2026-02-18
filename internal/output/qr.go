@@ -34,7 +34,7 @@ func CanRenderQR(w io.Writer) bool {
 	if !ok {
 		return false
 	}
-	return term.IsTerminal(int(f.Fd()))
+	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115: Fd() returns uintptr, safe conversion for term.IsTerminal
 }
 
 // RenderQR renders a QR code to the writer if it's a terminal.

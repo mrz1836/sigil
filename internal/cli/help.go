@@ -29,7 +29,7 @@ func enrichParentLong(cmd *cobra.Command) {
 
 	for _, sub := range cmd.Commands() {
 		if sub.IsAvailableCommand() {
-			sb.WriteString(fmt.Sprintf("  %-16s %s\n", sub.Name(), sub.Short))
+			fmt.Fprintf(&sb, "  %-16s %s\n", sub.Name(), sub.Short)
 		}
 	}
 

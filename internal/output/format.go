@@ -101,7 +101,7 @@ func DetectFormat(w io.Writer, explicit Format) Format {
 
 	// Check if output is a TTY
 	if f, ok := w.(*os.File); ok {
-		if term.IsTerminal(int(f.Fd())) {
+		if term.IsTerminal(int(f.Fd())) { //nolint:gosec // G115: Fd() returns uintptr, safe conversion for term.IsTerminal
 			return FormatText
 		}
 	}

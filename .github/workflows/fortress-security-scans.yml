@@ -255,14 +255,6 @@ jobs:
       - name: 🚨 Fail job if vulnerabilities found
         if: always() && steps.run-nancy.outputs.nancy-status == 'failure'
         run: |
-          # Distinguish auth failures (e.g. Dependabot PRs without OSS Index creds)
-          # from actual vulnerability detections. A 401 means no credentials were
-          # available — treat this as a warning, not a blocking failure.
-          if grep -q "401 Unauthorized" nancy-output.log 2>/dev/null; then
-            echo "⚠️ Nancy authentication failed (OSS Index credentials unavailable)"
-            echo "This is expected for Dependabot PRs. Skipping vulnerability gate."
-            exit 0
-          fi
           echo "❌ Nancy detected vulnerabilities in dependencies"
           exit 1
 

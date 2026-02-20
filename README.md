@@ -192,6 +192,23 @@ sigil backup create --wallet main
 
 Creates an encrypted backup of your wallet.
 
+<br>
+
+### Keep sigil up to date
+
+```bash
+# Check for a new release
+sigil upgrade --check
+
+# Install the latest release
+sigil upgrade
+
+# If you're running a dev/commit build, add --force
+sigil upgrade --force
+```
+
+Downloads the latest binary from GitHub, verifies SHA256, and replaces in-place. See [`upgrade`](docs/CLI.md#upgrade) for flags.
+
 <br/>
 
 > 📖 **For complete command reference and advanced features, see the [CLI Documentation →](docs/CLI.md)**

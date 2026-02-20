@@ -1249,6 +1249,46 @@ sigil version
 
 <br>
 
+### upgrade
+
+Check for and install the latest release of sigil from GitHub.
+
+```bash
+sigil upgrade [flags]
+```
+
+**Flags:**
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--check` | - | `false` | Check for updates without installing |
+| `--force` | `-f` | `false` | Upgrade even from a dev or commit-hash build |
+| `--use-go-install` | - | `false` | Prefer `go install` over binary download |
+
+**Examples:**
+```bash
+# Check if an update is available (no install)
+sigil upgrade --check
+
+# Upgrade to the latest release (binary download + SHA256 verification)
+sigil upgrade
+
+# Upgrade from a dev build (requires --force)
+sigil upgrade --force
+
+# Use go install instead of binary download
+sigil upgrade --use-go-install
+```
+
+**Upgrade method:**
+
+By default, `upgrade` downloads the platform-specific release binary from GitHub, verifies its SHA256 checksum against the published checksums file, and replaces the running binary in-place (with a backup restored automatically on failure). The `--use-go-install` flag switches to `go install github.com/mrz1836/sigil/cmd/sigil@latest` as a fallback.
+
+**Dev build detection:**
+
+If your current binary was built from source (version reports `dev` or a commit hash), `upgrade` will warn and exit unless `--force` is provided.
+
+<br>
+
 ---
 
 <br>

@@ -17,7 +17,7 @@ import (
 // Default configuration constants
 const (
 	DefaultBaseURL      = "https://api.github.com"
-	DefaultTimeout      = 10 * time.Second
+	DefaultTimeout      = 30 * time.Second
 	maxErrorBodySize    = 1024      // 1KB limit for error response bodies
 	maxResponseBodySize = 64 * 1024 // 64KB limit for success response bodies
 )

@@ -202,6 +202,9 @@ sigil upgrade --check
 
 # Install the latest release
 sigil upgrade
+
+# If you're running a dev/commit build, add --force
+sigil upgrade --force
 ```
 
 Downloads the latest binary from GitHub, verifies SHA256, and replaces in-place. See [`upgrade`](docs/CLI.md#upgrade) for flags.

@@ -1258,11 +1258,11 @@ sigil upgrade [flags]
 ```
 
 **Flags:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--check` | `false` | Check for updates without installing |
-| `--force` | `-f` `false` | Upgrade even from a dev or commit-hash build |
-| `--use-go-install` | `false` | Prefer `go install` over binary download |
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--check` | - | `false` | Check for updates without installing |
+| `--force` | `-f` | `false` | Upgrade even from a dev or commit-hash build |
+| `--use-go-install` | - | `false` | Prefer `go install` over binary download |
 
 **Examples:**
 ```bash

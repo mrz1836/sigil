@@ -7,7 +7,7 @@ require (
 	github.com/agnivade/levenshtein v1.2.1
 	github.com/bsv-blockchain/go-sdk v1.2.18
 	github.com/cosmos/go-bip39 v1.0.0
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mrz1836/go-sanitize v1.5.5

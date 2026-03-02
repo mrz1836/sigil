@@ -46,6 +46,7 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 	if apiKey := s.config.GetETHEtherscanAPIKey(); apiKey != "" {
 		if esClient, esErr := etherscan.NewClient(apiKey, nil); esErr == nil {
 			clientOpts.BroadcastFallback = esClient
+			clientOpts.GasPriceOracle = etherscan.NewGasPriceAdapter(esClient)
 		}
 	}
 	client, err := eth.NewClient(rpcURL, clientOpts)
@@ -204,6 +205,7 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 		PrivateKey: privateKey,
 		Token:      tokenAddress,
 		GasLimit:   estimate.GasLimit,
+		GasPrice:   estimate.GasPrice,
 	}
 
 	// Send transaction

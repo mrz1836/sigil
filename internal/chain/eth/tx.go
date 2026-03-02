@@ -306,6 +306,10 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	if req.GasLimit > 0 {
 		params.GasLimit = req.GasLimit
 	}
+	// Override gas price if specified (ensures sweep uses consistent pricing)
+	if req.GasPrice != nil {
+		params.GasPrice = req.GasPrice
+	}
 
 	feeTotal := new(big.Int).Mul(params.GasPrice, new(big.Int).SetUint64(params.GasLimit))
 

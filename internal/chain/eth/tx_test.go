@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	ethtypes "github.com/mrz1836/sigil/internal/chain/eth/types"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -570,6 +571,178 @@ func newSignedTestTx(t *testing.T) *ethtypes.LegacyTx {
 	signed, err := SignTransaction(tx, privateKey, big.NewInt(1))
 	require.NoError(t, err)
 	return signed
+}
+
+// newFullRPCServer creates a test JSON-RPC server that handles all methods
+// needed by Send(): eth_chainId, eth_gasPrice, eth_estimateGas,
+// eth_getTransactionCount, and eth_sendRawTransaction.
+func newFullRPCServer(t *testing.T, gasPrice, txHash string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); !assert.NoError(t, err) {
+			return
+		}
+
+		method, _ := req["method"].(string)
+		id := req["id"]
+
+		switch method {
+		case "eth_chainId":
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": "0x1"}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "eth_gasPrice":
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": gasPrice}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "eth_estimateGas":
+			// Return 21000 (0x5208) for gas limit
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": "0x5208"}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "eth_getTransactionCount":
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": "0x0"}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "eth_sendRawTransaction":
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": txHash}
+			_ = json.NewEncoder(w).Encode(resp)
+		default:
+			resp := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"error":   map[string]any{"code": -32601, "message": "method not found"},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+}
+
+func TestSend_GasPriceOverride(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	// RPC returns 50 Gwei, but we override with 30 Gwei
+	rpcGasPrice := "0xba43b7400"                // 50 Gwei
+	overrideGasPrice := big.NewInt(30000000000) // 30 Gwei
+
+	srv := newFullRPCServer(t, rpcGasPrice, expectedHash)
+	defer srv.Close()
+
+	client, err := NewClient(srv.URL, &ClientOptions{ChainID: big.NewInt(1)})
+	require.NoError(t, err)
+	defer client.Close()
+
+	privateKey := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+	from, err := DeriveAddress(privateKey)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := client.Send(ctx, chain.SendRequest{
+		From:       from,
+		To:         "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+		Amount:     big.NewInt(1000000000000000000), // 1 ETH
+		PrivateKey: privateKey,
+		GasPrice:   overrideGasPrice,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, result.Hash)
+
+	// Fee should be based on override price (30 Gwei), not RPC price (50 Gwei)
+	// 30 Gwei * 25200 gas (21000 * 1.2 buffer) = 756,000,000,000,000 wei = 0.000756 ETH
+	// Verify it uses the override price in the result
+	assert.Contains(t, result.GasPrice, "30")
+	assert.NotContains(t, result.GasPrice, "50")
+}
+
+func TestSend_NilGasPriceUsesRPCPrice(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	rpcGasPrice := "0x4a817c800" // 20 Gwei
+
+	srv := newFullRPCServer(t, rpcGasPrice, expectedHash)
+	defer srv.Close()
+
+	client, err := NewClient(srv.URL, &ClientOptions{ChainID: big.NewInt(1)})
+	require.NoError(t, err)
+	defer client.Close()
+
+	privateKey := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+	from, err := DeriveAddress(privateKey)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := client.Send(ctx, chain.SendRequest{
+		From:       from,
+		To:         "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+		Amount:     big.NewInt(1000000000000000000), // 1 ETH
+		PrivateKey: privateKey,
+		// GasPrice is nil — should use RPC-fetched price
+	})
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, result.Hash)
+
+	// Fee should be based on RPC price (20 Gwei)
+	assert.Contains(t, result.GasPrice, "20")
+}
+
+func TestSend_ERC20GasPriceOverride(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	// RPC returns 50 Gwei, but we override with 25 Gwei
+	rpcGasPrice := "0xba43b7400"                // 50 Gwei
+	overrideGasPrice := big.NewInt(25000000000) // 25 Gwei
+
+	srv := newFullRPCServer(t, rpcGasPrice, expectedHash)
+	defer srv.Close()
+
+	client, err := NewClient(srv.URL, &ClientOptions{ChainID: big.NewInt(1)})
+	require.NoError(t, err)
+	defer client.Close()
+
+	privateKey := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+	from, err := DeriveAddress(privateKey)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := client.Send(ctx, chain.SendRequest{
+		From:       from,
+		To:         "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+		Amount:     big.NewInt(1000000), // 1 USDC
+		PrivateKey: privateKey,
+		Token:      USDCMainnet,
+		GasLimit:   65000,
+		GasPrice:   overrideGasPrice,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, result.Hash)
+
+	// Fee should be based on override price (25 Gwei), not RPC price (50 Gwei)
+	assert.Contains(t, result.GasPrice, "25")
+	assert.NotContains(t, result.GasPrice, "50")
+
+	// Token should be identified as USDC
+	assert.Equal(t, "USDC", result.Token)
 }
 
 func TestBroadcastTransaction_PrimarySuccess(t *testing.T) {

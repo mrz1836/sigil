@@ -2,11 +2,24 @@ package eth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
+	"sort"
+	"sync"
 
 	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
+)
+
+// errAllRPCsFailed indicates all RPC endpoints failed to return a gas price.
+var errAllRPCsFailed = errors.New("getting gas price: all RPC endpoints failed")
+
+const (
+	// minGasPriceWei is the minimum gas price floor in wei (1 Gwei).
+	minGasPriceWei = 1_000_000_000
+	// mainnetChainID is Ethereum mainnet chain ID.
+	mainnetChainID = 1
 )
 
 // GasSpeed represents the transaction speed preference.
@@ -67,26 +80,136 @@ type GasPrices struct {
 }
 
 // GetGasPrices fetches current gas prices for all speed levels.
+// Uses a layered strategy: Etherscan gas oracle → multi-RPC median → minimum floor.
 func (c *Client) GetGasPrices(ctx context.Context) (*GasPrices, error) {
 	if err := c.connect(ctx); err != nil {
 		return nil, err
 	}
 
-	// Get suggested gas price from the network
-	suggestedPrice, err := c.rpcClient.GasPrice(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting suggested gas price: %w", err)
+	// Strategy 1: Try external gas oracle (most reliable, e.g. Etherscan gas tracker)
+	if c.gasPriceOracle != nil {
+		slow, medium, fast, err := c.gasPriceOracle.GetGasPrices(ctx)
+		if err == nil {
+			return c.applyGasPriceFloor(&GasPrices{
+				Slow: slow, Medium: medium, Fast: fast,
+			}), nil
+		}
+		// Oracle failed — fall through to multi-RPC
 	}
 
-	// Calculate slow and fast prices based on suggested
-	slowPrice := multiplyBigInt(suggestedPrice, slowMultiplier)
-	fastPrice := multiplyBigInt(suggestedPrice, fastMultiplier)
+	// Strategy 2: Multi-RPC median (query all configured RPCs, take median)
+	medianPrice, err := c.getMultiRPCMedianGasPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	return &GasPrices{
+	// Apply speed multipliers to the median
+	slowPrice := multiplyBigInt(medianPrice, slowMultiplier)
+	fastPrice := multiplyBigInt(medianPrice, fastMultiplier)
+
+	// Strategy 3: Apply minimum floor as safety net
+	return c.applyGasPriceFloor(&GasPrices{
 		Slow:   slowPrice,
-		Medium: suggestedPrice,
+		Medium: new(big.Int).Set(medianPrice),
 		Fast:   fastPrice,
-	}, nil
+	}), nil
+}
+
+// getMultiRPCMedianGasPrice queries eth_gasPrice from the primary and all fallback RPCs
+// in parallel and returns the median price. Returns an error if all RPCs fail.
+func (c *Client) getMultiRPCMedianGasPrice(ctx context.Context) (*big.Int, error) {
+	var mu sync.Mutex
+	prices := make([]*big.Int, 0, 1+len(c.fallbackRPCs))
+
+	// Primary RPC
+	if price, err := c.rpcClient.GasPrice(ctx); err == nil {
+		prices = append(prices, price)
+	}
+
+	// Fallback RPCs in parallel
+	var wg sync.WaitGroup
+	for _, fallbackURL := range c.fallbackRPCs {
+		if fallbackURL == c.rpcURL {
+			continue
+		}
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			if price := c.queryFallbackGasPrice(ctx, u); price != nil {
+				mu.Lock()
+				prices = append(prices, price)
+				mu.Unlock()
+			}
+		}(fallbackURL)
+	}
+	wg.Wait()
+
+	if len(prices) == 0 {
+		return nil, errAllRPCsFailed
+	}
+
+	return medianBigInt(prices), nil
+}
+
+// queryFallbackGasPrice queries eth_gasPrice from a single fallback RPC endpoint.
+// Returns nil if the query fails.
+func (c *Client) queryFallbackGasPrice(ctx context.Context, url string) *big.Int {
+	var rpcOpts *rpc.ClientOptions
+	if c.transport != nil {
+		rpcOpts = &rpc.ClientOptions{Transport: c.transport}
+	}
+	fc := rpc.NewClientWithOptions(url, rpcOpts)
+	defer fc.Close()
+	price, err := fc.GasPrice(ctx)
+	if err != nil {
+		return nil
+	}
+	return price
+}
+
+// medianBigInt returns the median of a slice of big.Int values.
+// For even-length slices, returns the average of the two middle values.
+func medianBigInt(values []*big.Int) *big.Int {
+	if len(values) == 0 {
+		return big.NewInt(0)
+	}
+	if len(values) == 1 {
+		return new(big.Int).Set(values[0])
+	}
+
+	// Sort a copy to avoid mutating the input
+	sorted := make([]*big.Int, len(values))
+	copy(sorted, values)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Cmp(sorted[j]) < 0
+	})
+
+	mid := len(sorted) / 2
+	if len(sorted)%2 != 0 {
+		return new(big.Int).Set(sorted[mid])
+	}
+	// Average of two middle values
+	sum := new(big.Int).Add(sorted[mid-1], sorted[mid])
+	return sum.Div(sum, big.NewInt(2))
+}
+
+// applyGasPriceFloor enforces a minimum gas price on mainnet (chain ID 1).
+// L2s and testnets can have sub-gwei gas prices, so the floor is not applied there.
+func (c *Client) applyGasPriceFloor(prices *GasPrices) *GasPrices {
+	if c.chainID == nil || c.chainID.Int64() != mainnetChainID {
+		return prices
+	}
+	floor := big.NewInt(minGasPriceWei)
+	if prices.Slow.Cmp(floor) < 0 {
+		prices.Slow = new(big.Int).Set(floor)
+	}
+	if prices.Medium.Cmp(floor) < 0 {
+		prices.Medium = new(big.Int).Set(floor)
+	}
+	if prices.Fast.Cmp(floor) < 0 {
+		prices.Fast = new(big.Int).Set(floor)
+	}
+	return prices
 }
 
 // GetGasPrice returns the gas price for the specified speed.

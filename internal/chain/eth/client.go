@@ -68,6 +68,12 @@ type Broadcaster interface {
 	BroadcastRawTransaction(ctx context.Context, rawTx []byte) (string, error)
 }
 
+// GasPriceOracle provides gas prices from an external oracle service.
+type GasPriceOracle interface {
+	// GetGasPrices returns gas prices for slow/medium/fast speeds in wei.
+	GetGasPrices(ctx context.Context) (slow, medium, fast *big.Int, err error)
+}
+
 // ClientOptions contains optional configuration for the ETH client.
 type ClientOptions struct {
 	// ChainID overrides the default chain ID detection.
@@ -79,6 +85,8 @@ type ClientOptions struct {
 	FallbackRPCs []string
 	// BroadcastFallback is an optional last-resort broadcaster (e.g. Etherscan).
 	BroadcastFallback Broadcaster
+	// GasPriceOracle is an optional external gas price oracle (e.g. Etherscan gas tracker).
+	GasPriceOracle GasPriceOracle
 }
 
 // Compile-time interface checks
@@ -95,6 +103,7 @@ type Client struct {
 	transport         *http.Transport
 	fallbackRPCs      []string
 	broadcastFallback Broadcaster
+	gasPriceOracle    GasPriceOracle
 	mu                sync.Mutex
 	initErr           error
 	nonceManager      *NonceManager
@@ -125,6 +134,9 @@ func NewClient(rpcURL string, opts *ClientOptions) (*Client, error) {
 	}
 	if opts.BroadcastFallback != nil {
 		c.broadcastFallback = opts.BroadcastFallback
+	}
+	if opts.GasPriceOracle != nil {
+		c.gasPriceOracle = opts.GasPriceOracle
 	}
 
 	return c, nil
@@ -212,8 +224,8 @@ func (c *Client) EstimateFee(ctx context.Context, from, to string, amount *big.I
 		return nil, err
 	}
 
-	// Get gas price
-	gasPrice, err := c.rpcClient.GasPrice(ctx)
+	// Get gas price via multi-source strategy
+	gasPrice, err := c.GetGasPrice(ctx, GasSpeedMedium)
 	if err != nil {
 		return nil, fmt.Errorf("getting gas price: %w", err)
 	}

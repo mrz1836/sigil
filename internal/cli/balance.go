@@ -509,11 +509,47 @@ func outputBalanceText(w io.Writer, response BalanceShowResponse) {
 	}
 }
 
+// balanceColumnWidth returns the max display width needed for balance values,
+// respecting a minimum width (typically the header label length).
+func balanceColumnWidth(balances []BalanceResult, minWidth int) int {
+	w := minWidth
+	for _, bal := range balances {
+		s := bal.Balance
+		if bal.Stale {
+			s += " *"
+		}
+		if len(s) > w {
+			w = len(s)
+		}
+	}
+	return w
+}
+
+// unconfirmedColumnWidth returns the max display width needed for unconfirmed values.
+func unconfirmedColumnWidth(balances []BalanceResult, minWidth int) int {
+	w := minWidth
+	for _, bal := range balances {
+		s := bal.Unconfirmed
+		if s == "" {
+			s = "-"
+		}
+		if len(s) > w {
+			w = len(s)
+		}
+	}
+	return w
+}
+
 // outputBalanceTableNarrow renders the 4-column table (no unconfirmed data).
 func outputBalanceTableNarrow(w io.Writer, balances []BalanceResult) {
-	outln(w, "┌────────┬────────────────────────────────────────────┬──────────────────┬────────┐")
-	outln(w, "│ Chain  │ Address                                    │ Balance          │ Symbol │")
-	outln(w, "├────────┼────────────────────────────────────────────┼──────────────────┼────────┤")
+	bw := balanceColumnWidth(balances, len("Balance"))
+	balSep := strings.Repeat("─", bw+2)
+	balHdr := fmt.Sprintf(" %-*s ", bw, "Balance")
+	rowFmt := fmt.Sprintf("│ %%-6s │ %%-42s │ %%%ds │ %%-6s │\n", bw)
+
+	outln(w, "┌────────┬────────────────────────────────────────────┬"+balSep+"┬────────┐")
+	outln(w, "│ Chain  │ Address                                    │"+balHdr+"│ Symbol │")
+	outln(w, "├────────┼────────────────────────────────────────────┼"+balSep+"┼────────┤")
 
 	for _, bal := range balances {
 		addr := truncateAddress(bal.Address)
@@ -522,7 +558,7 @@ func outputBalanceTableNarrow(w io.Writer, balances []BalanceResult) {
 			balanceStr += " *"
 		}
 
-		out(w, "│ %-6s │ %-42s │ %16s │ %-6s │\n",
+		out(w, rowFmt,
 			strings.ToUpper(bal.Chain),
 			addr,
 			balanceStr,
@@ -530,14 +566,22 @@ func outputBalanceTableNarrow(w io.Writer, balances []BalanceResult) {
 		)
 	}
 
-	outln(w, "└────────┴────────────────────────────────────────────┴──────────────────┴────────┘")
+	outln(w, "└────────┴────────────────────────────────────────────┴"+balSep+"┴────────┘")
 }
 
 // outputBalanceTableWide renders the 5-column table with unconfirmed data.
 func outputBalanceTableWide(w io.Writer, balances []BalanceResult) {
-	outln(w, "┌────────┬────────────────────────────────────────────┬──────────────────┬──────────────────┬────────┐")
-	outln(w, "│ Chain  │ Address                                    │ Confirmed        │ Unconfirmed      │ Symbol │")
-	outln(w, "├────────┼────────────────────────────────────────────┼──────────────────┼──────────────────┼────────┤")
+	bw := balanceColumnWidth(balances, len("Confirmed"))
+	uw := unconfirmedColumnWidth(balances, len("Unconfirmed"))
+	balSep := strings.Repeat("─", bw+2)
+	uncSep := strings.Repeat("─", uw+2)
+	balHdr := fmt.Sprintf(" %-*s ", bw, "Confirmed")
+	uncHdr := fmt.Sprintf(" %-*s ", uw, "Unconfirmed")
+	rowFmt := fmt.Sprintf("│ %%-6s │ %%-42s │ %%%ds │ %%%ds │ %%-6s │\n", bw, uw)
+
+	outln(w, "┌────────┬────────────────────────────────────────────┬"+balSep+"┬"+uncSep+"┬────────┐")
+	outln(w, "│ Chain  │ Address                                    │"+balHdr+"│"+uncHdr+"│ Symbol │")
+	outln(w, "├────────┼────────────────────────────────────────────┼"+balSep+"┼"+uncSep+"┼────────┤")
 
 	for _, bal := range balances {
 		addr := truncateAddress(bal.Address)
@@ -551,7 +595,7 @@ func outputBalanceTableWide(w io.Writer, balances []BalanceResult) {
 			unconfStr = bal.Unconfirmed
 		}
 
-		out(w, "│ %-6s │ %-42s │ %16s │ %16s │ %-6s │\n",
+		out(w, rowFmt,
 			strings.ToUpper(bal.Chain),
 			addr,
 			balanceStr,
@@ -560,7 +604,7 @@ func outputBalanceTableWide(w io.Writer, balances []BalanceResult) {
 		)
 	}
 
-	outln(w, "└────────┴────────────────────────────────────────────┴──────────────────┴──────────────────┴────────┘")
+	outln(w, "└────────┴────────────────────────────────────────────┴"+balSep+"┴"+uncSep+"┴────────┘")
 }
 
 // truncateAddress shortens an address for table display.

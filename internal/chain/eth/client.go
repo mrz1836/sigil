@@ -111,19 +111,20 @@ func NewClient(rpcURL string, opts *ClientOptions) (*Client, error) {
 		nonceManager: NewNonceManager(),
 	}
 
-	if opts != nil {
-		if opts.ChainID != nil {
-			c.chainID = opts.ChainID
-		}
-		if opts.Transport != nil {
-			c.transport = opts.Transport
-		}
-		if len(opts.FallbackRPCs) > 0 {
-			c.fallbackRPCs = opts.FallbackRPCs
-		}
-		if opts.BroadcastFallback != nil {
-			c.broadcastFallback = opts.BroadcastFallback
-		}
+	if opts == nil {
+		return c, nil
+	}
+	if opts.ChainID != nil {
+		c.chainID = opts.ChainID
+	}
+	if opts.Transport != nil {
+		c.transport = opts.Transport
+	}
+	if len(opts.FallbackRPCs) > 0 {
+		c.fallbackRPCs = opts.FallbackRPCs
+	}
+	if opts.BroadcastFallback != nil {
+		c.broadcastFallback = opts.BroadcastFallback
 	}
 
 	return c, nil
@@ -228,6 +229,10 @@ func (c *Client) EstimateFee(ctx context.Context, from, to string, amount *big.I
 	if err != nil {
 		// Default to 21000 for simple transfers
 		gasLimit = defaultGasLimit
+	} else {
+		// Apply safety buffer to the estimate
+		buffered := multiplyBigInt(new(big.Int).SetUint64(gasLimit), gasEstimateBuffer)
+		gasLimit = buffered.Uint64()
 	}
 
 	// Fee = gasPrice * gasLimit

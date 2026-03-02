@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -30,6 +31,8 @@ const (
 	slowMultiplier = 0.8
 	// fastMultiplier increases gas price by 20% for fast transactions.
 	fastMultiplier = 1.2
+	// gasEstimateBuffer adds a 20% safety margin to eth_estimateGas results.
+	gasEstimateBuffer = 1.2
 )
 
 // ParseGasSpeed parses a string into a GasSpeed.
@@ -105,14 +108,25 @@ func (c *Client) GetGasPrice(ctx context.Context, speed GasSpeed) (*big.Int, err
 	}
 }
 
-// EstimateGasForETHTransfer estimates gas for a native ETH transfer.
-func (c *Client) EstimateGasForETHTransfer(ctx context.Context, speed GasSpeed) (*GasEstimate, error) {
+// EstimateGasForETHTransfer estimates gas for a native ETH transfer using eth_estimateGas.
+// Falls back to the standard 21000 gas limit if the RPC call fails.
+func (c *Client) EstimateGasForETHTransfer(ctx context.Context, from, to string, value *big.Int, speed GasSpeed) (*GasEstimate, error) {
 	gasPrice, err := c.GetGasPrice(ctx, speed)
 	if err != nil {
 		return nil, err
 	}
 
-	gasLimit := GasLimitETHTransfer
+	msg := rpc.CallMsg{
+		From:  from,
+		To:    to,
+		Value: value,
+	}
+
+	gasLimit, err := c.estimateGasWithClient(ctx, msg)
+	if err != nil {
+		gasLimit = GasLimitETHTransfer
+	}
+
 	total := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
 
 	return &GasEstimate{
@@ -122,16 +136,25 @@ func (c *Client) EstimateGasForETHTransfer(ctx context.Context, speed GasSpeed) 
 	}, nil
 }
 
-// EstimateGasForERC20Transfer estimates gas for an ERC-20 token transfer.
-func (c *Client) EstimateGasForERC20Transfer(ctx context.Context, speed GasSpeed) (*GasEstimate, error) {
+// EstimateGasForERC20Transfer estimates gas for an ERC-20 token transfer using eth_estimateGas.
+// Falls back to the default 65000 gas limit if the RPC call fails.
+func (c *Client) EstimateGasForERC20Transfer(ctx context.Context, from, tokenContract string, data []byte, speed GasSpeed) (*GasEstimate, error) {
 	gasPrice, err := c.GetGasPrice(ctx, speed)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use default gas limit for ERC-20 transfers
-	// In a real scenario, we would estimate this by calling estimateGas
-	gasLimit := GasLimitERC20Transfer
+	msg := rpc.CallMsg{
+		From: from,
+		To:   tokenContract,
+		Data: data,
+	}
+
+	gasLimit, err := c.estimateGasWithClient(ctx, msg)
+	if err != nil {
+		gasLimit = GasLimitERC20Transfer
+	}
+
 	total := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
 
 	return &GasEstimate{
@@ -152,15 +175,18 @@ func (c *Client) EstimateGasWithData(ctx context.Context, to string, data []byte
 		return nil, err
 	}
 
-	// Estimate gas using the node
 	toAddr, err := NormalizeAddress(to)
 	if err != nil {
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
-	gasLimit, err := c.estimateGasWithClient(ctx, toAddr, data)
+	msg := rpc.CallMsg{
+		To:   toAddr,
+		Data: data,
+	}
+
+	gasLimit, err := c.estimateGasWithClient(ctx, msg)
 	if err != nil {
-		// Fallback to default ERC-20 transfer limit
 		gasLimit = GasLimitERC20Transfer
 	}
 
@@ -173,13 +199,19 @@ func (c *Client) EstimateGasWithData(ctx context.Context, to string, data []byte
 	}, nil
 }
 
-// estimateGasWithClient uses the connected client to estimate gas.
-func (c *Client) estimateGasWithClient(ctx context.Context, to string, _ []byte) (uint64, error) {
-	// For now, return default limits based on whether we have data
-	// In production, we would use ethereum.CallMsg with the actual data
-	_ = ctx
-	_ = to
-	return GasLimitERC20Transfer, nil
+// estimateGasWithClient calls eth_estimateGas via the RPC client and applies a safety buffer.
+func (c *Client) estimateGasWithClient(ctx context.Context, msg rpc.CallMsg) (uint64, error) {
+	if err := c.connect(ctx); err != nil {
+		return 0, err
+	}
+
+	gasLimit, err := c.rpcClient.EstimateGas(ctx, msg)
+	if err != nil {
+		return 0, fmt.Errorf("eth_estimateGas: %w", err)
+	}
+
+	buffered := multiplyBigInt(new(big.Int).SetUint64(gasLimit), gasEstimateBuffer)
+	return buffered.Uint64(), nil
 }
 
 // FormatGasPrice formats a gas price in wei to a human-readable Gwei string.

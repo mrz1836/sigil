@@ -519,7 +519,7 @@ func (m *mockBroadcaster) BroadcastRawTransaction(_ context.Context, _ []byte) (
 }
 
 // newRPCServer creates a test JSON-RPC server that handles eth_chainId and eth_sendRawTransaction.
-func newRPCServer(t *testing.T, sendErr string, txHash string) *httptest.Server {
+func newRPCServer(t *testing.T, sendErr, txHash string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any

@@ -399,7 +399,11 @@ func TestGetGasPrice(t *testing.T) {
 func TestEstimateGasForETHTransfer(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns estimate for ETH transfer", func(t *testing.T) {
+	testFrom := "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+	testTo := "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+	testValue := big.NewInt(1000000000000000000) // 1 ETH
+
+	t.Run("uses eth_estimateGas with buffer", func(t *testing.T) {
 		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req map[string]any
@@ -422,6 +426,13 @@ func TestEstimateGasForETHTransfer(t *testing.T) {
 					"id":      req["id"],
 					"result":  "0x4a817c800", // 20 Gwei
 				}
+			case "eth_estimateGas":
+				// Return 30000 gas (contract destination)
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x7530", // 30000
+				}
 			default:
 				t.Errorf("unexpected method: %s", method)
 				return
@@ -438,7 +449,63 @@ func TestEstimateGasForETHTransfer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		estimate, err := client.EstimateGasForETHTransfer(ctx, GasSpeedMedium)
+		estimate, err := client.EstimateGasForETHTransfer(ctx, testFrom, testTo, testValue, GasSpeedMedium)
+		require.NoError(t, err)
+
+		assert.NotNil(t, estimate.GasPrice)
+		// 30000 * 1.2 ≈ 36000 (floating-point may round down by 1)
+		assert.GreaterOrEqual(t, estimate.GasLimit, uint64(35999))
+		assert.LessOrEqual(t, estimate.GasLimit, uint64(36000))
+		assert.NotNil(t, estimate.Total)
+	})
+
+	t.Run("falls back to 21000 on estimateGas error", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case rpcMethodChainID:
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case rpcMethodGasPrice:
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x4a817c800", // 20 Gwei
+				}
+			case "eth_estimateGas":
+				// Return error to trigger fallback
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"error":   map[string]any{"code": -32000, "message": "execution reverted"},
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		estimate, err := client.EstimateGasForETHTransfer(ctx, testFrom, testTo, testValue, GasSpeedMedium)
 		require.NoError(t, err)
 
 		assert.NotNil(t, estimate.GasPrice)
@@ -450,7 +517,10 @@ func TestEstimateGasForETHTransfer(t *testing.T) {
 func TestEstimateGasForERC20Transfer(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns estimate for ERC20 transfer", func(t *testing.T) {
+	testFrom := "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+	testData, _ := BuildERC20TransferData("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", big.NewInt(1000000))
+
+	t.Run("uses eth_estimateGas with buffer", func(t *testing.T) {
 		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req map[string]any
@@ -473,6 +543,13 @@ func TestEstimateGasForERC20Transfer(t *testing.T) {
 					"id":      req["id"],
 					"result":  "0x4a817c800", // 20 Gwei
 				}
+			case "eth_estimateGas":
+				// Return 55000 gas for ERC-20 transfer
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0xd6d8", // 55000
+				}
 			default:
 				t.Errorf("unexpected method: %s", method)
 				return
@@ -489,7 +566,62 @@ func TestEstimateGasForERC20Transfer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		estimate, err := client.EstimateGasForERC20Transfer(ctx, GasSpeedMedium)
+		estimate, err := client.EstimateGasForERC20Transfer(ctx, testFrom, USDCMainnet, testData, GasSpeedMedium)
+		require.NoError(t, err)
+
+		assert.NotNil(t, estimate.GasPrice)
+		// 55000 * 1.2 ≈ 66000 (floating-point may round down by 1)
+		assert.GreaterOrEqual(t, estimate.GasLimit, uint64(65999))
+		assert.LessOrEqual(t, estimate.GasLimit, uint64(66000))
+		assert.NotNil(t, estimate.Total)
+	})
+
+	t.Run("falls back to 65000 on estimateGas error", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]any
+			err := json.NewDecoder(r.Body).Decode(&req)
+			assert.NoError(t, err)
+
+			method := req["method"].(string)
+			var resp map[string]any
+
+			switch method {
+			case rpcMethodChainID:
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x1",
+				}
+			case rpcMethodGasPrice:
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0x4a817c800", // 20 Gwei
+				}
+			case "eth_estimateGas":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"error":   map[string]any{"code": -32000, "message": "execution reverted"},
+				}
+			default:
+				t.Errorf("unexpected method: %s", method)
+				return
+			}
+
+			err = json.NewEncoder(w).Encode(resp)
+			assert.NoError(t, err)
+		}))
+		defer server.Close()
+
+		client, err := NewClient(server.URL, nil)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		estimate, err := client.EstimateGasForERC20Transfer(ctx, testFrom, USDCMainnet, testData, GasSpeedMedium)
 		require.NoError(t, err)
 
 		assert.NotNil(t, estimate.GasPrice)
@@ -651,6 +783,12 @@ func TestEstimateGasWithData(t *testing.T) {
 					"id":      req["id"],
 					"result":  "0x4a817c800", // 20 Gwei
 				}
+			case "eth_estimateGas":
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  "0xc350", // 50000
+				}
 			default:
 				t.Errorf("unexpected method: %s", method)
 				return
@@ -672,7 +810,9 @@ func TestEstimateGasWithData(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.NotNil(t, estimate.GasPrice)
-		assert.Positive(t, estimate.GasLimit)
+		// 50000 * 1.2 ≈ 60000 (floating-point may round down by 1)
+		assert.GreaterOrEqual(t, estimate.GasLimit, uint64(59999))
+		assert.LessOrEqual(t, estimate.GasLimit, uint64(60000))
 		assert.NotNil(t, estimate.Total)
 	})
 

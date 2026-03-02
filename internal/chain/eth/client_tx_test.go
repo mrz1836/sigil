@@ -28,7 +28,7 @@ func TestBuildTransaction(t *testing.T) {
 		var resp map[string]any
 
 		switch method {
-		case "eth_chainId":
+		case rpcMethodChainID:
 			resp = map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req["id"],
@@ -87,7 +87,7 @@ func TestBroadcastTransaction(t *testing.T) {
 		var resp map[string]any
 
 		switch method {
-		case "eth_chainId":
+		case rpcMethodChainID:
 			resp = map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req["id"],

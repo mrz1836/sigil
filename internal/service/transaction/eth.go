@@ -10,6 +10,7 @@ import (
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
+	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -38,8 +39,16 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 		)
 	}
 
-	// Create ETH client
-	client, err := eth.NewClient(rpcURL, nil)
+	// Create ETH client with broadcast failover
+	clientOpts := &eth.ClientOptions{
+		FallbackRPCs: s.config.GetETHFallbackRPCs(),
+	}
+	if apiKey := s.config.GetETHEtherscanAPIKey(); apiKey != "" {
+		if esClient, esErr := etherscan.NewClient(apiKey, nil); esErr == nil {
+			clientOpts.BroadcastFallback = esClient
+		}
+	}
+	client, err := eth.NewClient(rpcURL, clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("creating ETH client: %w", err)
 	}

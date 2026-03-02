@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/chain"
 	ethcrypto "github.com/mrz1836/sigil/internal/chain/eth/crypto"
+	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
 	ethtypes "github.com/mrz1836/sigil/internal/chain/eth/types"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
@@ -175,18 +177,55 @@ func SignTransaction(tx *ethtypes.LegacyTx, privateKey []byte, chainID *big.Int)
 }
 
 // BroadcastTransaction sends a signed transaction to the network.
+// It tries the primary RPC first, then the broadcast fallback (e.g. Etherscan),
+// then fallback RPCs. All errors are collected for diagnostics.
 func (c *Client) BroadcastTransaction(ctx context.Context, tx *ethtypes.LegacyTx) (string, error) {
 	if err := c.connect(ctx); err != nil {
 		return "", err
 	}
 
 	rawTx := tx.RawBytes()
+
+	// Collect all errors for diagnostics
+	var errs []error
+
+	// Try primary RPC
 	txHash, err := c.rpcClient.SendRawTransaction(ctx, rawTx)
-	if err != nil {
-		return "", fmt.Errorf("broadcasting transaction: %w", err)
+	if err == nil {
+		return txHash, nil
+	}
+	errs = append(errs, fmt.Errorf("primary RPC: %w", err))
+
+	// Try broadcast fallback first (e.g. Etherscan) — it's a different service
+	// and more likely to accept the transaction than fallback RPCs from the
+	// same provider cluster that rejected the primary.
+	if c.broadcastFallback != nil {
+		txHash, err = c.broadcastFallback.BroadcastRawTransaction(ctx, rawTx)
+		if err == nil {
+			return txHash, nil
+		}
+		errs = append(errs, fmt.Errorf("broadcast fallback: %w", err))
 	}
 
-	return txHash, nil
+	// Try fallback RPCs
+	for _, fallbackURL := range c.fallbackRPCs {
+		if fallbackURL == c.rpcURL {
+			continue
+		}
+		var rpcOpts *rpc.ClientOptions
+		if c.transport != nil {
+			rpcOpts = &rpc.ClientOptions{Transport: c.transport}
+		}
+		fallbackClient := rpc.NewClientWithOptions(fallbackURL, rpcOpts)
+		txHash, err = fallbackClient.SendRawTransaction(ctx, rawTx)
+		fallbackClient.Close()
+		if err == nil {
+			return txHash, nil
+		}
+		errs = append(errs, fmt.Errorf("fallback RPC %s: %w", fallbackURL, err))
+	}
+
+	return "", fmt.Errorf("broadcasting transaction: all endpoints failed: %w", errors.Join(errs...))
 }
 
 // Send implements the chain.Chain interface - builds, signs, and broadcasts a transaction.

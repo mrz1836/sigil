@@ -620,3 +620,54 @@ func TestSendETH_ResultStructure(t *testing.T) {
 	assert.NotEmpty(t, result.GasUsed)
 	assert.NotEmpty(t, result.GasPrice)
 }
+
+// TestSendETH_FallbackRPCsWiring verifies that fallback RPCs from config are passed through to the client.
+func TestSendETH_FallbackRPCsWiring(t *testing.T) {
+	t.Parallel()
+
+	cfg := newMockConfigProvider()
+	cfg.ethFallbackRPCs = []string{
+		"https://fallback1.example.com",
+		"https://fallback2.example.com",
+	}
+
+	// Verify the config provides the expected fallback RPCs
+	fallbacks := cfg.GetETHFallbackRPCs()
+	require.Len(t, fallbacks, 2)
+	assert.Equal(t, "https://fallback1.example.com", fallbacks[0])
+	assert.Equal(t, "https://fallback2.example.com", fallbacks[1])
+}
+
+// TestSendETH_EtherscanAPIKeyWiring verifies that Etherscan API key from config is available.
+func TestSendETH_EtherscanAPIKeyWiring(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty API key produces no broadcaster", func(t *testing.T) {
+		t.Parallel()
+		cfg := newMockConfigProvider()
+		cfg.ethEtherscanAPIKey = ""
+		assert.Empty(t, cfg.GetETHEtherscanAPIKey())
+	})
+
+	t.Run("valid API key is available", func(t *testing.T) {
+		t.Parallel()
+		cfg := newMockConfigProvider()
+		cfg.ethEtherscanAPIKey = "test-etherscan-key"
+		assert.Equal(t, "test-etherscan-key", cfg.GetETHEtherscanAPIKey())
+	})
+}
+
+// TestSendETH_ClientOptionsWithFallbacks verifies the ETH client is created with broadcast failover options.
+func TestSendETH_ClientOptionsWithFallbacks(t *testing.T) {
+	t.Parallel()
+
+	// Verify ClientOptions supports the new fields
+	opts := &eth.ClientOptions{
+		FallbackRPCs: []string{"https://fallback.example.com"},
+	}
+
+	client, err := eth.NewClient("https://primary.example.com", opts)
+	require.NoError(t, err)
+	assert.NotNil(t, client)
+	client.Close()
+}

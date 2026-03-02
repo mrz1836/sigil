@@ -62,6 +62,12 @@ var (
 	addressRegex = regexp.MustCompile("^0x[0-9a-fA-F]{40}$")
 )
 
+// Broadcaster can send an already-signed raw transaction.
+// Implementations include the Etherscan proxy broadcaster.
+type Broadcaster interface {
+	BroadcastRawTransaction(ctx context.Context, rawTx []byte) (string, error)
+}
+
 // ClientOptions contains optional configuration for the ETH client.
 type ClientOptions struct {
 	// ChainID overrides the default chain ID detection.
@@ -69,6 +75,10 @@ type ClientOptions struct {
 	// Transport overrides the default HTTP transport for the underlying RPC client.
 	// Useful for sharing a transport across primary and fallback clients.
 	Transport *http.Transport
+	// FallbackRPCs are additional RPC endpoints to try when the primary broadcast fails.
+	FallbackRPCs []string
+	// BroadcastFallback is an optional last-resort broadcaster (e.g. Etherscan).
+	BroadcastFallback Broadcaster
 }
 
 // Compile-time interface checks
@@ -79,13 +89,15 @@ var (
 
 // Client provides Ethereum blockchain operations.
 type Client struct {
-	rpcURL       string
-	rpcClient    *rpc.Client
-	chainID      *big.Int
-	transport    *http.Transport
-	mu           sync.Mutex
-	initErr      error
-	nonceManager *NonceManager
+	rpcURL            string
+	rpcClient         *rpc.Client
+	chainID           *big.Int
+	transport         *http.Transport
+	fallbackRPCs      []string
+	broadcastFallback Broadcaster
+	mu                sync.Mutex
+	initErr           error
+	nonceManager      *NonceManager
 }
 
 // NewClient creates a new ETH client.
@@ -105,6 +117,12 @@ func NewClient(rpcURL string, opts *ClientOptions) (*Client, error) {
 		}
 		if opts.Transport != nil {
 			c.transport = opts.Transport
+		}
+		if len(opts.FallbackRPCs) > 0 {
+			c.fallbackRPCs = opts.FallbackRPCs
+		}
+		if opts.BroadcastFallback != nil {
+			c.broadcastFallback = opts.BroadcastFallback
 		}
 	}
 

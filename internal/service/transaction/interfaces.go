@@ -15,6 +15,7 @@ type ConfigProvider interface {
 	GetHome() string
 	GetETHRPC() string
 	GetETHFallbackRPCs() []string
+	GetETHEtherscanAPIKey() string
 	GetBSVAPIKey() string
 	GetBSVFeeStrategy() string
 	GetBSVMinMiners() int

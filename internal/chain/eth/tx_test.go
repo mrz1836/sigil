@@ -1,8 +1,14 @@
 package eth
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -495,4 +501,334 @@ func TestSignTransaction(t *testing.T) {
 
 	// Verify signature components exist (v, r, s)
 	// IsSigned checks v, r, s presence usually.
+}
+
+// errMockBroadcast is a static sentinel error for testing broadcast failures.
+var errMockBroadcast = fmt.Errorf("mock broadcast failed")
+
+// mockBroadcaster implements the Broadcaster interface for testing.
+type mockBroadcaster struct {
+	txHash string
+	err    error
+	called bool
+}
+
+func (m *mockBroadcaster) BroadcastRawTransaction(_ context.Context, _ []byte) (string, error) {
+	m.called = true
+	return m.txHash, m.err
+}
+
+// newRPCServer creates a test JSON-RPC server that handles eth_chainId and eth_sendRawTransaction.
+func newRPCServer(t *testing.T, sendErr string, txHash string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); !assert.NoError(t, err) {
+			return
+		}
+
+		method, _ := req["method"].(string)
+		id := req["id"]
+
+		switch method {
+		case "eth_chainId":
+			resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": "0x1"}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "eth_sendRawTransaction":
+			if sendErr != "" {
+				resp := map[string]any{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"error":   map[string]any{"code": -32046, "message": sendErr},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			} else {
+				resp := map[string]any{"jsonrpc": "2.0", "id": id, "result": txHash}
+				_ = json.NewEncoder(w).Encode(resp)
+			}
+		default:
+			resp := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"error":   map[string]any{"code": -32601, "message": "method not found"},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+}
+
+// newSignedTestTx creates a minimal signed transaction for testing broadcast.
+func newSignedTestTx(t *testing.T) *ethtypes.LegacyTx {
+	t.Helper()
+	tx := ethtypes.NewLegacyTx(0, nil, big.NewInt(1000), 21000, big.NewInt(1000000000), nil)
+	privateKey := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+	signed, err := SignTransaction(tx, privateKey, big.NewInt(1))
+	require.NoError(t, err)
+	return signed
+}
+
+func TestBroadcastTransaction_PrimarySuccess(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	primary := newRPCServer(t, "", expectedHash)
+	defer primary.Close()
+
+	client, err := NewClient(primary.URL, &ClientOptions{ChainID: big.NewInt(1)})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+}
+
+func TestBroadcastTransaction_FallbackRPCSuccess(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xfallback1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	primary := newRPCServer(t, "Cannot fulfill request", "")
+	defer primary.Close()
+	fallback := newRPCServer(t, "", expectedHash)
+	defer fallback.Close()
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:      big.NewInt(1),
+		FallbackRPCs: []string{fallback.URL},
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+}
+
+func TestBroadcastTransaction_SkipsDuplicateFallback(t *testing.T) {
+	t.Parallel()
+
+	// If fallback URL equals primary URL, it should be skipped
+	primary := newRPCServer(t, "Cannot fulfill request", "")
+	defer primary.Close()
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:      big.NewInt(1),
+		FallbackRPCs: []string{primary.URL}, // same as primary
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	_, err = client.BroadcastTransaction(ctx, tx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broadcasting transaction")
+}
+
+func TestBroadcastTransaction_BroadcasterFallbackSuccess(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xetherscan1234567890abcdef1234567890abcdef1234567890abcdef1234"
+	primary := newRPCServer(t, "Cannot fulfill request", "")
+	defer primary.Close()
+
+	broadcaster := &mockBroadcaster{txHash: expectedHash}
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:           big.NewInt(1),
+		BroadcastFallback: broadcaster,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+	assert.True(t, broadcaster.called)
+}
+
+func TestBroadcastTransaction_AllFallbacksFail(t *testing.T) {
+	t.Parallel()
+
+	primary := newRPCServer(t, "Cannot fulfill request", "")
+	defer primary.Close()
+	fallback := newRPCServer(t, "also rejected", "")
+	defer fallback.Close()
+
+	broadcaster := &mockBroadcaster{err: errMockBroadcast}
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:           big.NewInt(1),
+		FallbackRPCs:      []string{fallback.URL},
+		BroadcastFallback: broadcaster,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	_, err = client.BroadcastTransaction(ctx, tx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broadcasting transaction")
+	assert.Contains(t, err.Error(), "all endpoints failed")
+	// Error should include the primary error
+	assert.Contains(t, err.Error(), "primary RPC")
+	assert.Contains(t, err.Error(), "Cannot fulfill request")
+	// Error should include fallback errors
+	assert.Contains(t, err.Error(), "broadcast fallback")
+	assert.Contains(t, err.Error(), "mock broadcast failed")
+	assert.True(t, broadcaster.called)
+}
+
+func TestBroadcastTransaction_PrimarySuccessSkipsFallbacks(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xprimary1234567890abcdef1234567890abcdef1234567890abcdef12345"
+	primary := newRPCServer(t, "", expectedHash)
+	defer primary.Close()
+
+	broadcaster := &mockBroadcaster{txHash: "should-not-be-used"}
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:           big.NewInt(1),
+		FallbackRPCs:      []string{"http://should-not-be-called:9999"},
+		BroadcastFallback: broadcaster,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+	assert.False(t, broadcaster.called, "broadcaster should not be called when primary succeeds")
+}
+
+func TestBroadcastTransaction_BroadcasterBeforeFallbackRPC(t *testing.T) {
+	t.Parallel()
+
+	// Broadcaster (Etherscan) is tried before fallback RPCs since it's a
+	// different service and more likely to accept the transaction.
+	expectedHash := "0xbroadcaster345678901234567890123456789012345678901234567890ab"
+	primary := newRPCServer(t, "rejected by primary", "")
+	defer primary.Close()
+
+	broadcaster := &mockBroadcaster{txHash: expectedHash}
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:           big.NewInt(1),
+		FallbackRPCs:      []string{"http://should-not-be-called:9999"},
+		BroadcastFallback: broadcaster,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+	assert.True(t, broadcaster.called, "broadcaster should be tried before fallback RPCs")
+}
+
+func TestBroadcastTransaction_BroadcasterFailsFallbackRPCSucceeds(t *testing.T) {
+	t.Parallel()
+
+	// When broadcaster fails, fallback RPCs should still be tried
+	expectedHash := "0xfallbackrpc12345678901234567890123456789012345678901234567890"
+	primary := newRPCServer(t, "rejected by primary", "")
+	defer primary.Close()
+	fallback := newRPCServer(t, "", expectedHash)
+	defer fallback.Close()
+
+	broadcaster := &mockBroadcaster{err: errMockBroadcast}
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:           big.NewInt(1),
+		FallbackRPCs:      []string{fallback.URL},
+		BroadcastFallback: broadcaster,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+	assert.True(t, broadcaster.called, "broadcaster should have been tried first")
+}
+
+func TestBroadcastTransaction_MultipleFallbackRPCs(t *testing.T) {
+	t.Parallel()
+
+	expectedHash := "0xsecondfallback234567890abcdef1234567890abcdef1234567890abcdef12"
+	primary := newRPCServer(t, "primary rejected", "")
+	defer primary.Close()
+	fallback1 := newRPCServer(t, "fallback1 rejected", "")
+	defer fallback1.Close()
+	fallback2 := newRPCServer(t, "", expectedHash)
+	defer fallback2.Close()
+
+	client, err := NewClient(primary.URL, &ClientOptions{
+		ChainID:      big.NewInt(1),
+		FallbackRPCs: []string{fallback1.URL, fallback2.URL},
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	hash, err := client.BroadcastTransaction(ctx, tx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+}
+
+func TestBroadcastTransaction_NoFallbacksConfigured(t *testing.T) {
+	t.Parallel()
+
+	primary := newRPCServer(t, "Cannot fulfill request", "")
+	defer primary.Close()
+
+	client, err := NewClient(primary.URL, &ClientOptions{ChainID: big.NewInt(1)})
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx := newSignedTestTx(t)
+	_, err = client.BroadcastTransaction(ctx, tx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broadcasting transaction")
 }

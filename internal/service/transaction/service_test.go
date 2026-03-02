@@ -407,12 +407,13 @@ func TestValidationError_Error(t *testing.T) {
 // Mock implementations
 
 type mockConfigProvider struct {
-	home            string
-	ethRPC          string
-	ethFallbackRPCs []string
-	bsvAPIKey       string
-	bsvFeeStrategy  string
-	bsvMinMiners    int
+	home               string
+	ethRPC             string
+	ethFallbackRPCs    []string
+	ethEtherscanAPIKey string
+	bsvAPIKey          string
+	bsvFeeStrategy     string
+	bsvMinMiners       int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -426,12 +427,13 @@ func newMockConfigProvider() *mockConfigProvider {
 	}
 }
 
-func (m *mockConfigProvider) GetHome() string              { return m.home }
-func (m *mockConfigProvider) GetETHRPC() string            { return m.ethRPC }
-func (m *mockConfigProvider) GetETHFallbackRPCs() []string { return m.ethFallbackRPCs }
-func (m *mockConfigProvider) GetBSVAPIKey() string         { return m.bsvAPIKey }
-func (m *mockConfigProvider) GetBSVFeeStrategy() string    { return m.bsvFeeStrategy }
-func (m *mockConfigProvider) GetBSVMinMiners() int         { return m.bsvMinMiners }
+func (m *mockConfigProvider) GetHome() string               { return m.home }
+func (m *mockConfigProvider) GetETHRPC() string             { return m.ethRPC }
+func (m *mockConfigProvider) GetETHFallbackRPCs() []string  { return m.ethFallbackRPCs }
+func (m *mockConfigProvider) GetETHEtherscanAPIKey() string { return m.ethEtherscanAPIKey }
+func (m *mockConfigProvider) GetBSVAPIKey() string          { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetBSVFeeStrategy() string     { return m.bsvFeeStrategy }
+func (m *mockConfigProvider) GetBSVMinMiners() int          { return m.bsvMinMiners }
 
 type mockStorageProvider struct {
 	updateMetaErr error

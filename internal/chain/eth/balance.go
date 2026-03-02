@@ -33,7 +33,7 @@ func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance
 	// Failure is non-fatal — pending data is optional.
 	if c.rpcClient != nil {
 		pendingAmount, pendingErr := c.rpcClient.GetBalance(ctx, address, "pending")
-		if pendingErr == nil && pendingAmount.Cmp(amount) != 0 {
+		if pendingErr == nil && pendingAmount.Sign() > 0 && pendingAmount.Cmp(amount) != 0 {
 			bal.Unconfirmed = new(big.Int).Sub(pendingAmount, amount)
 		}
 	}

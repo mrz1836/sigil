@@ -86,23 +86,17 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 		}
 	}
 
-	// Estimate gas
+	// Estimate gas and calculate sweep amounts.
+	// Gas estimation requires from/to/value/data, and sweep requires the gas estimate
+	// to compute the send amount. We solve this by estimating gas with the full balance
+	// for sweeps — ETH transfer gas does not depend on the transfer value.
 	var estimate *eth.GasEstimate
-	if tokenAddress != "" {
-		estimate, err = client.EstimateGasForERC20Transfer(ctx, speed)
-	} else {
-		estimate, err = client.EstimateGasForETHTransfer(ctx, speed)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("estimating gas: %w", err)
-	}
-
-	// Calculate sweep amount or validate balance
 	var displayAmount string
-	//nolint:nestif // Sweep calculation branches by token type
-	if req.SweepAll() {
-		if tokenAddress != "" {
-			// ERC-20 sweep: send full token balance (ETH needed for gas only)
+
+	//nolint:nestif // Gas estimation + sweep calculation branches by token type and sweep mode
+	if tokenAddress != "" {
+		// ERC-20 path: resolve amount first (sweep = full token balance)
+		if req.SweepAll() {
 			tokenBalance, tokenErr := client.GetTokenBalance(ctx, req.FromAddress, tokenAddress)
 			if tokenErr != nil {
 				return nil, fmt.Errorf("getting token balance: %w", tokenErr)
@@ -117,8 +111,20 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 				)
 			}
 			amount = tokenBalance
-			displayAmount = chain.FormatDecimalAmount(amount, decimals) + " (sweep all)"
+		}
 
+		// Build ERC-20 call data for gas estimation
+		data, dataErr := eth.BuildERC20TransferData(req.To, amount)
+		if dataErr != nil {
+			return nil, fmt.Errorf("building ERC-20 data for gas estimate: %w", dataErr)
+		}
+		estimate, err = client.EstimateGasForERC20Transfer(ctx, req.FromAddress, tokenAddress, data, speed)
+		if err != nil {
+			return nil, fmt.Errorf("estimating gas: %w", err)
+		}
+
+		if req.SweepAll() {
+			displayAmount = chain.FormatDecimalAmount(amount, decimals) + " (sweep all)"
 			// Still need ETH for gas
 			ethBalance, ethErr := client.GetBalance(ctx, req.FromAddress)
 			if ethErr != nil {
@@ -136,10 +142,23 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 				)
 			}
 		} else {
-			// Native ETH sweep: balance minus gas cost
+			err = checkETHBalance(ctx, client, req.FromAddress, amount, estimate.Total, tokenAddress)
+			if err != nil {
+				return nil, err
+			}
+			displayAmount = chain.FormatDecimalAmount(amount, decimals)
+		}
+	} else {
+		// Native ETH path
+		if req.SweepAll() {
+			// Estimate gas with full balance (gas doesn't depend on transfer value)
 			ethBalance, ethErr := client.GetBalance(ctx, req.FromAddress)
 			if ethErr != nil {
 				return nil, fmt.Errorf("getting ETH balance: %w", ethErr)
+			}
+			estimate, err = client.EstimateGasForETHTransfer(ctx, req.FromAddress, req.To, ethBalance, speed)
+			if err != nil {
+				return nil, fmt.Errorf("estimating gas: %w", err)
 			}
 			amount = new(big.Int).Sub(ethBalance, estimate.Total)
 			if amount.Sign() <= 0 {
@@ -154,16 +173,15 @@ func (s *Service) sendETH(ctx context.Context, req *SendRequest) (*SendResult, e
 				)
 			}
 			displayAmount = client.FormatAmount(amount) + " (sweep all)"
-		}
-	} else {
-		// Normal send: check balance covers amount + fees
-		err = checkETHBalance(ctx, client, req.FromAddress, amount, estimate.Total, tokenAddress)
-		if err != nil {
-			return nil, err
-		}
-		if tokenAddress != "" {
-			displayAmount = chain.FormatDecimalAmount(amount, decimals)
 		} else {
+			estimate, err = client.EstimateGasForETHTransfer(ctx, req.FromAddress, req.To, amount, speed)
+			if err != nil {
+				return nil, fmt.Errorf("estimating gas: %w", err)
+			}
+			err = checkETHBalance(ctx, client, req.FromAddress, amount, estimate.Total, tokenAddress)
+			if err != nil {
+				return nil, err
+			}
 			displayAmount = client.FormatAmount(amount)
 		}
 	}

@@ -208,6 +208,19 @@ func (c *Client) BroadcastTransaction(ctx context.Context, tx *ethtypes.LegacyTx
 	}
 
 	// Try fallback RPCs
+	fallbackHash, fallbackErrs := c.tryFallbackRPCs(ctx, rawTx)
+	if fallbackHash != "" {
+		return fallbackHash, nil
+	}
+	errs = append(errs, fallbackErrs...)
+
+	return "", fmt.Errorf("broadcasting transaction: all endpoints failed: %w", errors.Join(errs...))
+}
+
+// tryFallbackRPCs attempts to broadcast rawTx to each configured fallback RPC URL
+// (skipping the primary) and returns the tx hash on success or collected errors on failure.
+func (c *Client) tryFallbackRPCs(ctx context.Context, rawTx []byte) (string, []error) {
+	var errs []error
 	for _, fallbackURL := range c.fallbackRPCs {
 		if fallbackURL == c.rpcURL {
 			continue
@@ -217,15 +230,14 @@ func (c *Client) BroadcastTransaction(ctx context.Context, tx *ethtypes.LegacyTx
 			rpcOpts = &rpc.ClientOptions{Transport: c.transport}
 		}
 		fallbackClient := rpc.NewClientWithOptions(fallbackURL, rpcOpts)
-		txHash, err = fallbackClient.SendRawTransaction(ctx, rawTx)
+		txHash, err := fallbackClient.SendRawTransaction(ctx, rawTx)
 		fallbackClient.Close()
 		if err == nil {
 			return txHash, nil
 		}
 		errs = append(errs, fmt.Errorf("fallback RPC %s: %w", fallbackURL, err))
 	}
-
-	return "", fmt.Errorf("broadcasting transaction: all endpoints failed: %w", errors.Join(errs...))
+	return "", errs
 }
 
 // Send implements the chain.Chain interface - builds, signs, and broadcasts a transaction.
@@ -278,9 +290,9 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 	var err error
 
 	if req.Token != "" {
-		estimate, err = c.EstimateGasForERC20Transfer(ctx, speed)
+		estimate, err = c.EstimateGasForERC20Transfer(ctx, params.From, params.To, params.Data, speed)
 	} else {
-		estimate, err = c.EstimateGasForETHTransfer(ctx, speed)
+		estimate, err = c.EstimateGasForETHTransfer(ctx, params.From, params.To, params.Value, speed)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("estimating gas: %w", err)

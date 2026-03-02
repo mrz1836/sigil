@@ -293,9 +293,16 @@ func promptETHConfirmation(ctx context.Context, cmd *cobra.Command, req *transac
 
 	var estimate *eth.GasEstimate
 	if txToken != "" {
-		estimate, err = ethClient.EstimateGasForERC20Transfer(ctx, speed)
+		// Build ERC-20 call data for gas estimation (amount doesn't affect gas)
+		tokenAddress, _, _ := resolveToken(txToken)
+		previewData, dataErr := eth.BuildERC20TransferData(req.To, big.NewInt(1))
+		if dataErr != nil {
+			return false, fmt.Errorf("building ERC-20 data for fee preview: %w", dataErr)
+		}
+		estimate, err = ethClient.EstimateGasForERC20Transfer(ctx, req.FromAddress, tokenAddress, previewData, speed)
 	} else {
-		estimate, err = ethClient.EstimateGasForETHTransfer(ctx, speed)
+		// ETH transfer gas doesn't depend on the value; use placeholder for preview
+		estimate, err = ethClient.EstimateGasForETHTransfer(ctx, req.FromAddress, req.To, big.NewInt(1), speed)
 	}
 	if err != nil {
 		return false, fmt.Errorf("estimating fees for confirmation: %w", err)

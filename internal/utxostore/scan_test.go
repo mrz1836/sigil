@@ -532,6 +532,7 @@ func TestScanWalletBulk_ContextCancellation(t *testing.T) {
 
 	// Create canceled context
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Cancel after first address is processed
 	client.setBulkFetchFunc(func(addresses []string) ([]BulkUTXOResult, error) {

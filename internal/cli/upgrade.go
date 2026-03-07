@@ -355,7 +355,7 @@ func downloadToString(url string) (string, error) {
 	}
 
 	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Do(req) //nolint:gosec // G704: URL is a known GitHub release endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -384,7 +384,7 @@ func downloadToFile(url, destPath string) error {
 	}
 
 	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Do(req) //nolint:gosec // G704: URL is a known GitHub release endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

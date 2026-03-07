@@ -67,6 +67,7 @@ func TestRetry_MaxAttempts(t *testing.T) {
 
 func TestRetry_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	attempts := 0
 
 	go func() {

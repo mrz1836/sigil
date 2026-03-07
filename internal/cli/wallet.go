@@ -9,7 +9,7 @@ import (
 
 // out is a helper for CLI output that ignores write errors (standard pattern for CLI tools).
 //
-//nolint:errcheck,gosec // CLI output writes to stdout are intentionally unchecked; G705: w is a known CLI writer
+//nolint:errcheck // CLI output writes to stdout are intentionally unchecked
 func out(w io.Writer, format string, args ...interface{}) {
 	fmt.Fprintf(w, format, args...)
 }

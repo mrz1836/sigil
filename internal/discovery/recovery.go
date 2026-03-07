@@ -234,7 +234,7 @@ func (r *RecoveryScenarios) RecoverBeyondGap(ctx context.Context, seed []byte, o
 							SchemeName: "Custom Range",
 							Balance:    balance,
 							UTXOCount:  totalUTXOs,
-							Index:      opts.StartIndex + uint32(originalIndex),
+							Index:      opts.StartIndex + uint32(originalIndex), //nolint:gosec // G115: originalIndex is bounded by batch size, safely within uint32 range
 							CoinType:   opts.CoinType,
 						}
 

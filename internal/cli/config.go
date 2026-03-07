@@ -489,7 +489,7 @@ func displayConfigJSON(w interface {
 ) error {
 	type networkJSON struct {
 		RPC    string `json:"rpc,omitempty"`
-		APIKey string `json:"api_key,omitempty"` //nolint:gosec // G117: field name is intentional, API key from user config
+		APIKey string `json:"api_key,omitempty"`
 	}
 	type configJSON struct {
 		Version int    `json:"version"`

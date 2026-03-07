@@ -9,9 +9,9 @@ import (
 
 // out is a helper for CLI output that ignores write errors (standard pattern for CLI tools).
 //
-//nolint:errcheck // CLI output writes to stdout are intentionally unchecked
+//nolint:errcheck,gosec // CLI output writes to stdout are intentionally unchecked; G705: w is a known CLI writer
 func out(w io.Writer, format string, args ...interface{}) {
-	fmt.Fprintf(w, format, args...) //nolint:gosec // G705: format strings are from internal code, not user input
+	fmt.Fprintf(w, format, args...)
 }
 
 // outln is a helper for CLI output with newline.

@@ -57,7 +57,7 @@ func (c *Client) BroadcastRawTransaction(ctx context.Context, rawTx []byte) (str
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // URL is constructed from validated config
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: URL is constructed from configured Etherscan endpoint, not user input
 	if err != nil {
 		return "", fmt.Errorf("sending request: %w", err)
 	}

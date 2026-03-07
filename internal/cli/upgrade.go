@@ -355,7 +355,7 @@ func downloadToString(url string) (string, error) {
 	}
 
 	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Do(req) //nolint:gosec // URL is constructed from trusted GitHub releases endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -384,7 +384,7 @@ func downloadToFile(url, destPath string) error {
 	}
 
 	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Do(req) //nolint:gosec // URL is constructed from trusted GitHub releases endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

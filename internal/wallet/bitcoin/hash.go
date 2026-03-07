@@ -154,7 +154,7 @@ func Base58Encode(data []byte) string {
 		carry := int(b)
 		for j := len(buf) - 1; j >= 0; j-- {
 			carry += int(buf[j]) << 8
-			buf[j] = byte(carry % 58)
+			buf[j] = byte(carry % 58) //nolint:gosec // G115: carry % 58 is always in [0, 57], safely fits in byte
 			carry /= 58
 		}
 	}

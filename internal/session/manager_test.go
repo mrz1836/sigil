@@ -345,7 +345,7 @@ func TestManager_GetSession(t *testing.T) {
 			modifiedData = modifiedData[:startIdx] + expiredSession + modifiedData[endIdx:]
 		}
 
-		err = os.WriteFile(sessionPath, []byte(modifiedData), 0o600)
+		err = os.WriteFile(sessionPath, []byte(modifiedData), 0o600) //nolint:gosec // G703: sessionPath is a test-controlled path in a temp directory
 		if err != nil {
 			t.Fatalf("Failed to write modified session file: %v", err)
 		}

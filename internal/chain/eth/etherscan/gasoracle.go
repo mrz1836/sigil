@@ -62,7 +62,7 @@ func (c *Client) GetGasOracle(ctx context.Context) (*GasOracleResult, error) {
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // URL is constructed from validated config
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
 	}

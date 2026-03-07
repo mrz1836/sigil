@@ -13,5 +13,5 @@ func contextWithTimeout(cmd *cobra.Command, d time.Duration) (context.Context, c
 	if base == nil {
 		base = context.Background()
 	}
-	return context.WithTimeout(base, d)
+	return context.WithTimeout(base, d) //nolint:gosec // G118: cancel func is intentionally returned to caller
 }

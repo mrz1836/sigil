@@ -179,16 +179,14 @@ func (c *Client) GetTokenBalance(ctx context.Context, address, tokenAddress stri
 		return nil, err
 	}
 
-	// ERC-20 balanceOf selector: keccak256("balanceOf(address)")[0:4]
-	// = 0x70a08231
-	selector := []byte{0x70, 0xa0, 0x82, 0x31}
-
 	// Pad address to 32 bytes
 	addr, _ := ethcrypto.HexToAddress(address)
 	paddedAddr := ethcrypto.LeftPadBytes(addr.Bytes(), 32)
 
-	// Build call data
-	data := append(selector, paddedAddr...)
+	// Build call data: ERC-20 balanceOf selector keccak256("balanceOf(address)")[0:4] = 0x70a08231
+	data := make([]byte, 0, 4+len(paddedAddr))
+	data = append(data, 0x70, 0xa0, 0x82, 0x31)
+	data = append(data, paddedAddr...)
 
 	// Create call message
 	msg := rpc.CallMsg{

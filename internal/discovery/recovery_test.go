@@ -286,6 +286,7 @@ func TestRecoverOldWallet_ContextCancellation(t *testing.T) {
 
 	// Create a context that we'll cancel
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	opts := &RecoverOldWalletOptions{
 		Mode:                RecoveryModeStandard,

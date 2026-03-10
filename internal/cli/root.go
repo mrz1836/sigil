@@ -254,6 +254,7 @@ func init() {
 		&cobra.Group{ID: "wallet", Title: "Wallet Operations:"},
 		&cobra.Group{ID: "security", Title: "Security & Access:"},
 		&cobra.Group{ID: "config", Title: "Configuration:"},
+		&cobra.Group{ID: "utility", Title: "Utilities:"},
 	)
 
 	versionCmd.GroupID = "config"

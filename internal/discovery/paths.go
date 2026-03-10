@@ -36,6 +36,12 @@ const (
 	// CoinTypeBTC is the Bitcoin coin type (used by MoneyButton, ElectrumSV imports).
 	CoinTypeBTC uint32 = 0
 
+	// CoinTypeLTC is the Litecoin coin type.
+	CoinTypeLTC uint32 = 2
+
+	// CoinTypeDOGE is the Dogecoin coin type.
+	CoinTypeDOGE uint32 = 3
+
 	// CoinTypeBCH is the Bitcoin Cash coin type (used by Exodus, Simply.Cash).
 	CoinTypeBCH uint32 = 145
 
@@ -68,6 +74,12 @@ const (
 
 	// PriorityMultiAccount is for power users with multiple accounts.
 	PriorityMultiAccount = 5
+
+	// PriorityLitecoin is for Litecoin wallets.
+	PriorityLitecoin = 6
+
+	// PriorityDogecoin is for Dogecoin wallets.
+	PriorityDogecoin = 7
 )
 
 // DefaultSchemes returns the standard set of path schemes to scan.
@@ -119,6 +131,24 @@ func DefaultSchemes() []PathScheme {
 			Accounts:   []uint32{1, 2, 3, 4},
 			ScanChange: true,
 			Priority:   PriorityMultiAccount,
+		},
+		{
+			Name:       "Litecoin",
+			Wallets:    []string{"Electrum-LTC", "Litecoin Core", "Ledger", "Trezor"},
+			CoinType:   CoinTypeLTC,
+			Purpose:    PurposeBIP44,
+			Accounts:   []uint32{0},
+			ScanChange: true,
+			Priority:   PriorityLitecoin,
+		},
+		{
+			Name:       "Dogecoin",
+			Wallets:    []string{"Dogecoin Core", "MultiDoge", "Ledger", "Trezor"},
+			CoinType:   CoinTypeDOGE,
+			Purpose:    PurposeBIP44,
+			Accounts:   []uint32{0},
+			ScanChange: true,
+			Priority:   PriorityDogecoin,
 		},
 	}
 }

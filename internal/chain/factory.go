@@ -108,7 +108,7 @@ func IsSupportedChain(id ID) bool {
 	switch id {
 	case ETH, BSV:
 		return true
-	case BTC, BCH:
+	case BTC, BCH, LTC:
 		// Planned but not yet implemented
 		return false
 	default:

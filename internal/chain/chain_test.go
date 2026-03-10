@@ -18,6 +18,7 @@ func TestID_DerivationPath(t *testing.T) {
 		{"BSV", BSV, "m/44'/236'/0'"},
 		{"BTC", BTC, "m/44'/0'/0'"},
 		{"BCH", BCH, "m/44'/145'/0'"},
+		{"LTC", LTC, "m/44'/2'/0'"},
 		{"unknown", ID("unknown"), ""},
 		{"empty", ID(""), ""},
 	}
@@ -41,6 +42,7 @@ func TestID_CoinType(t *testing.T) {
 		{"BSV", BSV, 236},
 		{"BTC", BTC, 0},
 		{"BCH", BCH, 145},
+		{"LTC", LTC, 2},
 		{"unknown", ID("unknown"), 0},
 		{"empty", ID(""), 0},
 	}
@@ -86,6 +88,7 @@ func TestID_IsValid(t *testing.T) {
 		{"BSV", BSV, true},
 		{"BTC", BTC, true},
 		{"BCH", BCH, true},
+		{"LTC", LTC, true},
 		{"unknown", ID("foo"), false},
 		{"empty", ID(""), false},
 	}
@@ -133,6 +136,7 @@ func TestParseChainID(t *testing.T) {
 		{"bsv", "bsv", BSV, true},
 		{"btc", "btc", BTC, true},
 		{"bch", "bch", BCH, true},
+		{"ltc", "ltc", LTC, true},
 		{"invalid", "foo", ID("foo"), false},
 		{"empty", "", ID(""), false},
 		{"uppercase", "ETH", ID("ETH"), false},
@@ -169,11 +173,11 @@ func TestSupportedChains(t *testing.T) {
 func TestAllChains(t *testing.T) {
 	chains := AllChains()
 
-	if len(chains) != 4 {
-		t.Errorf("AllChains() returned %d chains, want 4", len(chains))
+	if len(chains) != 5 {
+		t.Errorf("AllChains() returned %d chains, want 5", len(chains))
 	}
 
-	expected := map[ID]bool{ETH: true, BSV: true, BTC: true, BCH: true}
+	expected := map[ID]bool{ETH: true, BSV: true, BTC: true, BCH: true, LTC: true}
 	for _, c := range chains {
 		if !expected[c] {
 			t.Errorf("AllChains() contains unexpected chain %q", c)

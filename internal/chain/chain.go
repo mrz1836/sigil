@@ -45,8 +45,9 @@ type ID string
 const (
 	ETH ID = "eth"
 	BSV ID = "bsv"
-	BTC ID = "btc" // Future: Phase 2
-	BCH ID = "bch" // Future: Phase 2
+	BTC ID = "btc"
+	BCH ID = "bch"
+	LTC ID = "ltc"
 )
 
 // BIP44 coin types for derivation paths.
@@ -55,6 +56,7 @@ const (
 	CoinTypeBSV uint32 = 236
 	CoinTypeBTC uint32 = 0
 	CoinTypeBCH uint32 = 145
+	CoinTypeLTC uint32 = 2
 )
 
 // DerivationPath returns the BIP44 derivation path prefix for a chain.
@@ -68,6 +70,8 @@ func (id ID) DerivationPath() string {
 		return "m/44'/0'/0'"
 	case BCH:
 		return "m/44'/145'/0'"
+	case LTC:
+		return "m/44'/2'/0'"
 	default:
 		return ""
 	}
@@ -84,6 +88,8 @@ func (id ID) CoinType() uint32 {
 		return CoinTypeBTC
 	case BCH:
 		return CoinTypeBCH
+	case LTC:
+		return CoinTypeLTC
 	default:
 		return 0
 	}
@@ -97,7 +103,7 @@ func (id ID) String() string {
 // IsValid returns true if the chain ID is a known chain.
 func (id ID) IsValid() bool {
 	switch id {
-	case ETH, BSV, BTC, BCH:
+	case ETH, BSV, BTC, BCH, LTC:
 		return true
 	default:
 		return false
@@ -109,7 +115,7 @@ func (id ID) IsMVP() bool {
 	switch id {
 	case ETH, BSV:
 		return true
-	case BTC, BCH:
+	case BTC, BCH, LTC:
 		return false
 	default:
 		return false
@@ -124,7 +130,7 @@ func (id ID) DustLimit() uint64 {
 	switch id {
 	case BSV:
 		return 1 // BSV removed dust limit - 1 sat minimum for safety
-	case BTC, BCH:
+	case BTC, BCH, LTC:
 		return 546 // Standard dust limit
 	case ETH:
 		return 0 // ETH uses gas, not dust limits
@@ -270,7 +276,7 @@ func SupportedChains() []ID {
 
 // AllChains returns all known chain IDs.
 func AllChains() []ID {
-	return []ID{ETH, BSV, BTC, BCH}
+	return []ID{ETH, BSV, BTC, BCH, LTC}
 }
 
 // ValidateAddressWithRegex validates an address using a regex pattern.

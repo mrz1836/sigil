@@ -46,8 +46,8 @@ func (f *Fetcher) FetchForChain(ctx context.Context, chainID chain.ID, address s
 		return f.fetchETH(ctx, address)
 	case chain.BSV:
 		return f.fetchBSV(ctx, address)
-	case chain.BTC, chain.BCH:
-		// BTC and BCH not supported in MVP
+	case chain.BTC, chain.BCH, chain.LTC:
+		// BTC, BCH, and LTC not supported in MVP
 		return nil, false, nil
 	default:
 		return nil, false, fmt.Errorf("%w: %s", ErrUnsupportedChain, chainID)

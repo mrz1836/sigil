@@ -82,11 +82,11 @@ sigil backup create --wallet main
 
 These flags can be used with any command:
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--home` | - | `~/.sigil` | Sigil data directory |
-| `--output` | `-o` | `auto` | Output format: `text`, `json`, `auto` |
-| `--verbose` | `-v` | `false` | Enable verbose output |
+| Flag        | Short | Default    | Description                           |
+|-------------|-------|------------|---------------------------------------|
+| `--home`    | -     | `~/.sigil` | Sigil data directory                  |
+| `--output`  | `-o`  | `auto`     | Output format: `text`, `json`, `auto` |
+| `--verbose` | `-v`  | `false`    | Enable verbose output                 |
 
 <br>
 
@@ -220,13 +220,13 @@ The `discover` command scans all these paths automatically to find your funds, r
 
 **Supported Wallet Schemes:**
 
-| Scheme | Derivation Path | Wallets |
-|--------|-----------------|---------|
-| BSV Standard | `m/44'/236'/0'/...` | RelayX, RockWallet, Twetch, Centbee †, Trezor, Ledger |
-| Bitcoin Legacy | `m/44'/0'/0'/...` | MoneyButton †, ElectrumSV imports |
-| Bitcoin Cash | `m/44'/145'/0'/...` | Exodus, Simply.Cash †, BCH fork splits |
-| HandCash Legacy | `m/0'/...` | HandCash 1.x only |
-| Multi-Account | `m/44'/236'/1-4'/...` | Power users with multiple accounts |
+| Scheme          | Derivation Path       | Wallets                                               |
+|-----------------|-----------------------|-------------------------------------------------------|
+| BSV Standard    | `m/44'/236'/0'/...`   | RelayX, RockWallet, Twetch, Centbee †, Trezor, Ledger |
+| Bitcoin Legacy  | `m/44'/0'/0'/...`     | MoneyButton †, ElectrumSV imports                     |
+| Bitcoin Cash    | `m/44'/145'/0'/...`   | Exodus, Simply.Cash †, BCH fork splits                |
+| HandCash Legacy | `m/0'/...`            | HandCash 1.x only                                     |
+| Multi-Account   | `m/44'/236'/1-4'/...` | Power users with multiple accounts                    |
 
 † *Service discontinued or shut down*
 
@@ -284,10 +284,10 @@ Use --migrate --wallet <name> to consolidate funds.
 
 **Known Limitations:**
 
-| Wallet | Status | Notes |
-|--------|--------|-------|
-| HandCash 2.0+ | Not supported | Uses proprietary non-exportable keys |
-| Centbee | Supported † | Uses 4-digit PIN as BIP39 passphrase (use `--passphrase`) |
+| Wallet        | Status        | Notes                                                     |
+|---------------|---------------|-----------------------------------------------------------|
+| HandCash 2.0+ | Not supported | Uses proprietary non-exportable keys                      |
+| Centbee       | Supported †   | Uses 4-digit PIN as BIP39 passphrase (use `--passphrase`) |
 
 † *Service discontinued — full recovery supported with mnemonic + PIN*
 
@@ -866,10 +866,10 @@ Manage agent tokens for programmatic wallet access. Agent tokens allow AI agents
 
 **Two access tiers:**
 
-| Mode | Env Variable | Capabilities | Secrets on Disk? |
-|------|-------------|--------------|------------------|
-| Agent Token | `SIGIL_AGENT_TOKEN` | Send, receive, balance | Encrypted seed in agent file |
-| xpub Read-Only | `SIGIL_AGENT_XPUB` | Balance, receive, addresses | None (xpub is public) |
+| Mode           | Env Variable        | Capabilities                | Secrets on Disk?             |
+|----------------|---------------------|-----------------------------|------------------------------|
+| Agent Token    | `SIGIL_AGENT_TOKEN` | Send, receive, balance      | Encrypted seed in agent file |
+| xpub Read-Only | `SIGIL_AGENT_XPUB`  | Balance, receive, addresses | None (xpub is public)        |
 
 ```bash
 sigil agent <subcommand>
@@ -1054,16 +1054,16 @@ Daily spending is tracked in `~/.sigil/agents/{wallet}-{id}.counter` with HMAC i
 
 When policy enforcement fails, structured JSON errors are returned:
 
-| Code | Exit | Description |
-|------|------|-------------|
-| `AGENT_TOKEN_INVALID` | 3 | Token doesn't match any agent file |
-| `AGENT_TOKEN_EXPIRED` | 3 | Agent token has expired |
-| `AGENT_POLICY_VIOLATION` | 5 | Transaction exceeds per-tx limit |
-| `AGENT_DAILY_LIMIT` | 5 | Daily spending limit reached |
-| `AGENT_CHAIN_DENIED` | 2 | Agent not authorized for this chain |
-| `AGENT_ADDR_DENIED` | 2 | Destination address not in allowlist |
-| `AGENT_XPUB_INVALID` | 2 | xpub string is malformed |
-| `AGENT_XPUB_WRITE_DENIED` | 3 | Spending attempted with xpub-only auth |
+| Code                      | Exit | Description                            |
+|---------------------------|------|----------------------------------------|
+| `AGENT_TOKEN_INVALID`     | 3    | Token doesn't match any agent file     |
+| `AGENT_TOKEN_EXPIRED`     | 3    | Agent token has expired                |
+| `AGENT_POLICY_VIOLATION`  | 5    | Transaction exceeds per-tx limit       |
+| `AGENT_DAILY_LIMIT`       | 5    | Daily spending limit reached           |
+| `AGENT_CHAIN_DENIED`      | 2    | Agent not authorized for this chain    |
+| `AGENT_ADDR_DENIED`       | 2    | Destination address not in allowlist   |
+| `AGENT_XPUB_INVALID`      | 2    | xpub string is malformed               |
+| `AGENT_XPUB_WRITE_DENIED` | 3    | Spending attempted with xpub-only auth |
 
 **Example error response:**
 ```json
@@ -1293,26 +1293,189 @@ If your current binary was built from source (version reports `dev` or a commit 
 
 <br>
 
+### lookup
+
+Derive addresses from private keys (WIF, hex) or mnemonic phrases and search a large address dataset for matches. Supports multiple address formats (P2PKH, P2SH-P2WPKH, Bech32, CashAddr) across BTC, LTC, BCH, and DOGE. Useful for checking old wallet keys against known address lists.
+
+```bash
+sigil lookup [flags]
+```
+
+**Two modes:**
+- **Single mode** (`--input`): Look up a single key.
+- **Batch mode** (`--keys-file`): Stream through a file of keys (one per line), processing in parallel.
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input` | - | Single key: mnemonic, WIF, or hex private key |
+| `--keys-file` | - | Path to file of keys, one per line |
+| `--format` | `auto` | Key format in keys file: `auto`, `wif`, `mnemonic`, `hex` |
+| `--passphrase` | `false` | Prompt for BIP39 passphrase (single mode only) |
+| `--file` | - | Path to address data file or directory (required) |
+| `--gap` | `20` | Gap limit per derivation path (for mnemonics) |
+| `--scheme` | - | Scan only a specific scheme (e.g., `BSV Standard`) |
+| `--workers` | `NumCPU` | Number of parallel workers for batch mode |
+
+**Flag Constraints:**
+- `--input` and `--keys-file` are mutually exclusive (exactly one is required)
+- `--file` is required
+
+**Key Formats:**
+- **WIF** (`--format wif`): 51-52 chars starting with 5/K/L. From `dumpprivkey` or wallet export. Each derives addresses in all formats (P2PKH, P2SH-P2WPKH, Bech32, CashAddr) across BTC, LTC, BCH, and DOGE.
+- **Hex** (`--format hex`): 64 hex chars (raw 32-byte ECDSA private key). From `.dat` file extraction tools. Same multi-format derivation as WIF.
+- **Mnemonic** (`--format mnemonic`): 12 or 24 BIP39 words. Each derives ~200+ addresses across all derivation paths and address formats.
+- **Auto** (`--format auto`): Auto-detect per line. Supports mixed files.
+
+**Supported Address Formats:**
+- **BTC**: P2PKH (`1...`), P2SH-P2WPKH (`3...`), Bech32 (`bc1q...`)
+- **LTC**: P2PKH (`L...`), P2SH (`M...`), Bech32 (`ltc1q...`)
+- **BCH**: CashAddr (`q...`, `p...`)
+- **DOGE**: P2PKH (`D...`)
+
+**Directory Support:**
+The `--file` flag accepts a single file or a directory. When given a directory, all `.tsv`, `.csv`, `.txt`, and `.gz` files are loaded recursively into a single unified address set.
+
+Empty lines and lines starting with `#` in key files are skipped.
+
+**Examples:**
+```bash
+# Single key lookup (WIF)
+sigil lookup --input "5HueCGU8rMjxEXxiPuD5BDku..." --file ~/addresses.tsv
+
+# Single key lookup (mnemonic)
+sigil lookup --input "abandon abandon ... about" --file ~/addresses.tsv
+
+# Load all chain files from a directory
+sigil lookup --input "5HueCGU8rMjxEXxiPuD5BDku..." --file ./lost_addresses/
+
+# Batch mode with a keys file
+sigil lookup --keys-file ~/old_keys.txt --file ~/addresses.tsv
+
+# Batch with explicit format (faster than auto-detect)
+sigil lookup --keys-file ~/wif_keys.txt --format wif --file ~/addresses.tsv
+
+# Mnemonic batch with custom gap limit
+sigil lookup --keys-file ~/mnemonics.txt --format mnemonic --gap 50 --file ~/addresses.tsv
+
+# Scan only BSV Standard derivation paths
+sigil lookup --keys-file ~/keys.txt --file ~/addresses.tsv --scheme "BSV Standard"
+
+# JSON output for scripting
+sigil lookup --keys-file ~/keys.txt --file ~/addresses.tsv -o json
+```
+
+**Sample Text Output:**
+```
+Loading address data from ./lost_addresses/...
+  Loaded 79,000,000 addresses in 52.1s (2814 MB)
+
+Processing keys from keys.txt (8 workers)...
+  MATCH: 1ABC...xyz  balance=248597.58  format="BTC P2PKH"  key_line=4231  scheme="BSV Standard"  path=m/44'/236'/0'/0/3
+  MATCH: bc1q...uvw  balance=120000.00  format="BTC Bech32"  key_line=89102  scheme="Bitcoin Legacy"  path=m/44'/0'/0'/1/0
+  MATCH: qpz9...abc  balance=50000.00   format="BCH CashAddr"  key_line=89102
+
+Done. Processed 3,812,445 keys in 12m34s. Found 3 match(es).
+```
+
+**Address Data File Format:**
+
+The address file can be CSV (`address,balance`), TSV, or plain text (one address per line). CRLF line endings and gzip-compressed files (`.gz`) are supported. A header row containing "address" and "balance" is auto-detected and skipped.
+
+**Performance:**
+- The address dataset is loaded once into a sorted flat byte buffer for O(log n) binary search.
+- Keys are processed in parallel across worker goroutines.
+- The keys file is streamed line-by-line (not loaded into memory).
+- Matches are printed as they are found (streaming output).
+
+**Known Limitations:**
+- Taproot addresses (`bc1p...`) are not yet supported.
+- For mnemonic keys, all standard derivation path schemes are scanned (BSV Standard, Bitcoin Legacy, Bitcoin Cash, HandCash Legacy, Multi-Account, Litecoin).
+
+<br>
+
+---
+
+<br>
+
+### keygen
+
+Generate a text file of cryptographic private keys in the chosen format. One key is written per line. The output is compatible with `sigil lookup --keys-file` for batch address derivation and lookups.
+
+```bash
+sigil keygen [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format` | - | Key format (required): `hex`, `wif`, `wif-uncompressed`, `mnemonic12`, `mnemonic24` |
+| `--count` | - | Number of keys to generate (required) |
+| `--file` | - | Output file path (required) |
+| `--workers` | `NumCPU` | Number of parallel generation goroutines |
+
+**Supported Formats:**
+
+| Format             | Description                                  | Example                     |
+|--------------------|----------------------------------------------|-----------------------------|
+| `hex`              | Raw 32-byte private key, lowercase hex       | `0c28fca386c7a227...`       |
+| `wif`              | Compressed WIF (modern `K...`/`L...` prefix) | `KwDiBf89QgGbjEhKn...`      |
+| `wif-uncompressed` | Uncompressed WIF (legacy `5...` prefix)      | `5HueCGU8rMjxEXxi...`       |
+| `mnemonic12`       | BIP39 12-word mnemonic phrase                | `abandon abandon ... about` |
+| `mnemonic24`       | BIP39 24-word mnemonic phrase                | `abandon abandon ... art`   |
+
+**Examples:**
+```bash
+# Generate 1000 compressed WIF keys
+sigil keygen --format wif --count 1000 --file keys.txt
+
+# Generate 50000 hex keys using 8 parallel workers
+sigil keygen --format hex --count 50000 --file hex_keys.txt --workers 8
+
+# Generate BIP39 12-word mnemonics
+sigil keygen --format mnemonic12 --count 500 --file mnemonics.txt
+
+# Generate uncompressed WIF (legacy 5... format)
+sigil keygen --format wif-uncompressed --count 100 --file old_keys.txt
+
+# Cross-check: generate one key and look it up immediately
+sigil keygen --format wif --count 1 --file /tmp/one.txt
+sigil lookup --input "$(cat /tmp/one.txt)" --file ./addresses.tsv
+```
+
+**Output:**
+
+Progress is printed to stderr once per second. On completion, the success line is printed to stdout:
+```
+Generated 50,000 keys → /absolute/path/to/hex_keys.txt
+```
+
+<br>
+
+---
+
+<br>
+
 ## Environment Variables
 
 Environment variables override configuration file settings.
 
-| Variable | Description |
-|----------|-------------|
-| `SIGIL_HOME` | Sigil data directory (default: `~/.sigil`) |
-| `SIGIL_ETH_RPC` | Ethereum RPC endpoint URL (default: PublicNode gateway) |
-| `SIGIL_ETH_PROVIDER` | ETH balance provider: `etherscan` (default) or `rpc` |
-| `ETHERSCAN_API_KEY` | Etherscan API key (required when provider is `etherscan`) |
-| `SIGIL_BSV_API_KEY` | WhatsOnChain API key (optional, fallback: `WHATS_ON_CHAIN_API_KEY`) |
-| `SIGIL_BSV_FEE_STRATEGY` | BSV fee strategy: `economy`, `normal` (default), `priority` |
-| `SIGIL_BSV_MIN_MINERS` | Minimum miners for normal fee strategy (default: 2) |
-| `SIGIL_OUTPUT_FORMAT` | Default output format (`text`, `json`, `auto`) |
-| `SIGIL_VERBOSE` | Enable verbose output (`true`, `yes`, `on`, `1`) |
-| `SIGIL_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
-| `SIGIL_SESSION_TTL` | Session timeout in minutes (default: 15) |
-| `SIGIL_AGENT_TOKEN` | Agent token for non-interactive wallet access (see [Agent Mode](#agent)) |
-| `SIGIL_AGENT_XPUB` | xpub for read-only balance/receive operations (see [Agent Mode](#agent)) |
-| `NO_COLOR` | Disable colored output (any value) |
+| Variable                 | Description                                                              |
+|--------------------------|--------------------------------------------------------------------------|
+| `SIGIL_HOME`             | Sigil data directory (default: `~/.sigil`)                               |
+| `SIGIL_ETH_RPC`          | Ethereum RPC endpoint URL (default: PublicNode gateway)                  |
+| `SIGIL_ETH_PROVIDER`     | ETH balance provider: `etherscan` (default) or `rpc`                     |
+| `ETHERSCAN_API_KEY`      | Etherscan API key (required when provider is `etherscan`)                |
+| `SIGIL_BSV_API_KEY`      | WhatsOnChain API key (optional, fallback: `WHATS_ON_CHAIN_API_KEY`)      |
+| `SIGIL_BSV_FEE_STRATEGY` | BSV fee strategy: `economy`, `normal` (default), `priority`              |
+| `SIGIL_BSV_MIN_MINERS`   | Minimum miners for normal fee strategy (default: 2)                      |
+| `SIGIL_OUTPUT_FORMAT`    | Default output format (`text`, `json`, `auto`)                           |
+| `SIGIL_VERBOSE`          | Enable verbose output (`true`, `yes`, `on`, `1`)                         |
+| `SIGIL_LOG_LEVEL`        | Log level (`debug`, `info`, `warn`, `error`)                             |
+| `SIGIL_SESSION_TTL`      | Session timeout in minutes (default: 15)                                 |
+| `SIGIL_AGENT_TOKEN`      | Agent token for non-interactive wallet access (see [Agent Mode](#agent)) |
+| `SIGIL_AGENT_XPUB`       | xpub for read-only balance/receive operations (see [Agent Mode](#agent)) |
+| `NO_COLOR`               | Disable colored output (any value)                                       |
 
 **Examples:**
 ```bash
@@ -1374,20 +1537,20 @@ networks:
 
 Use dot notation with `config get` and `config set`:
 
-| Path | Description | Valid Values |
-|------|-------------|--------------|
-| `home` | Data directory | Any path |
-| `output.default_format` | Default output format | `text`, `json`, `auto` |
-| `output.verbose` | Verbose output | `true`, `false` |
-| `output.color` | Color output | `auto`, `always`, `never` |
-| `logging.level` | Log level | `debug`, `info`, `warn`, `error` |
-| `logging.file` | Log file path | Any path |
-| `security.session_enabled` | Enable session caching | `true`, `false` |
-| `security.session_ttl_minutes` | Session duration | `1`-`60` |
-| `fees.bsv_fee_strategy` | BSV fee strategy | `economy`, `normal`, `priority` |
-| `fees.bsv_min_miners` | Minimum miners for normal strategy | Any integer > 0 |
-| `fees.eth_gas_strategy` | ETH gas speed | `slow`, `medium`, `fast` |
-| `networks.eth.provider` | ETH balance provider | `etherscan`, `rpc` |
-| `networks.eth.etherscan_api_key` | Etherscan API key | Any string |
-| `networks.eth.rpc` | Ethereum RPC URL | Any URL |
-| `networks.bsv.api_key` | WhatsOnChain API key | Any string |
+| Path                             | Description                        | Valid Values                     |
+|----------------------------------|------------------------------------|----------------------------------|
+| `home`                           | Data directory                     | Any path                         |
+| `output.default_format`          | Default output format              | `text`, `json`, `auto`           |
+| `output.verbose`                 | Verbose output                     | `true`, `false`                  |
+| `output.color`                   | Color output                       | `auto`, `always`, `never`        |
+| `logging.level`                  | Log level                          | `debug`, `info`, `warn`, `error` |
+| `logging.file`                   | Log file path                      | Any path                         |
+| `security.session_enabled`       | Enable session caching             | `true`, `false`                  |
+| `security.session_ttl_minutes`   | Session duration                   | `1`-`60`                         |
+| `fees.bsv_fee_strategy`          | BSV fee strategy                   | `economy`, `normal`, `priority`  |
+| `fees.bsv_min_miners`            | Minimum miners for normal strategy | Any integer > 0                  |
+| `fees.eth_gas_strategy`          | ETH gas speed                      | `slow`, `medium`, `fast`         |
+| `networks.eth.provider`          | ETH balance provider               | `etherscan`, `rpc`               |
+| `networks.eth.etherscan_api_key` | Etherscan API key                  | Any string                       |
+| `networks.eth.rpc`               | Ethereum RPC URL                   | Any URL                          |
+| `networks.bsv.api_key`           | WhatsOnChain API key               | Any string                       |

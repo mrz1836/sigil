@@ -83,7 +83,7 @@ func (s *Service) refreshAddress(ctx context.Context, chainID chain.ID, address 
 		return s.refreshBSV(ctx, address)
 	case chain.ETH:
 		return s.refreshETH(ctx, address)
-	case chain.BTC, chain.BCH:
+	case chain.BTC, chain.BCH, chain.LTC:
 		return fmt.Errorf("%w: %s", ErrUnsupportedChain, chainID)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownChain, chainID)

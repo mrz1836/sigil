@@ -572,7 +572,7 @@ func TestBuildAddressList(t *testing.T) {
 			foundETH++
 		case wallet.ChainBSV:
 			foundBSV++
-		case wallet.ChainBTC, wallet.ChainBCH:
+		case wallet.ChainBTC, wallet.ChainBCH, wallet.ChainLTC:
 			// Other chains not counted in this test
 		}
 	}

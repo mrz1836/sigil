@@ -79,7 +79,7 @@ func ValidateTransaction(cred *Credential, chainID chain.ID, to string, amountSm
 
 	// Check per-transaction limit
 	switch chainID {
-	case chain.BSV, chain.BTC, chain.BCH:
+	case chain.BSV, chain.BTC, chain.BCH, chain.LTC:
 		if policy.MaxPerTxSat > 0 {
 			limit := new(big.Int).SetUint64(policy.MaxPerTxSat)
 			if amountSmallest.Cmp(limit) > 0 {
@@ -111,7 +111,7 @@ func CheckDailyLimit(counterPath, token string, cred *Credential, chainID chain.
 	counter := loadCounter(counterPath, token)
 
 	switch chainID {
-	case chain.BSV, chain.BTC, chain.BCH:
+	case chain.BSV, chain.BTC, chain.BCH, chain.LTC:
 		if policy.MaxDailySat == 0 {
 			return nil // No daily limit
 		}
@@ -149,7 +149,7 @@ func RecordSpend(counterPath, token string, chainID chain.ID, amountSmallest *bi
 	counter := loadCounter(counterPath, token)
 
 	switch chainID {
-	case chain.BSV, chain.BTC, chain.BCH:
+	case chain.BSV, chain.BTC, chain.BCH, chain.LTC:
 		counter.SpentSat += amountSmallest.Uint64()
 	case chain.ETH:
 		spentWei := counter.spentWeiBig()

@@ -42,7 +42,7 @@ func (s *Service) Send(ctx context.Context, req *SendRequest) (*SendResult, erro
 		return s.sendETH(ctx, req)
 	case chain.BSV:
 		return s.sendBSV(ctx, req)
-	case chain.BTC, chain.BCH:
+	case chain.BTC, chain.BCH, chain.LTC:
 		return nil, sigilerr.ErrNotImplemented
 	default:
 		return nil, sigilerr.ErrNotImplemented

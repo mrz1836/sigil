@@ -103,6 +103,7 @@ func TestRootHelpContainsGroups(t *testing.T) {
 	assert.Contains(t, output, "Wallet Operations:")
 	assert.Contains(t, output, "Security & Access:")
 	assert.Contains(t, output, "Configuration:")
+	assert.Contains(t, output, "Utilities:")
 }
 
 // TestParentCommandsShowSubcommandsInHelp verifies that parent commands
@@ -200,6 +201,7 @@ func TestWalkCommandsVisitsAll(t *testing.T) {
 		"sigil backup",
 		"sigil config",
 		"sigil completion",
+		"sigil lookup",
 		"sigil version",
 	}
 

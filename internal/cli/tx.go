@@ -245,8 +245,8 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 		displayBSVTxResult(cmd, convertToBSVTransactionResult(result))
 	case chain.ETH:
 		displayTxResult(cmd, convertToETHTransactionResult(result))
-	case chain.BTC, chain.BCH:
-		// BTC and BCH are not yet supported for transactions
+	case chain.BTC, chain.BCH, chain.LTC:
+		// BTC, BCH, and LTC are not yet supported for transactions
 		displayTxResult(cmd, convertToETHTransactionResult(result))
 	}
 
@@ -261,8 +261,8 @@ func promptTransactionConfirmation(ctx context.Context, cmd *cobra.Command, chai
 		return promptETHConfirmation(ctx, cmd, req)
 	case chain.BSV:
 		return promptBSVConfirmation(ctx, cmd, req, addresses)
-	case chain.BTC, chain.BCH:
-		// BTC and BCH are not yet supported for transactions
+	case chain.BTC, chain.BCH, chain.LTC:
+		// BTC, BCH, and LTC are not yet supported for transactions
 		return false, sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			fmt.Sprintf("chain %s is not yet supported for transactions", chainID),

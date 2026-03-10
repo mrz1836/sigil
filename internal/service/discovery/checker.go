@@ -17,7 +17,7 @@ func (s *Service) CheckAddress(ctx context.Context, req *CheckRequest) (*CheckRe
 		return s.checkBSV(ctx, req.Address)
 	case chain.ETH:
 		return s.checkETH(ctx, req.Address)
-	case chain.BTC, chain.BCH:
+	case chain.BTC, chain.BCH, chain.LTC:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedChain, req.ChainID)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnknownChain, req.ChainID)

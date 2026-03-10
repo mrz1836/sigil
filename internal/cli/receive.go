@@ -283,7 +283,7 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 	case chain.ETH:
 		outln(w, "View on Etherscan:")
 		out(w, "  https://etherscan.io/address/%s\n", addr.Address)
-	case chain.BTC, chain.BCH:
+	case chain.BTC, chain.BCH, chain.LTC:
 		// Future chains - no explorer link yet
 	}
 }
@@ -716,7 +716,7 @@ func displayReceiveCheckText(w io.Writer, addr *wallet.Address, chainID chain.ID
 	case chain.ETH:
 		outln(w, "View on Etherscan:")
 		out(w, "  https://etherscan.io/address/%s\n", addr.Address)
-	case chain.BTC, chain.BCH:
+	case chain.BTC, chain.BCH, chain.LTC:
 		// Future chains
 	}
 }

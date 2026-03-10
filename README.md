@@ -378,7 +378,7 @@ The release process is defined in the [.goreleaser.yml](.goreleaser.yml) configu
 Then create and push a new Git tag using:
 
 ```bash
-magex version:bump bump=patch push=true
+magex version:bump bump=patch push=true branch=master
 ```
 
 This process ensures consistent, repeatable releases with properly versioned artifacts and citation metadata.

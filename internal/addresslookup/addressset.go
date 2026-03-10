@@ -1,23 +1,15 @@
 package addresslookup
 
 import (
-	"bytes"
-	"sort"
-	"strings"
-	"sync"
 	"time"
 )
 
-// AddressSet is a sorted flat byte buffer for O(log n) address lookup.
-// Addresses are stored in fixed-width slots in sorted order.
-// An optional parallel balance buffer stores balances at matching indices.
+// AddressSet is a hash map for O(1) address lookup.
+// Addresses are stored as keys, balances as values.
 type AddressSet struct {
-	buf       []byte
-	slotWidth int
-	count     int
-	balBuf    []byte
-	balWidth  int
-	bufPool   sync.Pool
+	m        map[string]string
+	count    int
+	memBytes int64
 }
 
 // Stats contains loading statistics for the address set.
@@ -41,92 +33,31 @@ type addrBal struct {
 }
 
 // NewAddressSet builds an AddressSet from address+balance pairs.
-// Addresses are sorted and packed into a flat byte buffer.
-// Balances are stored in a parallel buffer at the same indices.
 func NewAddressSet(pairs []addrBal) *AddressSet {
 	if len(pairs) == 0 {
 		return &AddressSet{}
 	}
 
-	// Sort by address
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].addr < pairs[j].addr
-	})
-
-	// Determine slot widths
-	addrWidth := 0
-	balWidth := 0
-	for i := range pairs {
-		if len(pairs[i].addr) > addrWidth {
-			addrWidth = len(pairs[i].addr)
-		}
-		if len(pairs[i].bal) > balWidth {
-			balWidth = len(pairs[i].bal)
-		}
+	m := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		m[p.addr] = p.bal
 	}
-
-	// Pack into flat buffers
-	buf := make([]byte, len(pairs)*addrWidth)
-	var balBuf []byte
-	if balWidth > 0 {
-		balBuf = make([]byte, len(pairs)*balWidth)
+	var memBytes int64
+	for k, v := range m {
+		memBytes += int64(len(k) + len(v) + 80) // 80 bytes approx map bucket overhead per entry
 	}
-
-	for i, p := range pairs {
-		copy(buf[i*addrWidth:], p.addr)
-		if balWidth > 0 {
-			copy(balBuf[i*balWidth:], p.bal)
-		}
-	}
-
-	as := &AddressSet{
-		buf:       buf,
-		slotWidth: addrWidth,
-		count:     len(pairs),
-		balBuf:    balBuf,
-		balWidth:  balWidth,
-	}
-	slotW := addrWidth
-	as.bufPool.New = func() any {
-		b := make([]byte, slotW)
-		return &b
-	}
-	return as
+	return &AddressSet{m: m, count: len(m), memBytes: memBytes}
 }
 
 // Lookup searches for an address and returns the result with balance.
 func (s *AddressSet) Lookup(address string) LookupResult {
-	if s.count == 0 || s.slotWidth == 0 {
+	if s.count == 0 {
 		return LookupResult{}
 	}
-
-	// Reuse a pooled buffer to avoid per-call allocations in the hot path.
-	bp := s.bufPool.Get().(*[]byte)
-	padded := *bp
-	copy(padded, address)
-	for i := len(address); i < s.slotWidth; i++ {
-		padded[i] = 0
+	if bal, ok := s.m[address]; ok {
+		return LookupResult{Found: true, Balance: bal}
 	}
-
-	idx := sort.Search(s.count, func(i int) bool {
-		off := i * s.slotWidth
-		return bytes.Compare(s.buf[off:off+s.slotWidth], padded) >= 0
-	})
-
-	var result LookupResult
-	if idx < s.count {
-		off := idx * s.slotWidth
-		if bytes.Equal(s.buf[off:off+s.slotWidth], padded) {
-			result.Found = true
-			if s.balWidth > 0 && s.balBuf != nil {
-				balOff := idx * s.balWidth
-				result.Balance = strings.TrimRight(string(s.balBuf[balOff:balOff+s.balWidth]), "\x00")
-			}
-		}
-	}
-
-	s.bufPool.Put(bp)
-	return result
+	return LookupResult{}
 }
 
 // Contains returns true if the address is in the set.
@@ -140,17 +71,7 @@ func (s *AddressSet) Count() int {
 }
 
 // MemBytes returns the approximate memory usage in bytes.
+// Computed once at construction time for O(1) access.
 func (s *AddressSet) MemBytes() int64 {
-	return int64(len(s.buf)) + int64(len(s.balBuf))
-}
-
-// padToWidth right-pads a string with null bytes to the given width,
-// or truncates if longer.
-func padToWidth(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
-	}
-	padded := make([]byte, width)
-	copy(padded, s)
-	return string(padded)
+	return s.memBytes
 }

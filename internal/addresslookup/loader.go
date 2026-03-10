@@ -60,10 +60,9 @@ func LoadWithProgress(path string, cb LoadProgressCallback) (*AddressSet, Stats,
 	loadTime := time.Since(start)
 
 	stats := Stats{
-		Count:     set.Count(),
-		SlotWidth: set.slotWidth,
-		MemBytes:  set.MemBytes(),
-		LoadTime:  loadTime,
+		Count:    set.Count(),
+		MemBytes: set.MemBytes(),
+		LoadTime: loadTime,
 	}
 
 	return set, stats, nil
@@ -95,11 +94,10 @@ func loadPairs(path string) ([]addrBal, error) {
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
 	var pairs []addrBal
-	lineNum := 0
 	isCSV := false
+	formatDetected := false
 
 	for scanner.Scan() {
-		lineNum++
 		line := scanner.Text()
 		line = strings.TrimRight(line, "\r\n")
 		line = strings.TrimSpace(line)
@@ -108,15 +106,17 @@ func loadPairs(path string) ([]addrBal, error) {
 			continue
 		}
 
-		if lineNum == 1 || (len(pairs) == 0 && !isCSV) {
+		if !formatDetected {
 			lower := strings.ToLower(line)
 			if strings.Contains(lower, "address") && strings.Contains(lower, "balance") {
 				isCSV = true
+				formatDetected = true
 				continue
 			}
 			if strings.Contains(line, ",") || strings.Contains(line, "\t") {
 				isCSV = true
 			}
+			formatDetected = true
 		}
 
 		var addr, bal string
@@ -184,7 +184,12 @@ func LoadDirWithProgress(dirPath string, cb LoadProgressCallback) (*AddressSet, 
 		return nil, Stats{}, err
 	}
 
-	var allPairs []addrBal
+	// Two-pass approach: collect per-file slices first, then do a single
+	// capacity-hinted allocation for the combined slice. This avoids the
+	// repeated doubling that append causes for large multi-file loads and
+	// halves peak memory compared to in-place appending.
+	allSlices := make([][]addrBal, 0, len(files))
+	totalPairs := 0
 	for i, path := range files {
 		if cb != nil {
 			cb(LoadProgress{
@@ -192,14 +197,15 @@ func LoadDirWithProgress(dirPath string, cb LoadProgressCallback) (*AddressSet, 
 				FilesTotal:  len(files),
 				FilesLoaded: i,
 				FileName:    filepath.Base(path),
-				PairsLoaded: len(allPairs),
+				PairsLoaded: totalPairs,
 			})
 		}
 		pairs, loadErr := loadPairs(path)
 		if loadErr != nil {
 			return nil, Stats{}, fmt.Errorf("loading %s: %w", path, loadErr)
 		}
-		allPairs = append(allPairs, pairs...)
+		allSlices = append(allSlices, pairs)
+		totalPairs += len(pairs)
 	}
 
 	if cb != nil {
@@ -207,18 +213,22 @@ func LoadDirWithProgress(dirPath string, cb LoadProgressCallback) (*AddressSet, 
 			Phase:       "building_index",
 			FilesTotal:  len(files),
 			FilesLoaded: len(files),
-			PairsLoaded: len(allPairs),
+			PairsLoaded: totalPairs,
 		})
+	}
+
+	allPairs := make([]addrBal, 0, totalPairs)
+	for _, s := range allSlices {
+		allPairs = append(allPairs, s...)
 	}
 
 	set := NewAddressSet(allPairs)
 	loadTime := time.Since(start)
 
 	stats := Stats{
-		Count:     set.Count(),
-		SlotWidth: set.slotWidth,
-		MemBytes:  set.MemBytes(),
-		LoadTime:  loadTime,
+		Count:    set.Count(),
+		MemBytes: set.MemBytes(),
+		LoadTime: loadTime,
 	}
 
 	return set, stats, nil

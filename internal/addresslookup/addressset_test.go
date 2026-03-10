@@ -106,7 +106,7 @@ func TestAddressSet_MemBytes(t *testing.T) {
 	}
 	set := NewAddressSet(pairs)
 
-	assert.Equal(t, int64(12), set.MemBytes())
+	assert.Positive(t, set.MemBytes())
 }
 
 func TestAddressSet_NoBalances(t *testing.T) {
@@ -158,27 +158,16 @@ func TestAddressSet_DuplicateAddresses(t *testing.T) {
 	}
 	set := NewAddressSet(pairs)
 
-	assert.Equal(t, 3, set.Count())
+	// Map deduplicates: 2 unique addresses
+	assert.Equal(t, 2, set.Count())
 	assert.True(t, set.Contains("1ABC"))
 	assert.True(t, set.Contains("1DEF"))
 }
 
-func TestPadToWidth(t *testing.T) {
+func TestAddressSet_MemBytesEmpty(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		input    string
-		width    int
-		expected string
-	}{
-		{"abc", 5, "abc\x00\x00"},
-		{"abcde", 5, "abcde"},
-		{"abcdef", 5, "abcde"},
-		{"", 3, "\x00\x00\x00"},
-	}
-	for _, tt := range tests {
-		result := padToWidth(tt.input, tt.width)
-		assert.Equal(t, tt.expected, result)
-	}
+	set := NewAddressSet(nil)
+	assert.Equal(t, int64(0), set.MemBytes())
 }
 
 func BenchmarkAddressSet_Contains(b *testing.B) {

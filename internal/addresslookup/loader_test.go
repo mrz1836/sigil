@@ -169,7 +169,6 @@ func TestLoad_Stats(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, stats.Count)
-	assert.Positive(t, stats.SlotWidth)
 	assert.Positive(t, stats.MemBytes)
 	assert.Positive(t, stats.LoadTime)
 	assert.Equal(t, set.Count(), stats.Count)

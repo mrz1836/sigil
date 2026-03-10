@@ -1,14 +1,13 @@
 package wallet
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"runtime"
 	"strings"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/hdkeychain/v3"
 	"golang.org/x/crypto/sha3"
 
@@ -28,8 +27,10 @@ const (
 	ChainBSV = chain.BSV
 	// ChainBTC is the Bitcoin chain (future).
 	ChainBTC = chain.BTC
-	// ChainBCH is the Bitcoin Cash chain (future).
+	// ChainBCH is the Bitcoin Cash chain.
 	ChainBCH = chain.BCH
+	// ChainLTC is the Litecoin chain.
+	ChainLTC = chain.LTC
 )
 
 // BIP44 change chain constants.
@@ -39,24 +40,6 @@ const (
 	// InternalChain is for change addresses (BIP44 change=1).
 	InternalChain uint32 = 1
 )
-
-// secp256k1 curve parameters for public key decompression
-//
-//nolint:gochecknoglobals // Cryptographic constants for secp256k1 elliptic curve
-var (
-	secp256k1P *big.Int
-	secp256k1B *big.Int
-)
-
-//nolint:gochecknoinits // Required for cryptographic constant initialization
-func init() {
-	var ok bool
-	secp256k1P, ok = new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16)
-	if !ok {
-		panic("failed to initialize secp256k1P curve parameter")
-	}
-	secp256k1B = big.NewInt(7)
-}
 
 // hdNetParams satisfies hdkeychain.NetworkParams for BIP32 key derivation.
 // Uses standard Bitcoin mainnet HD version bytes.
@@ -71,12 +54,6 @@ var (
 
 	// ErrInvalidAddress indicates the address format is invalid.
 	ErrInvalidAddress = errors.New("invalid address format")
-
-	// ErrInvalidPublicKeyLength indicates the public key has wrong length.
-	ErrInvalidPublicKeyLength = errors.New("invalid compressed public key length")
-
-	// ErrInvalidPublicKeyPrefix indicates the public key has invalid prefix.
-	ErrInvalidPublicKeyPrefix = errors.New("invalid public key prefix")
 )
 
 // Address represents a derived blockchain address.
@@ -130,7 +107,7 @@ func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address,
 	switch chain {
 	case ChainETH:
 		address, pubKeyHex, err = deriveETHAddress(key)
-	case ChainBSV, ChainBTC, ChainBCH:
+	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
 		address, pubKeyHex, err = deriveBSVAddress(key)
 	default:
 		return nil, ErrUnsupportedChain
@@ -167,7 +144,7 @@ func DeriveAddressWithChange(seed []byte, chain ChainID, account, change, index 
 	switch chain {
 	case ChainETH:
 		address, pubKeyHex, err = deriveETHAddress(key)
-	case ChainBSV, ChainBTC, ChainBCH:
+	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
 		address, pubKeyHex, err = deriveBSVAddress(key)
 	default:
 		return nil, ErrUnsupportedChain
@@ -226,39 +203,7 @@ func deriveBIP44Key(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, i
 // deriveBIP44KeyWithChange derives a key following BIP44 path structure with explicit change chain.
 // Path: m / purpose' / coin_type' / account' / change / address_index
 func deriveBIP44KeyWithChange(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, change, index uint32) (*hdkeychain.ExtendedKey, error) {
-	coinType := chain.CoinType()
-
-	// m/44' (purpose)
-	purposeKey, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
-	}
-
-	// m/44'/coin_type'
-	coinTypeKey, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
-	}
-
-	// m/44'/coin_type'/account'
-	accountKey, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive account key: %w", err)
-	}
-
-	// m/44'/coin_type'/account'/change (0=external/receiving, 1=internal/change)
-	changeKey, err := accountKey.ChildBIP32Std(change)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive change key: %w", err)
-	}
-
-	// m/44'/coin_type'/account'/change/index
-	indexKey, err := changeKey.ChildBIP32Std(index)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive index key: %w", err)
-	}
-
-	return indexKey, nil
+	return deriveBIP44KeyWithCoinType(masterKey, chain.CoinType(), account, change, index)
 }
 
 // deriveETHAddress derives an Ethereum address from a BIP32 key.
@@ -293,24 +238,9 @@ func deriveETHAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, e
 //
 //nolint:unparam // error return is for interface consistency with deriveETHAddress
 func deriveBSVAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, _ error) {
-	// Get compressed public key (33 bytes)
 	pubKey := key.SerializedPubKey()
-
-	// P2PKH address: Base58Check(0x00 + RIPEMD160(SHA256(pubkey)))
-	pubKeyHash := bitcoin.Hash160(pubKey)
-
-	// Add version byte (0x00 for mainnet P2PKH)
-	versionedPayload := append([]byte{0x00}, pubKeyHash...)
-
-	// Calculate checksum
-	checksum := doubleSHA256(versionedPayload)[:4]
-
-	// Combine and encode
-	fullPayload := append(versionedPayload, checksum...)
-	address = base58Encode(fullPayload)
-
+	address = bitcoin.Base58CheckEncode(0x00, bitcoin.Hash160(pubKey))
 	pubKeyHex = hex.EncodeToString(pubKey)
-
 	return address, pubKeyHex, nil
 }
 
@@ -333,6 +263,9 @@ func checksumChar(c, hashByte byte, isOddPosition bool) byte {
 
 // ErrInvalidAddressLength indicates the address byte slice has incorrect length.
 var ErrInvalidAddressLength = errors.New("invalid address length")
+
+// ErrInvalidPrivKeyLength indicates a private key has incorrect byte length.
+var ErrInvalidPrivKeyLength = errors.New("invalid private key length")
 
 // toChecksumAddress converts a 20-byte address to EIP-55 checksummed hex string.
 func toChecksumAddress(addr []byte) (string, error) {
@@ -367,7 +300,9 @@ func isHexChar(c rune) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
-// IsValidETHAddress checks if an Ethereum address is valid.
+// IsValidETHAddress checks if an Ethereum address has valid structural format
+// (length, "0x" prefix, hex characters). It does NOT validate the EIP-55
+// mixed-case checksum. Use HasValidEIP55Checksum for full validation.
 func IsValidETHAddress(address string) bool {
 	if len(address) != 42 {
 		return false
@@ -387,96 +322,48 @@ func IsValidETHAddress(address string) bool {
 	return true
 }
 
-// doubleSHA256 computes SHA256(SHA256(data)).
-func doubleSHA256(data []byte) []byte {
-	first := sha256.Sum256(data)
-	second := sha256.Sum256(first[:])
-	return second[:]
+// eip55Nibble extracts the nibble from the keccak256 hash at position i.
+// Even positions use the high nibble; odd positions use the low nibble.
+func eip55Nibble(hashBytes []byte, i int) byte {
+	if i%2 == 0 {
+		return hashBytes[i/2] >> 4
+	}
+
+	return hashBytes[i/2] & 0x0F
 }
 
-// base58Encode encodes bytes to base58.
-func base58Encode(input []byte) string {
-	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+// HasValidEIP55Checksum reports whether address has a valid EIP-55 mixed-case checksum.
+// The address must first pass IsValidETHAddress (structural check).
+func HasValidEIP55Checksum(address string) bool {
+	if !IsValidETHAddress(address) {
+		return false
+	}
 
-	// Count leading zeros
-	leadingZeros := 0
-	for _, b := range input {
-		if b == 0 {
-			leadingZeros++
-		} else {
-			break
+	addrHex := strings.ToLower(address[2:])
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write([]byte(addrHex))
+	hashBytes := hash.Sum(nil)
+
+	for i, c := range []byte(address[2:]) {
+		nibble := eip55Nibble(hashBytes, i)
+		if c >= 'a' && c <= 'f' && nibble >= 8 {
+			return false // should be uppercase
+		}
+		if c >= 'A' && c <= 'F' && nibble < 8 {
+			return false // should be lowercase
 		}
 	}
 
-	// Convert to big integer
-	x := new(big.Int).SetBytes(input)
-	base := big.NewInt(58)
-	zero := big.NewInt(0)
-	mod := new(big.Int)
-
-	var result []byte
-	for x.Cmp(zero) > 0 {
-		x.DivMod(x, base, mod)
-		result = append(result, alphabet[mod.Int64()])
-	}
-
-	// Add leading '1's for each leading zero byte
-	for i := 0; i < leadingZeros; i++ {
-		result = append(result, alphabet[0])
-	}
-
-	// Reverse the result
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
-
-	return string(result)
+	return true
 }
 
 // decompressPublicKey decompresses a 33-byte compressed public key to 65-byte uncompressed.
 func decompressPublicKey(compressed []byte) ([]byte, error) {
-	if len(compressed) != 33 {
-		return nil, ErrInvalidPublicKeyLength
+	pk, err := secp256k1.ParsePubKey(compressed)
+	if err != nil {
+		return nil, fmt.Errorf("invalid compressed public key: %w", err)
 	}
-
-	prefix := compressed[0]
-	if prefix != 0x02 && prefix != 0x03 {
-		return nil, ErrInvalidPublicKeyPrefix
-	}
-
-	// X coordinate
-	x := new(big.Int).SetBytes(compressed[1:33])
-
-	// Compute y^2 = x^3 + 7 (mod p)
-	x3 := new(big.Int).Exp(x, big.NewInt(3), secp256k1P)
-	y2 := new(big.Int).Add(x3, secp256k1B)
-	y2.Mod(y2, secp256k1P)
-
-	// Compute y = sqrt(y2) mod p using Tonelli-Shanks
-	// For secp256k1, p ≡ 3 (mod 4), so y = y2^((p+1)/4) mod p
-	exp := new(big.Int).Add(secp256k1P, big.NewInt(1))
-	exp.Div(exp, big.NewInt(4))
-	y := new(big.Int).Exp(y2, exp, secp256k1P)
-
-	// Choose correct y based on parity
-	isOdd := y.Bit(0) == 1
-	wantOdd := prefix == 0x03
-	if isOdd != wantOdd {
-		y.Sub(secp256k1P, y)
-	}
-
-	// Build uncompressed key: 04 + X + Y
-	uncompressed := make([]byte, 65)
-	uncompressed[0] = 0x04
-
-	xBytes := x.Bytes()
-	yBytes := y.Bytes()
-
-	// Pad to 32 bytes each
-	copy(uncompressed[1+(32-len(xBytes)):33], xBytes)
-	copy(uncompressed[33+(32-len(yBytes)):65], yBytes)
-
-	return uncompressed, nil
+	return pk.SerializeUncompressed(), nil
 }
 
 // DerivePrivateKeyForChain derives a private key for a specific chain at index.
@@ -518,6 +405,99 @@ func DeriveAddressWithCoinType(seed []byte, coinType, account, change, index uin
 
 	path := fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, index)
 	return address, pubKeyHex, path, nil
+}
+
+// MnemonicContext holds a pre-computed master key for efficient batch address derivation.
+// Create one per seed using NewMnemonicContext, then call its methods for each address.
+// This avoids recreating the master key (HMAC-SHA512) on every derivation call.
+type MnemonicContext struct {
+	masterKey *hdkeychain.ExtendedKey
+}
+
+// NewMnemonicContext creates a MnemonicContext from a BIP39 seed.
+func NewMnemonicContext(seed []byte) (*MnemonicContext, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create master key: %w", err)
+	}
+	return &MnemonicContext{masterKey: masterKey}, nil
+}
+
+// DeriveAddressWithCoinType derives a BSV-style address using an arbitrary coin type.
+// Returns the address, public key hex, and derivation path.
+func (mc *MnemonicContext) DeriveAddressWithCoinType(coinType, account, change, index uint32) (string, string, string, error) {
+	key, err := deriveBIP44KeyWithCoinType(mc.masterKey, coinType, account, change, index)
+	if err != nil {
+		return "", "", "", err
+	}
+	address, pubKeyHex, err := deriveBSVAddress(key)
+	if err != nil {
+		return "", "", "", err
+	}
+	path := fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, index)
+	return address, pubKeyHex, path, nil
+}
+
+// DeriveLegacyAddress derives an address using the legacy HandCash 1.x path (m/0'/index).
+func (mc *MnemonicContext) DeriveLegacyAddress(index uint32) (string, string, string, error) {
+	purposeKey, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 0)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive m/0' key: %w", err)
+	}
+	indexKey, err := purposeKey.ChildBIP32Std(index)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
+	}
+	address, pubKeyHex, err := deriveBSVAddress(indexKey)
+	if err != nil {
+		return "", "", "", err
+	}
+	path := fmt.Sprintf("m/0'/%d", index)
+	return address, pubKeyHex, path, nil
+}
+
+// GapResult holds the derived public key and path for a BIP44 address index.
+type GapResult struct {
+	PubKey []byte
+	Path   string
+	Index  uint32
+}
+
+// DeriveGap derives public keys for indices 0..gap-1 on a BIP44 chain.
+// Unlike calling DeriveAddressWithCoinType in a loop, this caches the intermediate
+// m/44'/coinType'/account'/change key and performs only one EC operation per index,
+// making it roughly 5x faster for gap scanning.
+func (mc *MnemonicContext) DeriveGap(coinType, account, change uint32, gap int) ([]GapResult, error) {
+	purposeKey, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
+	}
+	coinTypeKey, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
+	}
+	accountKey, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive account key: %w", err)
+	}
+	changeKey, err := accountKey.ChildBIP32Std(change)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive change key: %w", err)
+	}
+
+	results := make([]GapResult, 0, gap)
+	for i := uint32(0); i < uint32(gap); i++ { //nolint:gosec // gap is validated
+		indexKey, iErr := changeKey.ChildBIP32Std(i)
+		if iErr != nil {
+			continue
+		}
+		results = append(results, GapResult{
+			PubKey: indexKey.SerializedPubKey(),
+			Path:   fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, i),
+			Index:  i,
+		})
+	}
+	return results, nil
 }
 
 // DerivePrivateKeyWithCoinType derives a private key using an arbitrary coin type.
@@ -636,6 +616,19 @@ func deriveBIP44KeyWithCoinType(masterKey *hdkeychain.ExtendedKey, coinType, acc
 	}
 
 	return indexKey, nil
+}
+
+// AddressFromPrivKeyBytes derives a P2PKH address from raw private key bytes.
+// This is the hot path for batch WIF/hex key processing:
+// secp256k1 scalar multiplication → compressed pubkey → Hash160 → Base58Check.
+func AddressFromPrivKeyBytes(privKey []byte) (string, error) {
+	if len(privKey) != 32 {
+		return "", fmt.Errorf("%w: expected 32 bytes, got %d", ErrInvalidPrivKeyLength, len(privKey))
+	}
+
+	sk := secp256k1.PrivKeyFromBytes(privKey)
+	pubKey := sk.PubKey().SerializeCompressed()
+	return bitcoin.Base58CheckEncode(0x00, bitcoin.Hash160(pubKey)), nil
 }
 
 // ZeroBytes zeros out a byte slice.

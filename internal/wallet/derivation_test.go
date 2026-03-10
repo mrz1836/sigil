@@ -691,6 +691,112 @@ func TestDerivePrivateKeyWithChange(t *testing.T) {
 	assert.NotEqual(t, extKey, intKey)
 }
 
+// Tests for AddressFromPrivKeyBytes
+
+func TestAddressFromPrivKeyBytes(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	// Derive a known private key from the test mnemonic
+	privKey, err := DerivePrivateKey(seed, ChainBSV, 0, 0)
+	require.NoError(t, err)
+	defer ZeroBytes(privKey)
+
+	// Derive address from raw key bytes
+	addr, err := AddressFromPrivKeyBytes(privKey)
+	require.NoError(t, err)
+
+	// Should be a valid P2PKH address (starts with 1)
+	assert.NotEmpty(t, addr)
+	assert.Equal(t, "1", addr[:1])
+}
+
+func TestAddressFromPrivKeyBytes_Consistency(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	privKey, err := DerivePrivateKey(seed, ChainBSV, 0, 0)
+	require.NoError(t, err)
+	defer ZeroBytes(privKey)
+
+	// Same key should always produce the same address
+	addr1, err := AddressFromPrivKeyBytes(privKey)
+	require.NoError(t, err)
+
+	addr2, err := AddressFromPrivKeyBytes(privKey)
+	require.NoError(t, err)
+
+	assert.Equal(t, addr1, addr2)
+}
+
+func TestAddressFromPrivKeyBytes_MatchesDeriveAddress(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	// Derive address via the normal BIP44 path
+	bip44Addr, err := DeriveAddress(seed, ChainBSV, 0, 0)
+	require.NoError(t, err)
+
+	// Derive private key at the same path
+	privKey, err := DerivePrivateKey(seed, ChainBSV, 0, 0)
+	require.NoError(t, err)
+	defer ZeroBytes(privKey)
+
+	// Address derived from raw key should match BIP44-derived address
+	rawAddr, err := AddressFromPrivKeyBytes(privKey)
+	require.NoError(t, err)
+
+	assert.Equal(t, bip44Addr.Address, rawAddr)
+}
+
+func TestAddressFromPrivKeyBytes_InvalidLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  []byte
+	}{
+		{"nil key", nil},
+		{"empty key", []byte{}},
+		{"too short", []byte{1, 2, 3}},
+		{"too long", make([]byte, 33)},
+		{"31 bytes", make([]byte, 31)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := AddressFromPrivKeyBytes(tt.key)
+			assert.Error(t, err)
+		})
+	}
+}
+
+func TestAddressFromPrivKeyBytes_KnownVector(t *testing.T) {
+	t.Parallel()
+
+	// Known test vector: the hex key from the well-known WIF 5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ
+	privKeyHex := "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d"
+	privKey, err := hex.DecodeString(privKeyHex)
+	require.NoError(t, err)
+
+	addr, err := AddressFromPrivKeyBytes(privKey)
+	require.NoError(t, err)
+
+	// Compressed P2PKH address for this key
+	assert.Equal(t, "1LoVGDgRs9hTfTNJNuXKSpywcbdvwRXpmK", addr)
+}
+
+func BenchmarkAddressFromPrivKeyBytes(b *testing.B) {
+	seed, _ := MnemonicToSeed(derivationTestMnemonic, "")
+	privKey, _ := DerivePrivateKey(seed, ChainBSV, 0, 0)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = AddressFromPrivKeyBytes(privKey)
+	}
+}
+
 // Benchmark tests
 
 func BenchmarkDeriveAddressWithCoinType(b *testing.B) {

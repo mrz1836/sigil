@@ -80,7 +80,7 @@ func DeriveAddressFromXpub(xpubStr string, chainID chain.ID, change, index uint3
 	switch chainID {
 	case ChainETH:
 		address, pubKeyHex, err = deriveETHAddress(indexKey)
-	case ChainBSV, ChainBTC, ChainBCH:
+	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
 		address, pubKeyHex, err = deriveBSVAddress(indexKey)
 	default:
 		return nil, ErrUnsupportedChain

@@ -23,14 +23,53 @@ var ErrUnsupportedChain = errors.New("unsupported chain")
 type Fetcher struct {
 	cfg   ConfigProvider
 	cache CacheProvider
+
+	newETHClient       func(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error)
+	newEtherscanClient func(apiKey string, opts *etherscan.ClientOptions) (ethBalanceReader, error)
+	newBSVClient       func(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient
+	retryETHBalance    func(ctx context.Context, operation func() (*eth.Balance, error)) (*eth.Balance, error)
+
+	fetchETHViaRPCOverride       func(ctx context.Context, address string) ([]CacheEntry, bool, error)
+	fetchETHViaEtherscanOverride func(ctx context.Context, address, apiKey string) ([]CacheEntry, bool, error)
 }
 
 // NewFetcher creates a new balance fetcher.
 func NewFetcher(cfg ConfigProvider, cache CacheProvider) *Fetcher {
 	return &Fetcher{
-		cfg:   cfg,
-		cache: cache,
+		cfg:                cfg,
+		cache:              cache,
+		newETHClient:       defaultETHClientFactory,
+		newEtherscanClient: defaultEtherscanClientFactory,
+		newBSVClient:       defaultBSVClientFactory,
+		retryETHBalance:    chain.Retry[*eth.Balance],
 	}
+}
+
+type ethBalanceReader interface {
+	GetNativeBalance(ctx context.Context, address string) (*eth.Balance, error)
+	GetUSDCBalance(ctx context.Context, address string) (*eth.Balance, error)
+}
+
+type ethRPCBalanceClient interface {
+	ethBalanceReader
+	Close()
+}
+
+type bsvBalanceClient interface {
+	GetNativeBalance(ctx context.Context, address string) (*bsv.Balance, error)
+	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*bsv.Balance, error)
+}
+
+func defaultETHClientFactory(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error) {
+	return eth.NewClient(rpcURL, opts)
+}
+
+func defaultEtherscanClientFactory(apiKey string, opts *etherscan.ClientOptions) (ethBalanceReader, error) {
+	return etherscan.NewClient(apiKey, opts)
+}
+
+func defaultBSVClientFactory(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient {
+	return bsv.NewClient(ctx, opts)
 }
 
 // postSendCacheTrust is the duration after a send during which locally-computed
@@ -65,21 +104,23 @@ func (f *Fetcher) fetchETH(ctx context.Context, address string) ([]CacheEntry, b
 		if apiKey == "" {
 			return nil, true, etherscan.ErrAPIKeyRequired
 		}
+		if f.fetchETHViaEtherscanOverride != nil {
+			return f.fetchETHViaEtherscanOverride(ctx, address, apiKey)
+		}
 		return f.fetchETHViaEtherscan(ctx, address, apiKey)
 	}
 
 	rpcFn := func() ([]CacheEntry, bool, error) {
+		if f.fetchETHViaRPCOverride != nil {
+			return f.fetchETHViaRPCOverride(ctx, address)
+		}
 		return f.fetchETHViaRPC(ctx, address)
 	}
 
-	var primaryFn, secondaryFn fetchFn
+	// Default: etherscan primary, rpc secondary
+	primaryFn, secondaryFn := fetchFn(etherscanFn), fetchFn(rpcFn)
 	if provider == "rpc" {
-		primaryFn = rpcFn
-		secondaryFn = etherscanFn
-	} else {
-		// Default: etherscan primary, rpc secondary
-		primaryFn = etherscanFn
-		secondaryFn = rpcFn
+		primaryFn, secondaryFn = rpcFn, etherscanFn
 	}
 
 	// Try primary
@@ -103,6 +144,34 @@ func (f *Fetcher) fetchETH(ctx context.Context, address string) ([]CacheEntry, b
 	return nil, true, err
 }
 
+func (f *Fetcher) newETHBalanceClient(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error) {
+	if f.newETHClient != nil {
+		return f.newETHClient(rpcURL, opts)
+	}
+	return defaultETHClientFactory(rpcURL, opts)
+}
+
+func (f *Fetcher) newEtherscanBalanceClient(apiKey string, opts *etherscan.ClientOptions) (ethBalanceReader, error) {
+	if f.newEtherscanClient != nil {
+		return f.newEtherscanClient(apiKey, opts)
+	}
+	return defaultEtherscanClientFactory(apiKey, opts)
+}
+
+func (f *Fetcher) newBSVBalanceClient(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient {
+	if f.newBSVClient != nil {
+		return f.newBSVClient(ctx, opts)
+	}
+	return defaultBSVClientFactory(ctx, opts)
+}
+
+func (f *Fetcher) retryETHBalanceCall(ctx context.Context, operation func() (*eth.Balance, error)) (*eth.Balance, error) {
+	if f.retryETHBalance != nil {
+		return f.retryETHBalance(ctx, operation)
+	}
+	return chain.Retry(ctx, operation)
+}
+
 // fetchETHViaEtherscan fetches ETH and USDC balances using the Etherscan API.
 func (f *Fetcher) fetchETHViaEtherscan(ctx context.Context, address, apiKey string) ([]CacheEntry, bool, error) {
 	// Trust very fresh cache entries (set by a recent tx send).
@@ -112,7 +181,7 @@ func (f *Fetcher) fetchETHViaEtherscan(ctx context.Context, address, apiKey stri
 
 	var entries []CacheEntry
 
-	client, err := etherscan.NewClient(apiKey, nil)
+	client, err := f.newEtherscanBalanceClient(apiKey, nil)
 	if err != nil {
 		return nil, true, err
 	}
@@ -224,15 +293,15 @@ func (f *Fetcher) fetchETHViaRPC(ctx context.Context, address string) ([]CacheEn
 }
 
 // connectETHClient attempts to connect to the primary RPC, falling back to alternates on failure.
-func (f *Fetcher) connectETHClient(rpcURL string, fallbackRPCs []string, transport *http.Transport) (*eth.Client, error) {
+func (f *Fetcher) connectETHClient(rpcURL string, fallbackRPCs []string, transport *http.Transport) (ethRPCBalanceClient, error) {
 	opts := &eth.ClientOptions{Transport: transport}
-	client, err := eth.NewClient(rpcURL, opts)
+	client, err := f.newETHBalanceClient(rpcURL, opts)
 	if err == nil {
 		return client, nil
 	}
 	// Try fallback RPCs
 	for _, fallbackURL := range fallbackRPCs {
-		client, err = eth.NewClient(fallbackURL, opts)
+		client, err = f.newETHBalanceClient(fallbackURL, opts)
 		if err == nil {
 			return client, nil
 		}
@@ -241,9 +310,9 @@ func (f *Fetcher) connectETHClient(rpcURL string, fallbackRPCs []string, transpo
 }
 
 // fetchETHBalanceWithFallback fetches ETH balance, trying fallback RPCs on failure.
-func (f *Fetcher) fetchETHBalanceWithFallback(ctx context.Context, client *eth.Client, address, primaryRPC string, fallbackRPCs []string, transport *http.Transport) (*eth.Balance, *eth.Client, error) {
+func (f *Fetcher) fetchETHBalanceWithFallback(ctx context.Context, client ethRPCBalanceClient, address, primaryRPC string, fallbackRPCs []string, transport *http.Transport) (*eth.Balance, ethRPCBalanceClient, error) {
 	// Try primary client first
-	balance, err := chain.Retry(ctx, func() (*eth.Balance, error) {
+	balance, err := f.retryETHBalanceCall(ctx, func() (*eth.Balance, error) {
 		bal, fetchErr := client.GetNativeBalance(ctx, address)
 		if fetchErr != nil {
 			return nil, chain.WrapRetryable(fetchErr)
@@ -263,7 +332,7 @@ func (f *Fetcher) fetchETHBalanceWithFallback(ctx context.Context, client *eth.C
 		if fallbackURL == primaryRPC {
 			continue
 		}
-		fallbackClient, clientErr := eth.NewClient(fallbackURL, opts)
+		fallbackClient, clientErr := f.newETHBalanceClient(fallbackURL, opts)
 		if clientErr != nil {
 			continue
 		}
@@ -323,7 +392,7 @@ func (f *Fetcher) fetchBSV(ctx context.Context, address string) ([]CacheEntry, b
 	entries := make([]CacheEntry, 0, 1)
 	var stale bool
 
-	client := bsv.NewClient(ctx, nil)
+	client := f.newBSVBalanceClient(ctx, nil)
 
 	// Fetch BSV balance
 	bsvBalance, err := client.GetNativeBalance(ctx, address)
@@ -394,7 +463,7 @@ func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[str
 	}
 
 	// Bulk fetch remaining addresses
-	client := bsv.NewClient(ctx, nil)
+	client := f.newBSVBalanceClient(ctx, nil)
 	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
 	if err != nil {
 		// On error, fall back to cached data for all addresses

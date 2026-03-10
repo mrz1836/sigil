@@ -429,6 +429,82 @@ func BenchmarkGenerateOneKey(b *testing.B) {
 	}
 }
 
+func TestValidateKeygenFlags(t *testing.T) {
+	resetKeygenGlobals(t)
+
+	tests := []struct {
+		name    string
+		format  string
+		count   int
+		workers int
+		wantErr string
+	}{
+		{"hex valid", "hex", 1, 1, ""},
+		{"wif valid", "wif", 1, 1, ""},
+		{"wif-uncompressed valid", "wif-uncompressed", 1, 1, ""},
+		{"mnemonic12 valid", "mnemonic12", 1, 1, ""},
+		{"mnemonic24 valid", "mnemonic24", 1, 1, ""},
+		{"invalid format", "invalid", 1, 1, "unknown format"},
+		{"count zero", "hex", 0, 1, errKeygenCountMin.Error()},
+		{"count negative", "hex", -1, 1, errKeygenCountMin.Error()},
+		{"workers zero", "hex", 1, 0, errKeygenWorkersMin.Error()},
+		{"workers negative", "hex", 1, -1, errKeygenWorkersMin.Error()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keygenFormat = tt.format
+			keygenCount = tt.count
+			keygenWorkers = tt.workers
+
+			err := validateKeygenFlags()
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestKeygenCmd_NegativeCount(t *testing.T) {
+	resetKeygenGlobals(t)
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "neg.txt")
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"keygen", "--count", "-1", "--format", "hex", "--file", outFile})
+
+	err := rootCmd.Execute()
+	require.Error(t, err)
+}
+
+func TestKeygenCmd_KeysAreUnique(t *testing.T) {
+	resetKeygenGlobals(t)
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "unique.txt")
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"keygen", "--format", "hex", "--count", "200", "--file", outFile, "--workers", "4"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	lines := readLines(t, outFile)
+	assert.Len(t, lines, 200)
+
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		seen[line] = struct{}{}
+	}
+	assert.Len(t, seen, 200, "all 200 keys should be unique")
+}
+
 // readLines reads a file and returns non-empty lines.
 func readLines(t *testing.T, path string) []string {
 	t.Helper()

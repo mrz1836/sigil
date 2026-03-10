@@ -121,6 +121,7 @@ func generateOneKey(format string) (string, error) {
 		}
 		// Compressed WIF: version 0x80 + 32 bytes + compression flag 0x01
 		payload := make([]byte, 33)
+		defer wallet.ZeroBytes(payload)
 		copy(payload, privKey)
 		payload[32] = 0x01
 		return bitcoin.Base58CheckEncode(0x80, payload), nil
@@ -151,6 +152,8 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 		return err
 	}
 
+	ctx := cmd.Context()
+
 	f, err := os.Create(keygenFile) //nolint:gosec // G304: path comes from --file flag
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
@@ -177,12 +180,21 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 				if remaining.Add(-1) < 0 {
 					return
 				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 				key, genKeyErr := generateOneKey(keygenFormat)
 				if genKeyErr != nil {
 					genErr.Store(&genKeyErr)
 					return
 				}
-				results <- key
+				select {
+				case results <- key:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 	}
@@ -226,12 +238,20 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 	// Stop progress goroutine before printing the success line.
 	close(progressDone)
 
-	if flushErr := bw.Flush(); flushErr != nil {
-		return fmt.Errorf("flush output: %w", flushErr)
-	}
-
+	// Check for errors before flushing: a worker error means the key count is
+	// short. Context cancellation means the run was interrupted. In both cases
+	// flush is skipped and the partial output file is removed.
 	if p := genErr.Load(); p != nil {
-		return fmt.Errorf("generating keys: %w", *p)
+		retErr = fmt.Errorf("generating keys: %w", *p)
+	} else if ctx.Err() != nil {
+		retErr = ctx.Err()
+	} else if flushErr := bw.Flush(); flushErr != nil {
+		retErr = fmt.Errorf("flush output: %w", flushErr)
+	}
+	if retErr != nil {
+		_ = f.Close()
+		_ = os.Remove(keygenFile)
+		return retErr
 	}
 
 	absPath, absErr := filepath.Abs(keygenFile)

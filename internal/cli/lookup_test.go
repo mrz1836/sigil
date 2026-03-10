@@ -11,6 +11,10 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/addresslookup"
+	"github.com/mrz1836/sigil/internal/discovery"
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // knownTestWIF is a valid WIF private key for testing (uncompressed format).
@@ -833,4 +837,296 @@ func TestLookupCmd_Help(t *testing.T) {
 	assert.Contains(t, output, "--scheme")
 	assert.Contains(t, output, "--workers")
 	assert.Contains(t, output, "Examples:")
+}
+
+// testMnemonic is the standard BIP39 test vector.
+const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+// precomputeMnemonicAddress derives a known address from the test mnemonic for a given coin type.
+func precomputeMnemonicAddress(t *testing.T, coinType, account, change, index uint32) string {
+	t.Helper()
+	seed, err := wallet.MnemonicToSeed(testMnemonic, "")
+	require.NoError(t, err)
+	addr, _, _, err := wallet.DeriveAddressWithCoinType(seed, coinType, account, change, index)
+	require.NoError(t, err)
+	return addr
+}
+
+func TestLookupCmd_SingleMode_MnemonicMatch(t *testing.T) {
+	resetLookupGlobals(t)
+
+	// Pre-compute the BTC P2PKH address at m/44'/0'/0'/0/0
+	knownAddr := precomputeMnemonicAddress(t, 0, 0, 0, 0)
+	addrFile := createTestAddressFile(t, map[string]string{
+		knownAddr: "1000.00",
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	lookupCmd.SetOut(nil) // clear any stale output from prior tests
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{
+		"lookup",
+		"--input", testMnemonic,
+		"--file", addrFile,
+		"-o", "json",
+	})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	var result lookupOutput
+	err = json.Unmarshal(buf.Bytes(), &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1), result.Stats.KeysProcessed)
+	require.GreaterOrEqual(t, len(result.Results), 1)
+
+	// Find the match for our known address
+	var found bool
+	for _, r := range result.Results {
+		if r.Address == knownAddr {
+			found = true
+			assert.NotEmpty(t, r.Scheme, "mnemonic match should have scheme")
+			assert.NotEmpty(t, r.Path, "mnemonic match should have path")
+			assert.Equal(t, "1000.00", r.Balance)
+			break
+		}
+	}
+	assert.True(t, found, "should find the pre-computed mnemonic address %s", knownAddr)
+}
+
+func TestLookupCmd_SingleMode_MnemonicWithScheme(t *testing.T) {
+	resetLookupGlobals(t)
+
+	// Pre-compute address for BSV coin type (236)
+	knownAddr := precomputeMnemonicAddress(t, 236, 0, 0, 0)
+	addrFile := createTestAddressFile(t, map[string]string{
+		knownAddr: "2000.00",
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	lookupCmd.SetOut(nil)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{
+		"lookup",
+		"--input", testMnemonic,
+		"--format", "mnemonic",
+		"--scheme", "BSV Standard",
+		"--file", addrFile,
+		"-o", "json",
+	})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	var result lookupOutput
+	err = json.Unmarshal(buf.Bytes(), &result)
+	require.NoError(t, err)
+
+	require.GreaterOrEqual(t, len(result.Results), 1)
+
+	var found bool
+	for _, r := range result.Results {
+		if r.Address == knownAddr {
+			found = true
+			assert.Equal(t, "BSV Standard", r.Scheme)
+			assert.Contains(t, r.Path, "m/44'/236'")
+			break
+		}
+	}
+	assert.True(t, found, "should find BSV address with BSV Standard scheme")
+}
+
+func TestLookupCmd_BatchMode_MnemonicMultipleWorkers(t *testing.T) {
+	resetLookupGlobals(t)
+
+	knownAddr := precomputeMnemonicAddress(t, 0, 0, 0, 0)
+	addrFile := createTestAddressFile(t, map[string]string{
+		knownAddr: "3000.00",
+	})
+
+	keysFile := createTestKeysFile(t, []string{testMnemonic})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	lookupCmd.SetOut(nil)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{
+		"lookup",
+		"--keys-file", keysFile,
+		"--file", addrFile,
+		"--workers", "2",
+		"-o", "json",
+	})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	var result lookupOutput
+	err = json.Unmarshal(buf.Bytes(), &result)
+	require.NoError(t, err)
+
+	assert.Positive(t, result.Stats.KeysProcessed)
+	require.GreaterOrEqual(t, len(result.Results), 1)
+
+	var found bool
+	for _, r := range result.Results {
+		if r.Address == knownAddr {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "batch mnemonic lookup should find pre-computed address")
+}
+
+func TestValidateLookupFlags_GapBoundaries(t *testing.T) {
+	resetLookupGlobals(t)
+
+	tests := []struct {
+		name    string
+		gap     int
+		wantErr bool
+	}{
+		{"gap=0", 0, true},
+		{"gap=-1", -1, true},
+		{"gap=1", 1, false},
+		{"gap=10000", 10000, false},
+		{"gap=10001", 10001, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set valid base state
+			lookupInput = "test"
+			lookupKeysFile = ""
+			lookupWorkers = 1
+			lookupGap = tt.gap
+
+			err := validateLookupFlags()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPrintMatch_AllFields(t *testing.T) {
+	t.Parallel()
+
+	buf := new(bytes.Buffer)
+	cmd := lookupCmd
+	cmd.SetOut(buf)
+
+	m := lookupMatch{
+		Address: "1TestAddress",
+		Balance: "42.00",
+		Format:  "BTC P2PKH",
+		KeyLine: 7,
+		Scheme:  "BSV Standard",
+		Path:    "m/44'/236'/0'/0/0",
+	}
+	printMatch(cmd, m)
+
+	output := buf.String()
+	assert.Contains(t, output, "MATCH")
+	assert.Contains(t, output, "1TestAddress")
+	assert.Contains(t, output, "42.00")
+	assert.Contains(t, output, "BTC P2PKH")
+	assert.Contains(t, output, "key_line=7")
+	assert.Contains(t, output, `scheme="BSV Standard"`)
+	assert.Contains(t, output, "path=m/44'/236'/0'/0/0")
+}
+
+func TestDeriveAndLookup_FormatUnknown(t *testing.T) {
+	resetLookupGlobals(t)
+	lookupFormat = "auto"
+
+	// Create a minimal address set
+	addrSet := addresslookup.NewAddressSet(nil)
+	schemes := discovery.DefaultSchemes()
+
+	// "not-a-key-or-mnemonic" should be detected as FormatUnknown and return nil
+	matches := deriveAndLookup("not-a-key-or-mnemonic", addrSet, schemes, 20, nil)
+	assert.Nil(t, matches)
+}
+
+func TestDetectFormat_Mnemonic(t *testing.T) {
+	origFormat := lookupFormat
+	t.Cleanup(func() { lookupFormat = origFormat })
+
+	// Auto-detect mnemonic
+	lookupFormat = "auto"
+	result := detectFormat(testMnemonic)
+	assert.Equal(t, wallet.FormatMnemonic, result, "should auto-detect mnemonic format")
+	assert.Equal(t, "mnemonic", result.String())
+
+	// Explicit mnemonic format
+	lookupFormat = "mnemonic"
+	result = detectFormat("anything")
+	assert.Equal(t, wallet.FormatMnemonic, result)
+}
+
+func TestValidateLookupFlags_WorkersBoundaries(t *testing.T) {
+	resetLookupGlobals(t)
+
+	tests := []struct {
+		name    string
+		workers int
+		wantErr bool
+	}{
+		{"workers=0", 0, true},
+		{"workers=-1", -1, true},
+		{"workers=1", 1, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookupInput = "test"
+			lookupKeysFile = ""
+			lookupGap = 20
+			lookupWorkers = tt.workers
+
+			err := validateLookupFlags()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestGetSchemes_ValidScheme(t *testing.T) {
+	resetLookupGlobals(t)
+
+	lookupScheme = "BSV Standard"
+	schemes, err := getSchemes()
+	require.NoError(t, err)
+	require.Len(t, schemes, 1)
+	assert.Equal(t, "BSV Standard", schemes[0].Name)
+	assert.Equal(t, uint32(236), schemes[0].CoinType)
+}
+
+func TestGetSchemes_DefaultSchemes(t *testing.T) {
+	resetLookupGlobals(t)
+
+	lookupScheme = ""
+	schemes, err := getSchemes()
+	require.NoError(t, err)
+	assert.Greater(t, len(schemes), 1, "default schemes should return multiple schemes")
+}
+
+func TestFormatCount_Comprehensive(t *testing.T) {
+	t.Parallel()
+	// Verify formatting does not panic on edge values
+	assert.Equal(t, "0", formatCount(0))
+	assert.Equal(t, "100", formatCount(100))
+	assert.Equal(t, "999", formatCount(999))
+	assert.Equal(t, "1,000", formatCount(1000))
+	assert.Equal(t, "1,000,000", formatCount(1000000))
+	assert.Equal(t, "999,999,999", formatCount(999999999))
 }

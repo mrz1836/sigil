@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,8 +68,8 @@ Two modes:
 The --file flag accepts a single file or a directory. When given a directory,
 all .tsv/.csv/.txt/.gz files are loaded recursively into a unified set.
 
-The address dataset is loaded once into memory as a sorted flat buffer for
-O(log n) binary search per address. Keys are processed in parallel.`,
+The address dataset is loaded once into memory as a hash map for
+O(1) lookup per address. Keys are processed in parallel.`,
 	Example: `  # Single key lookup
   sigil lookup --input "5HueCGU8rMjxEXxiPuD5BDku..." --file addresses.tsv
 
@@ -161,8 +162,10 @@ func runLookup(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "  Loaded %s addresses in %s (%d MB)\n",
-		formatCount(stats.Count), stats.LoadTime.Round(time.Millisecond), stats.MemBytes/(1024*1024))
+	if !isJSON {
+		_, _ = fmt.Fprintf(os.Stderr, "  Loaded %s addresses in %s (%s)\n",
+			formatCount(stats.Count), stats.LoadTime.Round(time.Millisecond), formatBytes(stats.MemBytes))
+	}
 
 	// Select derivation schemes
 	schemes, err := getSchemes()
@@ -186,7 +189,9 @@ func isJSONOutput(cmd *cobra.Command) bool {
 }
 
 func loadAddressData(path string, isJSON bool) (*addresslookup.AddressSet, addresslookup.Stats, error) {
-	_, _ = fmt.Fprintf(os.Stderr, "Loading address data from %s...\n", path)
+	if !isJSON {
+		_, _ = fmt.Fprintf(os.Stderr, "Loading address data from %s...\n", path)
+	}
 
 	var cb addresslookup.LoadProgressCallback
 	if !isJSON {
@@ -229,15 +234,15 @@ func createLoadProgressCallback() addresslookup.LoadProgressCallback {
 func runSingleLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, isJSON bool) error {
 	input := strings.TrimSpace(lookupInput)
 
-	var passphrase string
+	var passphrase []byte
 	if lookupPassphrase {
 		fmt.Fprint(os.Stderr, "Enter BIP39 passphrase: ")
 		raw, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // G115: stdin fd is always a small value
 		if err != nil {
 			return fmt.Errorf("read passphrase: %w", err)
 		}
-		passphrase = string(raw)
-		defer wallet.ZeroBytes(raw)
+		passphrase = raw
+		defer wallet.ZeroBytes(passphrase)
 		fmt.Fprintln(os.Stderr) // newline after hidden input
 	}
 
@@ -271,6 +276,12 @@ func runSingleLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, sche
 
 //nolint:gocognit,gocyclo // batch processing requires coordinated goroutines
 func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, isJSON bool) error {
+	// Disable GC during batch processing. The address map is read-only and
+	// per-mnemonic allocations are small, so GC pauses are pure overhead.
+	runtime.GC()
+	prev := debug.SetGCPercent(-1)
+	defer debug.SetGCPercent(prev)
+
 	f, err := os.Open(lookupKeysFile) //nolint:gosec // G304: path comes from validated --keys-file flag
 	if err != nil {
 		return fmt.Errorf("open keys file: %w", err)
@@ -313,6 +324,8 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 	go func() {
 		defer close(jobs)
 		scanner := bufio.NewScanner(f)
+		const maxLineBytes = 1024 // no crypto key line exceeds this
+		scanner.Buffer(make([]byte, maxLineBytes), maxLineBytes)
 		lineNum := 0
 		for scanner.Scan() {
 			lineNum++
@@ -343,7 +356,7 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 					return
 				default:
 				}
-				matches := deriveAndLookup(job.input, addrSet, schemes, lookupGap, "")
+				matches := deriveAndLookup(job.input, addrSet, schemes, lookupGap, nil)
 				for i := range matches {
 					matches[i].KeyLine = job.line
 				}
@@ -406,7 +419,7 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 }
 
 // deriveAndLookup derives addresses from a key and checks the address set.
-func deriveAndLookup(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase string) []lookupMatch {
+func deriveAndLookup(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte) []lookupMatch {
 	format := detectFormat(input)
 	if format == wallet.FormatUnknown {
 		return nil
@@ -490,8 +503,8 @@ func lookupPrivKey(privKey []byte, addrSet *addresslookup.AddressSet) []lookupMa
 }
 
 //nolint:gocognit // mnemonic derivation requires nested loops across schemes/accounts/chains/indices
-func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase string) []lookupMatch {
-	seed, err := wallet.MnemonicToSeed(input, passphrase)
+func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte) []lookupMatch {
+	seed, err := wallet.MnemonicToSeed(input, string(passphrase))
 	if err != nil {
 		return nil
 	}
@@ -501,6 +514,7 @@ func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []d
 	if err != nil {
 		return nil
 	}
+	defer mc.Zero()
 
 	var matches []lookupMatch
 
@@ -549,7 +563,7 @@ func lookupMnemonicChain(
 	account, change uint32,
 	gap int,
 ) []lookupMatch {
-	// DeriveGap caches m/44'/coinType'/account'/change and only does one EC op per index.
+	// DeriveGap uses cached intermediate keys and does one EC op per index.
 	gapResults, err := mc.DeriveGap(scheme.CoinType, account, change, gap)
 	if err != nil {
 		return nil
@@ -561,18 +575,26 @@ func lookupMnemonicChain(
 		if fmtErr != nil {
 			continue
 		}
-		for _, addr := range addrs.Addresses() {
-			result := addrSet.Lookup(addr)
-			if result.Found {
+		// Inline address checks to avoid slice allocation from Addresses().
+		// Path() is only called on matches (lazy formatting).
+		checkAddr := func(addr, label string) {
+			if addr == "" {
+				return
+			}
+			if result := addrSet.Lookup(addr); result.Found {
 				matches = append(matches, lookupMatch{
 					Address: addr,
 					Balance: result.Balance,
-					Format:  netLabel + " " + addrs.FormatLabel(addr),
+					Format:  netLabel + " " + label,
 					Scheme:  scheme.Name,
-					Path:    r.Path,
+					Path:    r.Path(),
 				})
 			}
 		}
+		checkAddr(addrs.P2PKH, "P2PKH")
+		checkAddr(addrs.P2SH, "P2SH-P2WPKH")
+		checkAddr(addrs.Bech32, "Bech32")
+		checkAddr(addrs.CashAddr, "CashAddr")
 	}
 	return matches
 }
@@ -616,6 +638,17 @@ func printMatch(cmd *cobra.Command, m lookupMatch) {
 		parts = append(parts, fmt.Sprintf("path=%s", m.Path))
 	}
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Join(parts, "  "))
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1024*1024*1024:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	default:
+		return fmt.Sprintf("%d KB", b/1024)
+	}
 }
 
 func formatCount(n int) string {

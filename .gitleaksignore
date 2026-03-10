@@ -29,3 +29,12 @@ internal/config/env_test.go:generic-api-key:278
 # BSV tests
 internal/chain/bsv/tx_test_helpers_test.go:generic-api-key:161
 internal/chain/bsv/tx_test_helpers_test.go:generic-api-key:197
+
+# Wallet derivation tests (well-known public test vectors)
+internal/wallet/derivation_test.go:generic-api-key:779
+
+# Wallet format tests (well-known public test vectors)
+internal/wallet/formats_test.go:generic-api-key:12
+internal/wallet/formats_test.go:generic-api-key:38
+internal/wallet/formats_test.go:generic-api-key:201
+internal/wallet/formats_test.go:generic-api-key:202

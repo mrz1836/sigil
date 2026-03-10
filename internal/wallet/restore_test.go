@@ -432,6 +432,29 @@ func TestSanitizeBitcoinAddress_ValidBase58Chars(t *testing.T) {
 	assert.Equal(t, "123A4B5", result, "only valid Base58 chars should remain in order")
 }
 
+func TestInputFormatString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		format   InputFormat
+		expected string
+	}{
+		{"FormatUnknown", FormatUnknown, "unknown"},
+		{"FormatMnemonic", FormatMnemonic, "mnemonic"},
+		{"FormatWIF", FormatWIF, "wif"},
+		{"FormatHex", FormatHex, "hex"},
+		{"invalid format", InputFormat(99), "unknown"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.expected, tc.format.String())
+		})
+	}
+}
+
 // TestSanitizeBitcoinAddress_PreservesValidAddress verifies valid addresses pass through.
 func TestSanitizeBitcoinAddress_PreservesValidAddress(t *testing.T) {
 	t.Parallel()

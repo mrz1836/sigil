@@ -279,3 +279,59 @@ func TestAllAddressesFromPubKey_DOGEMainnet(t *testing.T) {
 	assert.Empty(t, addrs.Bech32)
 	assert.Empty(t, addrs.CashAddr)
 }
+
+func TestNetworkParamsForCoinType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		coinType       uint32
+		p2pkhVersion   byte
+		p2shVersion    byte
+		bech32HRP      string
+		cashAddrPrefix string
+	}{
+		{"BTC", 0, 0x00, 0x05, "bc", ""},
+		{"LTC", 2, 0x30, 0x32, "ltc", ""},
+		{"DOGE", 3, 0x1E, 0x16, "", ""},
+		{"BCH", 145, 0x00, 0x05, "", "bitcoincash"},
+		{"BSV", 236, 0x00, 0x05, "", ""},
+		{"unknown defaults to BTC", 9999, 0x00, 0x05, "bc", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := NetworkParamsForCoinType(tc.coinType)
+			assert.Equal(t, tc.p2pkhVersion, p.P2PKHVersion)
+			assert.Equal(t, tc.p2shVersion, p.P2SHVersion)
+			assert.Equal(t, tc.bech32HRP, p.Bech32HRP)
+			assert.Equal(t, tc.cashAddrPrefix, p.CashAddrPrefix)
+		})
+	}
+}
+
+func TestNetworkLabelForCoinType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		coinType uint32
+		expected string
+	}{
+		{"BTC", 0, "BTC"},
+		{"LTC", 2, "LTC"},
+		{"DOGE", 3, "DOGE"},
+		{"BCH", 145, "BCH"},
+		{"BSV", 236, "BSV"},
+		{"unknown defaults to BTC", 9999, "BTC"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			label := NetworkLabelForCoinType(tc.coinType)
+			assert.Equal(t, tc.expected, label)
+		})
+	}
+}

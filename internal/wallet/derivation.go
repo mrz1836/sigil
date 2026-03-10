@@ -410,8 +410,13 @@ func DeriveAddressWithCoinType(seed []byte, coinType, account, change, index uin
 // MnemonicContext holds a pre-computed master key for efficient batch address derivation.
 // Create one per seed using NewMnemonicContext, then call its methods for each address.
 // This avoids recreating the master key (HMAC-SHA512) on every derivation call.
+// Intermediate keys (m/44', coin type, account) are cached to avoid redundant EC operations.
 type MnemonicContext struct {
-	masterKey *hdkeychain.ExtendedKey
+	masterKey    *hdkeychain.ExtendedKey
+	purposeKey   *hdkeychain.ExtendedKey            // cached m/44'
+	coinTypeKeys map[uint32]*hdkeychain.ExtendedKey // coinType → m/44'/coinType'
+	accountKeys  map[uint64]*hdkeychain.ExtendedKey // (coinType<<32|account) → m/44'/coinType'/account'
+	legacyKey    *hdkeychain.ExtendedKey            // cached m/0'
 }
 
 // NewMnemonicContext creates a MnemonicContext from a BIP39 seed.
@@ -420,17 +425,50 @@ func NewMnemonicContext(seed []byte) (*MnemonicContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
-	return &MnemonicContext{masterKey: masterKey}, nil
+	return &MnemonicContext{
+		masterKey:    masterKey,
+		coinTypeKeys: make(map[uint32]*hdkeychain.ExtendedKey),
+		accountKeys:  make(map[uint64]*hdkeychain.ExtendedKey),
+	}, nil
+}
+
+// Zero clears all private key material held by the MnemonicContext.
+// Call this when the context is no longer needed, typically via defer.
+func (mc *MnemonicContext) Zero() {
+	if mc.masterKey != nil {
+		mc.masterKey.Zero()
+	}
+	if mc.purposeKey != nil {
+		mc.purposeKey.Zero()
+	}
+	for _, k := range mc.coinTypeKeys {
+		k.Zero()
+	}
+	for _, k := range mc.accountKeys {
+		k.Zero()
+	}
+	if mc.legacyKey != nil {
+		mc.legacyKey.Zero()
+	}
 }
 
 // DeriveAddressWithCoinType derives a BSV-style address using an arbitrary coin type.
 // Returns the address, public key hex, and derivation path.
+// Uses cached intermediate keys for efficiency.
 func (mc *MnemonicContext) DeriveAddressWithCoinType(coinType, account, change, index uint32) (string, string, string, error) {
-	key, err := deriveBIP44KeyWithCoinType(mc.masterKey, coinType, account, change, index)
+	accountKey, err := mc.getAccountKey(coinType, account)
 	if err != nil {
 		return "", "", "", err
 	}
-	address, pubKeyHex, err := deriveBSVAddress(key)
+	changeKey, err := accountKey.ChildBIP32Std(change)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive change key: %w", err)
+	}
+	indexKey, err := changeKey.ChildBIP32Std(index)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
+	}
+	address, pubKeyHex, err := deriveBSVAddress(indexKey)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -439,12 +477,13 @@ func (mc *MnemonicContext) DeriveAddressWithCoinType(coinType, account, change, 
 }
 
 // DeriveLegacyAddress derives an address using the legacy HandCash 1.x path (m/0'/index).
+// Uses cached m/0' key for efficiency.
 func (mc *MnemonicContext) DeriveLegacyAddress(index uint32) (string, string, string, error) {
-	purposeKey, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 0)
+	legacyKey, err := mc.getLegacyKey()
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to derive m/0' key: %w", err)
+		return "", "", "", err
 	}
-	indexKey, err := purposeKey.ChildBIP32Std(index)
+	indexKey, err := legacyKey.ChildBIP32Std(index)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
 	}
@@ -456,29 +495,29 @@ func (mc *MnemonicContext) DeriveLegacyAddress(index uint32) (string, string, st
 	return address, pubKeyHex, path, nil
 }
 
-// GapResult holds the derived public key and path for a BIP44 address index.
+// GapResult holds the derived public key and path components for a BIP44 address index.
+// Path formatting is deferred to avoid allocations on non-matching results.
 type GapResult struct {
-	PubKey []byte
-	Path   string
-	Index  uint32
+	PubKey   []byte
+	CoinType uint32
+	Account  uint32
+	Change   uint32
+	Index    uint32
+}
+
+// Path returns the BIP44 derivation path string.
+// Computed lazily — only call on matched results to avoid unnecessary allocations.
+func (r GapResult) Path() string {
+	return fmt.Sprintf("m/44'/%d'/%d'/%d/%d", r.CoinType, r.Account, r.Change, r.Index)
 }
 
 // DeriveGap derives public keys for indices 0..gap-1 on a BIP44 chain.
-// Unlike calling DeriveAddressWithCoinType in a loop, this caches the intermediate
-// m/44'/coinType'/account'/change key and performs only one EC operation per index,
+// Uses cached intermediate keys and performs only one EC operation per index,
 // making it roughly 5x faster for gap scanning.
 func (mc *MnemonicContext) DeriveGap(coinType, account, change uint32, gap int) ([]GapResult, error) {
-	purposeKey, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
+	accountKey, err := mc.getAccountKey(coinType, account)
 	if err != nil {
-		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
-	}
-	coinTypeKey, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
-	}
-	accountKey, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive account key: %w", err)
+		return nil, err
 	}
 	changeKey, err := accountKey.ChildBIP32Std(change)
 	if err != nil {
@@ -489,15 +528,80 @@ func (mc *MnemonicContext) DeriveGap(coinType, account, change uint32, gap int) 
 	for i := uint32(0); i < uint32(gap); i++ { //nolint:gosec // gap is validated
 		indexKey, iErr := changeKey.ChildBIP32Std(i)
 		if iErr != nil {
+			// BIP32 child derivation failure is extremely rare (degenerate key).
+			// Skip this index; the GapResult slice preserves correct Index values.
 			continue
 		}
 		results = append(results, GapResult{
-			PubKey: indexKey.SerializedPubKey(),
-			Path:   fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, i),
-			Index:  i,
+			PubKey:   indexKey.SerializedPubKey(),
+			CoinType: coinType,
+			Account:  account,
+			Change:   change,
+			Index:    i,
 		})
 	}
 	return results, nil
+}
+
+// getPurposeKey returns the cached m/44' key, deriving it on first call.
+func (mc *MnemonicContext) getPurposeKey() (*hdkeychain.ExtendedKey, error) {
+	if mc.purposeKey != nil {
+		return mc.purposeKey, nil
+	}
+	key, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 44)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive purpose key: %w", err)
+	}
+	mc.purposeKey = key
+	return key, nil
+}
+
+// getCoinTypeKey returns the cached m/44'/coinType' key.
+func (mc *MnemonicContext) getCoinTypeKey(coinType uint32) (*hdkeychain.ExtendedKey, error) {
+	if key, ok := mc.coinTypeKeys[coinType]; ok {
+		return key, nil
+	}
+	purposeKey, err := mc.getPurposeKey()
+	if err != nil {
+		return nil, err
+	}
+	key, err := purposeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + coinType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive coin type key: %w", err)
+	}
+	mc.coinTypeKeys[coinType] = key
+	return key, nil
+}
+
+// getAccountKey returns the cached m/44'/coinType'/account' key.
+func (mc *MnemonicContext) getAccountKey(coinType, account uint32) (*hdkeychain.ExtendedKey, error) {
+	cacheKey := uint64(coinType)<<32 | uint64(account)
+	if key, ok := mc.accountKeys[cacheKey]; ok {
+		return key, nil
+	}
+	coinTypeKey, err := mc.getCoinTypeKey(coinType)
+	if err != nil {
+		return nil, err
+	}
+	key, err := coinTypeKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive account key: %w", err)
+	}
+	mc.accountKeys[cacheKey] = key
+	return key, nil
+}
+
+// getLegacyKey returns the cached m/0' key for HandCash legacy derivation.
+func (mc *MnemonicContext) getLegacyKey() (*hdkeychain.ExtendedKey, error) {
+	if mc.legacyKey != nil {
+		return mc.legacyKey, nil
+	}
+	key, err := mc.masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive m/0' key: %w", err)
+	}
+	mc.legacyKey = key
+	return key, nil
 }
 
 // DerivePrivateKeyWithCoinType derives a private key using an arbitrary coin type.

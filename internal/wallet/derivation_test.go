@@ -816,3 +816,88 @@ func BenchmarkDeriveLegacyAddress(b *testing.B) {
 		_, _, _, _ = DeriveLegacyAddress(seed, uint32(i%1000))
 	}
 }
+
+func TestMnemonicContext_DeriveGap(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	mc, err := NewMnemonicContext(seed)
+	require.NoError(t, err)
+
+	results, err := mc.DeriveGap(0, 0, 0, 5)
+	require.NoError(t, err)
+	require.Len(t, results, 5)
+
+	for i, r := range results {
+		assert.Len(t, r.PubKey, 33, "result[%d] PubKey should be 33 bytes (compressed)", i)
+	}
+
+	assert.Equal(t, "m/44'/0'/0'/0/0", results[0].Path())
+	assert.Equal(t, "m/44'/0'/0'/0/4", results[4].Path())
+
+	// Exercise the cache hit path
+	results2, err := mc.DeriveGap(0, 0, 0, 5)
+	require.NoError(t, err)
+	require.Len(t, results2, 5)
+
+	for i := range results {
+		assert.Equal(t, hex.EncodeToString(results[i].PubKey), hex.EncodeToString(results2[i].PubKey))
+		assert.Equal(t, results[i].Path(), results2[i].Path())
+	}
+}
+
+func TestMnemonicContext_DeriveAddressWithCoinType(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	mc, err := NewMnemonicContext(seed)
+	require.NoError(t, err)
+
+	mcAddr, mcPub, mcPath, err := mc.DeriveAddressWithCoinType(236, 0, 0, 0)
+	require.NoError(t, err)
+
+	standaloneAddr, standalonePub, standalonePath, err := DeriveAddressWithCoinType(seed, 236, 0, 0, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, standaloneAddr, mcAddr)
+	assert.Equal(t, standalonePub, mcPub)
+	assert.Equal(t, standalonePath, mcPath)
+
+	assert.Equal(t, "1", mcAddr[:1])
+	assert.Equal(t, "m/44'/236'/0'/0/0", mcPath)
+}
+
+func TestMnemonicContext_DeriveLegacyAddress(t *testing.T) {
+	t.Parallel()
+	seed := getTestSeed(t)
+
+	mc, err := NewMnemonicContext(seed)
+	require.NoError(t, err)
+
+	// Index 0
+	mcAddr0, mcPub0, mcPath0, err := mc.DeriveLegacyAddress(0)
+	require.NoError(t, err)
+
+	standaloneAddr0, standalonePub0, standalonePath0, err := DeriveLegacyAddress(seed, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, standaloneAddr0, mcAddr0)
+	assert.Equal(t, standalonePub0, mcPub0)
+	assert.Equal(t, standalonePath0, mcPath0)
+	assert.Equal(t, "m/0'/0", mcPath0)
+
+	// Index 5
+	mcAddr5, mcPub5, mcPath5, err := mc.DeriveLegacyAddress(5)
+	require.NoError(t, err)
+
+	standaloneAddr5, standalonePub5, standalonePath5, err := DeriveLegacyAddress(seed, 5)
+	require.NoError(t, err)
+
+	assert.Equal(t, standaloneAddr5, mcAddr5)
+	assert.Equal(t, standalonePub5, mcPub5)
+	assert.Equal(t, standalonePath5, mcPath5)
+	assert.Equal(t, "m/0'/5", mcPath5)
+
+	// Addresses at different indices should differ
+	assert.NotEqual(t, mcAddr0, mcAddr5)
+}

@@ -2,10 +2,21 @@ package balance
 
 import (
 	"context"
+	"errors"
+	"math/big"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/bsv"
+)
+
+var (
+	errForcedFetchFailure = errors.New("forced fetch failure")
+	errMissingBalance     = errors.New("missing balance")
 )
 
 // Mock implementations for testing
@@ -585,4 +596,396 @@ func TestFetchCachedBalances_TokenBalance(t *testing.T) {
 	if !hasUSDC {
 		t.Error("expected USDC token balance")
 	}
+}
+
+func TestNewService_PolicyInitialization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		metadata   AddressMetadataProvider
+		cache      CacheProvider
+		force      bool
+		wantPolicy bool
+	}{
+		{
+			name:       "policy enabled with metadata and cache",
+			metadata:   newChainAwareMetadataProvider(),
+			cache:      newMockCacheProvider(),
+			force:      false,
+			wantPolicy: true,
+		},
+		{
+			name:       "policy disabled without metadata",
+			metadata:   nil,
+			cache:      newMockCacheProvider(),
+			force:      false,
+			wantPolicy: false,
+		},
+		{
+			name:       "policy disabled without cache",
+			metadata:   newChainAwareMetadataProvider(),
+			cache:      nil,
+			force:      false,
+			wantPolicy: false,
+		},
+		{
+			name:       "policy disabled when force refresh",
+			metadata:   newChainAwareMetadataProvider(),
+			cache:      newMockCacheProvider(),
+			force:      true,
+			wantPolicy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := NewService(&Config{
+				ConfigProvider: newMockConfigProvider(),
+				CacheProvider:  tt.cache,
+				Metadata:       tt.metadata,
+				ForceRefresh:   tt.force,
+			})
+
+			require.NotNil(t, service.fetcher)
+			assert.Equal(t, tt.cache, service.cache)
+			assert.Equal(t, tt.force, service.force)
+
+			if tt.wantPolicy {
+				require.NotNil(t, service.policy)
+			} else {
+				require.Nil(t, service.policy)
+			}
+		})
+	}
+}
+
+func TestFetchBalance_UsesCacheWhenPolicyAllows(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	cacheProvider.Set(CacheEntry{
+		Chain:     chain.BSV,
+		Address:   "1cache",
+		Balance:   "0",
+		Symbol:    "BSV",
+		Decimals:  8,
+		UpdatedAt: time.Now().Add(-10 * time.Minute),
+	})
+
+	metadata := newChainAwareMetadataProvider()
+	metadata.set(chain.BSV, "1cache", &AddressMetadata{
+		ChainID:     chain.BSV,
+		Address:     "1cache",
+		HasActivity: true,
+		LastScanned: time.Now().Add(-48 * time.Hour),
+	})
+
+	service := &Service{
+		fetcher: NewFetcher(newMockConfigProvider(), cacheProvider),
+		policy:  NewRefreshPolicy(metadata, cacheProvider),
+		cache:   cacheProvider,
+	}
+
+	result, err := service.FetchBalance(context.Background(), &FetchRequest{
+		ChainID: chain.BSV,
+		Address: "1cache",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Balances, 1)
+	assert.Equal(t, "0", result.Balances[0].Balance)
+	assert.False(t, result.Stale)
+}
+
+func TestFetchBalance_FetchErrorWithCachedFallback(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	unknownChain := chain.ID("foo")
+	cacheProvider.Set(CacheEntry{
+		Chain:     unknownChain,
+		Address:   "addr1",
+		Balance:   "7.2",
+		Symbol:    "FOO",
+		Decimals:  8,
+		UpdatedAt: time.Now().Add(-1 * time.Minute),
+	})
+
+	service := &Service{
+		fetcher: NewFetcher(newMockConfigProvider(), cacheProvider),
+		cache:   cacheProvider,
+	}
+
+	result, err := service.FetchBalance(context.Background(), &FetchRequest{
+		ChainID: unknownChain,
+		Address: "addr1",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Stale)
+	require.Error(t, result.Error)
+	require.Len(t, result.Balances, 1)
+	assert.Equal(t, "7.2", result.Balances[0].Balance)
+}
+
+func TestFetchBalance_FetchErrorWithoutCache(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	service := &Service{
+		fetcher: NewFetcher(newMockConfigProvider(), cacheProvider),
+		cache:   cacheProvider,
+	}
+
+	result, err := service.FetchBalance(context.Background(), &FetchRequest{
+		ChainID: chain.ID("bar"),
+		Address: "missing",
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+}
+
+func TestFetchBalance_ForceRefreshBypassesPolicy(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	cacheProvider.Set(CacheEntry{
+		Chain:     chain.ETH,
+		Address:   "0xforce",
+		Balance:   "0",
+		Symbol:    "ETH",
+		Decimals:  18,
+		UpdatedAt: time.Now().Add(-1 * time.Minute),
+	})
+
+	metadata := newChainAwareMetadataProvider()
+	metadata.set(chain.ETH, "0xforce", &AddressMetadata{
+		ChainID:     chain.ETH,
+		Address:     "0xforce",
+		HasActivity: true,
+		LastScanned: time.Now().Add(-48 * time.Hour),
+	})
+
+	cfg := newMockConfigProvider()
+	cfg.ethProvider = "rpc"
+	cfg.ethEtherscanAPIKey = ""
+
+	fetcher := NewFetcher(cfg, cacheProvider)
+	fetchCalled := false
+	fetcher.fetchETHViaRPCOverride = func(_ context.Context, _ string) ([]CacheEntry, bool, error) {
+		fetchCalled = true
+		return []CacheEntry{
+			{
+				Chain:     chain.ETH,
+				Address:   "0xforce",
+				Balance:   "9.9",
+				Symbol:    "ETH",
+				Decimals:  18,
+				UpdatedAt: time.Now(),
+			},
+		}, false, nil
+	}
+
+	service := &Service{
+		fetcher: fetcher,
+		policy:  NewRefreshPolicy(metadata, cacheProvider),
+		cache:   cacheProvider,
+	}
+
+	result, err := service.FetchBalance(context.Background(), &FetchRequest{
+		ChainID:      chain.ETH,
+		Address:      "0xforce",
+		ForceRefresh: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, fetchCalled)
+	require.Len(t, result.Balances, 1)
+	assert.Equal(t, "9.9", result.Balances[0].Balance)
+}
+
+func TestFetchBalance_AppliesTimeoutContext(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	cfg := newMockConfigProvider()
+	cfg.ethProvider = "rpc"
+	cfg.ethEtherscanAPIKey = ""
+
+	fetcher := NewFetcher(cfg, cacheProvider)
+	deadlineSeen := false
+	fetcher.fetchETHViaRPCOverride = func(ctx context.Context, _ string) ([]CacheEntry, bool, error) {
+		_, deadlineSeen = ctx.Deadline()
+		return nil, true, errForcedFetchFailure
+	}
+
+	service := &Service{
+		fetcher: fetcher,
+		cache:   cacheProvider,
+	}
+
+	result, err := service.FetchBalance(context.Background(), &FetchRequest{
+		ChainID: chain.ETH,
+		Address: "0xdead",
+		Timeout: 50 * time.Millisecond,
+	})
+
+	require.Error(t, err)
+	assert.True(t, deadlineSeen)
+	assert.Nil(t, result)
+}
+
+func TestFetchBalances_DefaultConcurrencyAndProgress(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	chainOne := chain.ID("alpha")
+	chainTwo := chain.ID("beta")
+
+	cacheProvider.Set(CacheEntry{
+		Chain:     chainOne,
+		Address:   "addr-alpha",
+		Balance:   "1.1",
+		Symbol:    "ALP",
+		Decimals:  8,
+		UpdatedAt: time.Now(),
+	})
+	cacheProvider.Set(CacheEntry{
+		Chain:     chainTwo,
+		Address:   "addr-beta",
+		Balance:   "2.2",
+		Symbol:    "BET",
+		Decimals:  8,
+		UpdatedAt: time.Now(),
+	})
+
+	service := &Service{
+		fetcher: NewFetcher(newMockConfigProvider(), cacheProvider),
+		cache:   cacheProvider,
+	}
+
+	var updates []ProgressUpdate
+	result, err := service.FetchBalances(context.Background(), &FetchBatchRequest{
+		Addresses: []AddressInput{
+			{ChainID: chainOne, Address: "addr-alpha"},
+			{ChainID: chainTwo, Address: "addr-beta"},
+		},
+		MaxConcurrent: 0, // exercise default value path
+		ProgressCallback: func(update ProgressUpdate) {
+			updates = append(updates, update)
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Len(t, result.Results, 2)
+	assert.Empty(t, result.Errors)
+
+	assert.Contains(t, progressPhases(updates), "building")
+	assert.Contains(t, progressPhases(updates), "fetching_eth")
+	assert.True(t, hasCompletedProgress(updates), "expected at least one completed progress update")
+}
+
+func TestFetchBalances_BSVBulkWithMockedClient(t *testing.T) {
+	t.Parallel()
+
+	cacheProvider := newMockCacheProvider()
+	cfg := newMockConfigProvider()
+
+	fetcher := NewFetcher(cfg, cacheProvider)
+	fetcher.newBSVClient = func(_ context.Context, _ *bsv.ClientOptions) bsvBalanceClient {
+		return &mockBSVBalanceClient{
+			bulkBalances: map[string]*bsv.Balance{
+				"1bulkA": {Address: "1bulkA", Amount: big.NewInt(1000), Symbol: "BSV", Decimals: 8},
+				"1bulkB": {Address: "1bulkB", Amount: big.NewInt(2000), Symbol: "BSV", Decimals: 8},
+			},
+		}
+	}
+
+	service := &Service{
+		fetcher: fetcher,
+		cache:   cacheProvider,
+	}
+
+	var updates []ProgressUpdate
+	result, err := service.FetchBalances(context.Background(), &FetchBatchRequest{
+		Addresses: []AddressInput{
+			{ChainID: chain.BSV, Address: "1bulkA"},
+			{ChainID: chain.BSV, Address: "1bulkB"},
+		},
+		ProgressCallback: func(update ProgressUpdate) {
+			updates = append(updates, update)
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Len(t, result.Results, 2)
+	assert.Empty(t, result.Errors)
+	assert.Contains(t, progressPhases(updates), "fetching_bsv")
+}
+
+type chainAwareMetadataProvider struct {
+	items map[string]*AddressMetadata
+}
+
+func newChainAwareMetadataProvider() *chainAwareMetadataProvider {
+	return &chainAwareMetadataProvider{
+		items: make(map[string]*AddressMetadata),
+	}
+}
+
+func (m *chainAwareMetadataProvider) GetAddress(chainID chain.ID, address string) *AddressMetadata {
+	return m.items[string(chainID)+":"+address]
+}
+
+func (m *chainAwareMetadataProvider) set(chainID chain.ID, address string, metadata *AddressMetadata) {
+	m.items[string(chainID)+":"+address] = metadata
+}
+
+type mockBSVBalanceClient struct {
+	bulkBalances map[string]*bsv.Balance
+	bulkErr      error
+}
+
+func (m *mockBSVBalanceClient) GetNativeBalance(_ context.Context, address string) (*bsv.Balance, error) {
+	if balance, ok := m.bulkBalances[address]; ok {
+		return balance, nil
+	}
+	return nil, errMissingBalance
+}
+
+func (m *mockBSVBalanceClient) GetBulkNativeBalance(_ context.Context, _ []string) (map[string]*bsv.Balance, error) {
+	if m.bulkErr != nil {
+		return nil, m.bulkErr
+	}
+	out := make(map[string]*bsv.Balance, len(m.bulkBalances))
+	for address, balance := range m.bulkBalances {
+		out[address] = balance
+	}
+	return out, nil
+}
+
+func progressPhases(updates []ProgressUpdate) []string {
+	phases := make([]string, 0, len(updates))
+	for _, update := range updates {
+		phases = append(phases, update.Phase)
+	}
+	return phases
+}
+
+func hasCompletedProgress(updates []ProgressUpdate) bool {
+	for _, update := range updates {
+		if update.CompletedAddresses > 0 {
+			return true
+		}
+	}
+	return false
 }

@@ -2,6 +2,8 @@ package balance
 
 import (
 	"context"
+	"errors"
+	"math/big"
 	"net/http"
 	"testing"
 	"time"
@@ -11,6 +13,15 @@ import (
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
+	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
+)
+
+var (
+	errRPCFailed           = errors.New("rpc failed")
+	errEtherscanFailed     = errors.New("etherscan failed")
+	errExpectedCanceledCtx = errors.New("expected canceled context")
+	errGetNativeNotImpl    = errors.New("GetNativeBalance not implemented")
+	errGetUSDCNotImpl      = errors.New("GetUSDCBalance not implemented")
 )
 
 // Mock ConfigProvider for testing
@@ -58,6 +69,10 @@ func TestNewFetcher(t *testing.T) {
 	assert.NotNil(t, fetcher)
 	assert.NotNil(t, fetcher.cfg)
 	assert.NotNil(t, fetcher.cache)
+	assert.NotNil(t, fetcher.newETHClient)
+	assert.NotNil(t, fetcher.newEtherscanClient)
+	assert.NotNil(t, fetcher.newBSVClient)
+	assert.NotNil(t, fetcher.retryETHBalance)
 }
 
 // TestFetchForChain_Dispatch tests chain dispatch logic.
@@ -504,30 +519,38 @@ func TestFetchETHViaRPC_NoRPCConfigured(t *testing.T) {
 func TestFetchETHBalanceWithFallback_PrimarySuccess(t *testing.T) {
 	t.Parallel()
 
-	// This test demonstrates the fallback structure
-	// In a real scenario, we'd need to mock the eth.Client
-	// For now, we test the function signature and error paths
-
 	cfg := newMockConfigProvider()
 	cache := newMockCacheProvider()
 	fetcher := NewFetcher(cfg, cache)
+	fetcher.retryETHBalance = func(_ context.Context, operation func() (*eth.Balance, error)) (*eth.Balance, error) {
+		return operation()
+	}
 
 	transport := &http.Transport{}
+	expectedBalance := &eth.Balance{
+		Address:  "0x1234",
+		Amount:   mustBigInt("1000"),
+		Symbol:   "ETH",
+		Decimals: 18,
+	}
+	primaryClient := &mockETHBalanceClient{
+		getNativeBalanceFunc: func(_ context.Context, _ string) (*eth.Balance, error) {
+			return expectedBalance, nil
+		},
+	}
 
-	// Attempt with invalid client will fail, demonstrating error handling
 	balance, client, err := fetcher.fetchETHBalanceWithFallback(
 		context.Background(),
-		nil, // nil client will cause panic, so we expect this to fail in real usage
+		primaryClient,
 		"0x1234",
 		"https://invalid.example.com",
 		[]string{},
 		transport,
 	)
 
-	// We expect this to fail with nil client
-	require.Error(t, err)
-	assert.Nil(t, balance)
-	assert.Nil(t, client)
+	require.NoError(t, err)
+	assert.Equal(t, expectedBalance, balance)
+	assert.Same(t, primaryClient, client)
 }
 
 // TestErrUnsupportedChain tests the error constant.
@@ -661,11 +684,19 @@ func TestFetchETH_ProviderSelection(t *testing.T) {
 			}
 			cache := newMockCacheProvider()
 			fetcher := NewFetcher(cfg, cache)
+			callOrder := make([]string, 0, 2)
+			fetcher.fetchETHViaRPCOverride = func(_ context.Context, _ string) ([]CacheEntry, bool, error) {
+				callOrder = append(callOrder, "rpc")
+				return nil, true, errRPCFailed
+			}
+			fetcher.fetchETHViaEtherscanOverride = func(_ context.Context, _, _ string) ([]CacheEntry, bool, error) {
+				callOrder = append(callOrder, "etherscan")
+				return nil, true, errEtherscanFailed
+			}
 
-			// fetchETH will try the providers in order and fail (invalid URLs)
-			// We're just testing that the logic doesn't panic
 			_, _, err := fetcher.fetchETH(context.Background(), "0x1234")
-			assert.Error(t, err)
+			require.Error(t, err)
+			assert.Equal(t, []string{tt.expectFirst, tt.expectSecond}, callOrder)
 		})
 	}
 }
@@ -675,22 +706,29 @@ func TestFetchForChain_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	cfg := newMockConfigProvider()
+	cfg.ethProvider = "rpc"
+	cfg.ethEtherscanAPIKey = ""
 	cache := newMockCacheProvider()
 	fetcher := NewFetcher(cfg, cache)
+	fetcher.fetchETHViaRPCOverride = func(ctx context.Context, _ string) ([]CacheEntry, bool, error) {
+		select {
+		case <-ctx.Done():
+			return nil, true, ctx.Err()
+		default:
+			return nil, true, errExpectedCanceledCtx
+		}
+	}
 
 	// Create a canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	// Try to fetch with canceled context
-	// The actual network calls will respect cancellation
 	entries, stale, err := fetcher.FetchForChain(ctx, chain.ETH, "0x1234")
 
-	// May or may not error depending on when cancellation is checked
-	// This test documents the behavior
-	_ = entries
-	_ = stale
-	_ = err
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, entries)
+	assert.True(t, stale)
 }
 
 // TestGetCachedETHBalances_MetricsRecording tests that cache hits/misses are recorded.
@@ -789,11 +827,46 @@ func TestFetchETHViaEtherscan_NoAPIKey(t *testing.T) {
 	cache := newMockCacheProvider()
 
 	fetcher := NewFetcher(cfg, cache)
+	rpcCalled := false
+	fetcher.fetchETHViaRPCOverride = func(_ context.Context, _ string) ([]CacheEntry, bool, error) {
+		rpcCalled = true
+		return nil, true, errRPCFailed
+	}
 
 	entries, stale, err := fetcher.fetchETH(context.Background(), "0x1234")
 
-	// Should fail (primary etherscan fails due to no key, secondary RPC fails due to invalid URL)
 	require.Error(t, err)
+	require.ErrorIs(t, err, etherscan.ErrAPIKeyRequired)
+	assert.True(t, rpcCalled)
 	assert.Nil(t, entries)
 	assert.True(t, stale)
+}
+
+type mockETHBalanceClient struct {
+	getNativeBalanceFunc func(ctx context.Context, address string) (*eth.Balance, error)
+	getUSDCBalanceFunc   func(ctx context.Context, address string) (*eth.Balance, error)
+}
+
+func (m *mockETHBalanceClient) GetNativeBalance(ctx context.Context, address string) (*eth.Balance, error) {
+	if m.getNativeBalanceFunc != nil {
+		return m.getNativeBalanceFunc(ctx, address)
+	}
+	return nil, errGetNativeNotImpl
+}
+
+func (m *mockETHBalanceClient) GetUSDCBalance(ctx context.Context, address string) (*eth.Balance, error) {
+	if m.getUSDCBalanceFunc != nil {
+		return m.getUSDCBalanceFunc(ctx, address)
+	}
+	return nil, errGetUSDCNotImpl
+}
+
+func (m *mockETHBalanceClient) Close() {}
+
+func mustBigInt(value string) *big.Int {
+	out, ok := new(big.Int).SetString(value, 10)
+	if !ok {
+		panic("invalid big int")
+	}
+	return out
 }

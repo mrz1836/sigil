@@ -237,7 +237,7 @@ func runSingleLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, sche
 	var passphrase []byte
 	if lookupPassphrase {
 		fmt.Fprint(os.Stderr, "Enter BIP39 passphrase: ")
-		raw, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // G115: stdin fd is always a small value
+		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
 			return fmt.Errorf("read passphrase: %w", err)
 		}

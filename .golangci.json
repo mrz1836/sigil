@@ -51,6 +51,7 @@
     },
     "linters": {
         "disable": [
+            "goconst",
             "gocritic",
             "godot",
             "gomoddirectives",
@@ -81,7 +82,6 @@
             "gochecknoinits",
             "gochecksumtype",
             "gocognit",
-            "goconst",
             "gocyclo",
             "godox",
             "goheader",

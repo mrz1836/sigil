@@ -10,8 +10,8 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
-	github.com/mrz1836/go-sanitize v1.5.5
-	github.com/mrz1836/go-whatsonchain v1.0.6
+	github.com/mrz1836/go-sanitize v1.5.6
+	github.com/mrz1836/go-whatsonchain v1.0.7
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1

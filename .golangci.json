@@ -58,8 +58,8 @@
             "wsl_v5"
         ],
         "enable": [
-            "asasalint",
             "arangolint",
+            "asasalint",
             "asciicheck",
             "bidichk",
             "bodyclose",
@@ -91,6 +91,7 @@
             "govet",
             "inamedparam",
             "ineffassign",
+            "intrange",
             "loggercheck",
             "makezero",
             "mirror",
@@ -118,6 +119,7 @@
             "unconvert",
             "unparam",
             "unused",
+            "usestdlibvars",
             "wastedassign",
             "zerologlint"
         ],

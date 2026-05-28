@@ -262,7 +262,7 @@ func TestValidationReport_Duration(t *testing.T) {
 	store := New(t.TempDir())
 
 	// Add some UTXOs
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		store.AddUTXO(&StoredUTXO{
 			ChainID: chain.BSV,
 			TxID:    "tx",

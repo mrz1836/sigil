@@ -358,7 +358,7 @@ func TestAddOutput_100Outputs(t *testing.T) {
 
 	dustLimit := chain.BSV.DustLimit() // 1 satoshi for BSV
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		addr := validAddress()
 		if i%2 == 1 {
 			addr = validAddress2()
@@ -409,7 +409,7 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 			setupFunc: func(b *TxBuilder) {
 				// 100 inputs, 1 output: size = 10 + (100*148) + 34 = 14844 bytes
 				// Fee at 250 sat/KB = (14844*250+999)/1000 = 3711 satoshis
-				for i := 0; i < 100; i++ {
+				for i := range 100 {
 					_ = b.AddInput(makeUTXO(testTxID(i), 1000))
 				}
 				// Total input: 100 * 1000 = 100000
@@ -426,7 +426,7 @@ func TestTxBuilder_Validate_EdgeCases(t *testing.T) {
 				// Fee at 250 sat/KB = (3558*250+999)/1000 = 890 satoshis
 				_ = b.AddInput(makeUTXO(testTxID(1), 5000000)) // 5M satoshis
 				dustLimit := chain.BSV.DustLimit()             // 1 satoshi for BSV
-				for i := 0; i < 100; i++ {
+				for range 100 {
 					// 100 outputs at dust limit = 100 satoshis (BSV)
 					_ = b.AddOutput(validAddress(), dustLimit)
 				}
@@ -570,12 +570,12 @@ func TestTxBuilder_CalculateFee_Comprehensive(t *testing.T) {
 			builder := NewTxBuilder()
 
 			// Add inputs
-			for i := 0; i < tt.numInputs; i++ {
+			for i := range tt.numInputs {
 				_ = builder.AddInput(makeUTXO(testTxID(i), 1000000))
 			}
 
 			// Add outputs
-			for i := 0; i < tt.numOutputs; i++ {
+			for range tt.numOutputs {
 				_ = builder.AddOutput(validAddress(), 1000)
 			}
 

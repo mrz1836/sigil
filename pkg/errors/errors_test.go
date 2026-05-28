@@ -205,7 +205,7 @@ func TestSigilError_Error_deterministic(t *testing.T) {
 		},
 	}
 	first := err.Error()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		assert.Equal(t, first, err.Error(), "Error() output must be deterministic (iteration %d)", i)
 	}
 }

@@ -355,7 +355,7 @@ func TestStorage_ConcurrentLoadSave(t *testing.T) { //nolint:gocognit // concurr
 	done := make(chan bool, numGoroutines)
 
 	// Half goroutines do Load, half do Save
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		if i%2 == 0 {
 			// Load operation
 			go func() {
@@ -378,7 +378,7 @@ func TestStorage_ConcurrentLoadSave(t *testing.T) { //nolint:gocognit // concurr
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 

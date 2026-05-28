@@ -9,7 +9,7 @@ func BenchmarkEncrypt(b *testing.B) {
 	password := "testpassword123"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = Encrypt(data, password)
 	}
 }
@@ -20,25 +20,25 @@ func BenchmarkDecrypt(b *testing.B) {
 	encrypted, _ := Encrypt(data, password)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = Decrypt(encrypted, password)
 	}
 }
 
 func BenchmarkRandomBytes32(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = RandomBytes(32)
 	}
 }
 
 func BenchmarkRandomBytes64(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = RandomBytes(64)
 	}
 }
 
 func BenchmarkSecureBytesCreate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		sb, _ := NewSecureBytes(64)
 		sb.Destroy()
 	}
@@ -51,7 +51,7 @@ func BenchmarkSecureBytesFromSlice(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		sb, _ := SecureBytesFromSlice(data)
 		sb.Destroy()
 	}

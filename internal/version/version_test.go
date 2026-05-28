@@ -549,7 +549,7 @@ func TestClientConcurrentUse(t *testing.T) {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 10)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -570,31 +570,31 @@ func TestClientConcurrentUse(t *testing.T) {
 
 // Benchmarks
 func BenchmarkCompareVersions(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		CompareVersions("1.2.3", "1.2.4")
 	}
 }
 
 func BenchmarkIsNewerVersion(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		IsNewerVersion("1.2.3", "1.2.4")
 	}
 }
 
 func BenchmarkNormalizeVersion(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		NormalizeVersion("v1.2.3-rc1")
 	}
 }
 
 func BenchmarkIsCommitHash(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		isCommitHash("abc123def456")
 	}
 }
 
 func BenchmarkNewClient(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		NewClient(
 			WithBaseURL("https://api.example.com"),
 			WithTimeout(5*time.Second),

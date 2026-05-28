@@ -142,7 +142,7 @@ func promptMnemonicInteractive() (string, error) {
 	out(os.Stderr, "Enter mnemonic (all words on one line): ")
 
 	var words []string
-	for i := 0; i < 24; i++ {
+	for range 24 {
 		var word string
 		_, err := fmt.Scan(&word)
 		if err != nil {

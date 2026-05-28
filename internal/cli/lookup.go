@@ -346,7 +346,7 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 
 	// Workers: derive and lookup
 	var wg sync.WaitGroup
-	for i := 0; i < lookupWorkers; i++ {
+	for range lookupWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -521,7 +521,7 @@ func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []d
 	for _, scheme := range schemes {
 		if scheme.IsLegacy {
 			// HandCash legacy: m/0'/index — derive all formats
-			for i := uint32(0); i < uint32(gap); i++ { //nolint:gosec // gap is validated
+			for i := range uint32(gap) { //nolint:gosec // gap is validated
 				addr, _, path, legacyErr := mc.DeriveLegacyAddress(i)
 				if legacyErr != nil {
 					continue

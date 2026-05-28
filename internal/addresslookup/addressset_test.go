@@ -129,7 +129,7 @@ func TestAddressSet_LargeDataset(t *testing.T) {
 	t.Parallel()
 	n := 10000
 	pairs := make([]addrBal, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		pairs[i] = addrBal{
 			addr: fmt.Sprintf("addr_%06d", i),
 			bal:  fmt.Sprintf("%d", i*100),
@@ -173,13 +173,13 @@ func TestAddressSet_MemBytesEmpty(t *testing.T) {
 func BenchmarkAddressSet_Contains(b *testing.B) {
 	n := 100000
 	pairs := make([]addrBal, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		pairs[i] = addrBal{addr: fmt.Sprintf("1Addr%08d", i)}
 	}
 	set := NewAddressSet(pairs)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		set.Contains(fmt.Sprintf("1Addr%08d", i%n))
 	}
 }
@@ -191,7 +191,7 @@ func BenchmarkLoad_And_Lookup(b *testing.B) {
 
 	var sb strings.Builder
 	sb.WriteString("address,balance\n")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fmt.Fprintf(&sb, "1Addr%08d,%d\n", i, i)
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
@@ -204,7 +204,7 @@ func BenchmarkLoad_And_Lookup(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		set.Lookup(fmt.Sprintf("1Addr%08d", i%n))
 	}
 }

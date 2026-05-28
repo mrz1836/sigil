@@ -579,8 +579,8 @@ func TestSelectUTXOs_LargeNumber(t *testing.T) {
 	client := NewClient(context.Background(), nil)
 
 	// Create 100 UTXOs of 1000 satoshis each = 100,000 total
-	var utxos []UTXO
-	for i := 0; i < 100; i++ {
+	utxos := make([]UTXO, 0, 100)
+	for i := range 100 {
 		utxos = append(utxos, makeUTXO(testTxID(i), 1000))
 	}
 

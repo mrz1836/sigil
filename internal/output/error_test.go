@@ -276,7 +276,7 @@ func TestFormatError_DetailsDeterminism_Text(t *testing.T) {
 
 	// Run the formatting 5 times and collect outputs
 	outputs := make([]string, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		err := sigilerr.WithDetails(sigilerr.ErrInvalidAddress, details)
 		var buf bytes.Buffer
 		formatErr := output.FormatError(&buf, err, output.FormatText)
@@ -365,7 +365,7 @@ func TestFormatError_VeryLargeDetails(t *testing.T) {
 
 	// Create a map with 100 entries
 	details := make(map[string]string)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := string(rune('a' + (i % 26)))
 		if i >= 26 {
 			key = key + string(rune('0'+(i/26)))

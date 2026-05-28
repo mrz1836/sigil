@@ -81,7 +81,7 @@ func evaluatePolynomials(secret, coeffs []byte, n, k int) ([]string, error) {
 			val := secretByte
 			xPoly := xByte // x^1, then x^2, etc.
 
-			for j := 0; j < k-1; j++ {
+			for j := range k - 1 {
 				c := coeffs[coeffStart+j]
 				term := gfMul(c, xPoly)
 				val = gfAdd(val, term)
@@ -235,7 +235,7 @@ func interpolateSecret(uniqueShares []parsedShare, secretLen int) ([]byte, error
 
 	secret := make([]byte, secretLen)
 	// Interpolate each byte
-	for i := 0; i < secretLen; i++ {
+	for i := range secretLen {
 		var val byte // 0
 		for j, s := range uniqueShares {
 			// term = y_i * weight_i

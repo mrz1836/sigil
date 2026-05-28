@@ -200,7 +200,7 @@ func CompareVersions(v1, v2 string) int {
 	parts2 := parseVersion(v2)
 
 	// Compare major, minor, patch
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if i >= len(parts1) && i >= len(parts2) {
 			break
 		}

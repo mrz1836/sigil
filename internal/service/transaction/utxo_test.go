@@ -183,7 +183,7 @@ func TestAggregateBSVUTXOs_ConcurrentFetch(t *testing.T) {
 		"1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T",
 		"3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
 	}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		addresses[i] = wallet.Address{
 			Address: validAddrs[i%len(validAddrs)],
 			Index:   uint32(i),

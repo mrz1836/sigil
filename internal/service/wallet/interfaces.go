@@ -32,6 +32,6 @@ type StorageProvider interface {
 
 // LogWriter provides logging capabilities.
 type LogWriter interface {
-	Debug(format string, args ...interface{})
-	Error(format string, args ...interface{})
+	Debug(format string, args ...any)
+	Error(format string, args ...any)
 }

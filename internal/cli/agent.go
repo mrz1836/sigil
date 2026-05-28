@@ -298,7 +298,7 @@ func runAgentCreate(cmd *cobra.Command, _ []string) error {
 
 	// Output
 	if cc.Fmt.Format() == output.FormatJSON {
-		return writeJSON(w, map[string]interface{}{
+		return writeJSON(w, map[string]any{
 			"id":         cred.ID,
 			"label":      cred.Label,
 			"wallet":     cred.WalletName,
@@ -427,7 +427,7 @@ func runAgentList(cmd *cobra.Command, _ []string) error {
 
 			result = append(result, aj)
 		}
-		return writeJSON(w, map[string]interface{}{"agents": result})
+		return writeJSON(w, map[string]any{"agents": result})
 	}
 
 	if len(agents) == 0 {
@@ -479,7 +479,7 @@ func runAgentInfo(cmd *cobra.Command, _ []string) error {
 	}
 
 	if cc.Fmt.Format() == output.FormatJSON {
-		return writeJSON(w, map[string]interface{}{
+		return writeJSON(w, map[string]any{
 			"id":         found.ID,
 			"label":      found.Label,
 			"wallet":     found.WalletName,
@@ -566,7 +566,7 @@ func runAgentRevoke(cmd *cobra.Command, _ []string) error { //nolint:gocognit //
 			return err
 		}
 		if cc.Fmt.Format() == output.FormatJSON {
-			return writeJSON(w, map[string]interface{}{
+			return writeJSON(w, map[string]any{
 				"wallet":  agentWallet,
 				"revoked": count,
 			})
@@ -600,7 +600,7 @@ func runAgentRevoke(cmd *cobra.Command, _ []string) error { //nolint:gocognit //
 	}
 
 	if cc.Fmt.Format() == output.FormatJSON {
-		return writeJSON(w, map[string]interface{}{
+		return writeJSON(w, map[string]any{
 			"wallet":  agentWallet,
 			"id":      agentID,
 			"revoked": true,

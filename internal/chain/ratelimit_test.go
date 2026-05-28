@@ -16,7 +16,7 @@ func TestRateLimiter_Allow(t *testing.T) {
 	rl := chain.NewRateLimiter(10, 10) // 10/sec with burst of 10
 
 	// Should allow initial burst
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		allowed := rl.Allow("test")
 		assert.True(t, allowed, "should allow request %d in burst", i)
 	}
@@ -81,7 +81,7 @@ func TestRateLimiter_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	successes := make(chan bool, 200)
 
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -111,7 +111,7 @@ func TestDefaultRateLimiter(t *testing.T) {
 	require.NotNil(t, rl)
 
 	// Default allows burst of 10
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		allowed := rl.Allow("test")
 		assert.True(t, allowed, "should allow request %d in default burst", i)
 	}

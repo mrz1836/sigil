@@ -148,7 +148,7 @@ func (w *Wallet) DeriveAddresses(seed []byte, count int) error {
 		addresses := make([]Address, 0, count)
 
 		// Safe conversion: count validated to be in [0, MaxAddressDerivation]
-		for i := 0; i < count; i++ {
+		for i := range count {
 			idx := uint32(i)
 
 			addr, err := DeriveAddress(seed, chain,

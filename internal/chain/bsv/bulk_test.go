@@ -220,7 +220,7 @@ func TestBulkOperations_RateLimiting(t *testing.T) {
 	start := time.Now()
 	addresses := []string{"addr1"}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, err := bulkOps.BulkAddressActivityCheck(ctx, addresses)
 		require.NoError(t, err)
 	}

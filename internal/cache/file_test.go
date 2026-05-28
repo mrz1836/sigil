@@ -283,7 +283,7 @@ func TestFileStorage_ConcurrentAccess(t *testing.T) {
 	require.NoError(t, storage.Save(initialCache))
 
 	// Concurrent writers
-	for i := 0; i < numWriters; i++ {
+	for i := range numWriters {
 		go func(id int) {
 			cache := NewBalanceCache()
 			cache.Set(BalanceCacheEntry{
@@ -297,7 +297,7 @@ func TestFileStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent readers
-	for i := 0; i < numReaders; i++ {
+	for range numReaders {
 		go func() {
 			_, _ = storage.Load()
 			done <- true
@@ -305,7 +305,7 @@ func TestFileStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent deleters
-	for i := 0; i < numDeleters; i++ {
+	for range numDeleters {
 		go func() {
 			cache, err := storage.Load()
 			if err == nil {
@@ -317,7 +317,7 @@ func TestFileStorage_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < numWriters+numReaders+numDeleters; i++ {
+	for range numWriters + numReaders + numDeleters {
 		<-done
 	}
 
@@ -339,7 +339,7 @@ func TestFileStorage_SaveAtomicity(t *testing.T) {
 	done := make(chan bool, numSaves)
 
 	// Concurrent saves
-	for i := 0; i < numSaves; i++ {
+	for i := range numSaves {
 		go func(id int) {
 			cache := NewBalanceCache()
 			cache.Set(BalanceCacheEntry{
@@ -354,7 +354,7 @@ func TestFileStorage_SaveAtomicity(t *testing.T) {
 	}
 
 	// Wait for all saves
-	for i := 0; i < numSaves; i++ {
+	for range numSaves {
 		<-done
 	}
 

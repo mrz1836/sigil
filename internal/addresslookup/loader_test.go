@@ -347,7 +347,7 @@ func TestLoadDirWithProgress_CallbackSequence(t *testing.T) {
 	// Expect 3 "loading_file" events + 1 "building_index" event
 	require.Len(t, events, 4)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		assert.Equal(t, "loading_file", events[i].Phase)
 		assert.Equal(t, 3, events[i].FilesTotal)
 		assert.Equal(t, i, events[i].FilesLoaded)

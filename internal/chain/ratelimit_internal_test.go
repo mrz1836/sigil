@@ -17,7 +17,7 @@ func TestGetLimiter_DoubleCheckLock(t *testing.T) {
 		limiters := make(chan interface{}, goroutines)
 
 		// Launch many goroutines simultaneously
-		for i := 0; i < goroutines; i++ {
+		for range goroutines {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -94,7 +94,7 @@ func TestGetLimiter_CreateNewLimiter(t *testing.T) {
 		limiter := rl.getLimiter("test")
 
 		// Test that the limiter respects the burst
-		for i := 0; i < burst; i++ {
+		for range burst {
 			allowed := limiter.Allow()
 			assert.True(t, allowed, "should allow within burst limit")
 		}

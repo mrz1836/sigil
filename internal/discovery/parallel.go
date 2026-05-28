@@ -82,7 +82,7 @@ func (p *ParallelScanner) ScanParallel(ctx context.Context, seed []byte) (*Resul
 
 	// Start worker pool
 	var wg sync.WaitGroup
-	for i := 0; i < p.maxWorkers; i++ {
+	for range p.maxWorkers {
 		wg.Add(1)
 		go p.worker(ctx, seed, scanner, jobs, results, &wg)
 	}

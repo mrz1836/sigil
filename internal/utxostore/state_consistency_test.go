@@ -60,7 +60,7 @@ func TestState_ConcurrentReads(t *testing.T) {
 
 	// Setup: 100 UTXOs
 	const numUTXOs = 100
-	for i := 0; i < numUTXOs; i++ {
+	for i := range numUTXOs {
 		addr := testAddressN(i % 10)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i%10), false)
 		store.AddAddress(metadata)
@@ -74,11 +74,11 @@ func TestState_ConcurrentReads(t *testing.T) {
 	const readsPerGoroutine = 100
 	var wg sync.WaitGroup
 
-	for g := 0; g < numGoroutines; g++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < readsPerGoroutine; i++ {
+			for range readsPerGoroutine {
 				// Mix of read operations
 				_ = store.GetBalance(chain.BSV)
 				_ = store.GetUTXOs(chain.BSV, "")
@@ -101,7 +101,7 @@ func TestState_ConcurrentReadsWrites(t *testing.T) {
 
 	// Setup initial state
 	const initialUTXOs = 50
-	for i := 0; i < initialUTXOs; i++ {
+	for i := range initialUTXOs {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -115,11 +115,11 @@ func TestState_ConcurrentReadsWrites(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Reader goroutines
-	for g := 0; g < numGoroutines/2; g++ {
+	for range numGoroutines / 2 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				_ = store.GetBalance(chain.BSV)
 				_ = store.GetUTXOs(chain.BSV, "")
 			}
@@ -127,11 +127,11 @@ func TestState_ConcurrentReadsWrites(t *testing.T) {
 	}
 
 	// Writer goroutines
-	for g := 0; g < numGoroutines/2; g++ {
+	for g := range numGoroutines / 2 {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				// Add new UTXOs
 				utxo := createTestUTXO(chain.BSV,
 					testAddressN(gid+100),
@@ -160,7 +160,7 @@ func TestState_PersistReload(t *testing.T) {
 	// 1. Multiple chains
 	chains := []chain.ID{chain.BSV, chain.BTC}
 	for _, chainID := range chains {
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			addr := testAddressN(int(chainID.CoinType())*100 + i)
 			metadata := createTestAddress(chainID, addr, uint32(i), i%2 == 0)
 			metadata.Label = "test-label"
@@ -168,7 +168,7 @@ func TestState_PersistReload(t *testing.T) {
 			store.AddAddress(metadata)
 
 			if i < 3 { // Only fund first 3
-				for j := 0; j < 2; j++ {
+				for j := range 2 {
 					utxo := createTestUTXO(chainID, addr, testTxID(int(chainID.CoinType())*1000+i*10+j), uint32(j), 100, false)
 					store.AddUTXO(utxo)
 				}

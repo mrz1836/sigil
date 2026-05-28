@@ -35,7 +35,7 @@ func TestAIAgent_HighFrequencyTx(t *testing.T) {
 	currentUTXOTxID := testTxID(0)
 	currentUTXOVout := uint32(0)
 
-	for i := 0; i < numTx; i++ {
+	for i := range numTx {
 		// Mark current UTXO as spent
 		newTxID := testTxID(i + 1)
 		found := store.MarkSpent(chain.BSV, currentUTXOTxID, currentUTXOVout, newTxID)
@@ -76,7 +76,7 @@ func TestAIAgent_ManyPendingTx(t *testing.T) {
 	metadata := createTestAddress(chain.BSV, addr, 0, false)
 	store.AddAddress(metadata)
 
-	for i := 0; i < numUTXOs; i++ {
+	for i := range numUTXOs {
 		utxo := createTestUTXO(chain.BSV, addr, testTxID(i), 0, amountEach, false)
 		store.AddUTXO(utxo)
 	}
@@ -86,7 +86,7 @@ func TestAIAgent_ManyPendingTx(t *testing.T) {
 
 	// Simulate 5 pending transactions (UTXOs marked as spent)
 	const pendingCount = 5
-	for i := 0; i < pendingCount; i++ {
+	for i := range pendingCount {
 		pendingTxID := testTxID(100 + i)
 		store.MarkSpent(chain.BSV, testTxID(i), 0, pendingTxID)
 	}
@@ -140,7 +140,7 @@ func TestAIAgent_RapidAddressGeneration(t *testing.T) {
 	const numAddresses = 150
 	addresses := make(map[string]bool)
 
-	for i := 0; i < numAddresses; i++ {
+	for i := range numAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), i%5 == 0) // Every 5th is change
 
@@ -174,12 +174,12 @@ func TestAIAgent_ConcurrentOperations(t *testing.T) {
 	const numAddresses = 100
 	const utxosPerAddress = 10
 
-	for i := 0; i < numAddresses; i++ {
+	for i := range numAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
 
-		for j := 0; j < utxosPerAddress; j++ {
+		for j := range utxosPerAddress {
 			utxo := createTestUTXO(chain.BSV, addr, testTxID(i*100+j), uint32(j), 100, false)
 			store.AddUTXO(utxo)
 		}
@@ -190,12 +190,12 @@ func TestAIAgent_ConcurrentOperations(t *testing.T) {
 	var wg sync.WaitGroup
 	var readCount, writeCount atomic.Int64
 
-	for g := 0; g < numGoroutines; g++ {
+	for g := range numGoroutines {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
 
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				switch i % 4 {
 				case 0:
 					// Read balance
@@ -274,12 +274,12 @@ func TestAIAgent_UTXOConsolidation(t *testing.T) {
 	const smallAmount = uint64(1000)
 
 	totalBefore := uint64(0)
-	for i := 0; i < numAddresses; i++ {
+	for i := range numAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
 
-		for j := 0; j < utxosPerAddr; j++ {
+		for j := range utxosPerAddr {
 			utxo := createTestUTXO(chain.BSV, addr, testTxID(i*100+j), uint32(j), smallAmount, false)
 			store.AddUTXO(utxo)
 			totalBefore += smallAmount
@@ -290,8 +290,8 @@ func TestAIAgent_UTXOConsolidation(t *testing.T) {
 
 	// Simulate consolidation: mark all as spent
 	consolidationTxID := testTxID(9999)
-	for i := 0; i < numAddresses; i++ {
-		for j := 0; j < utxosPerAddr; j++ {
+	for i := range numAddresses {
+		for j := range utxosPerAddr {
 			store.MarkSpent(chain.BSV, testTxID(i*100+j), uint32(j), consolidationTxID)
 		}
 	}
@@ -320,7 +320,7 @@ func TestAIAgent_FrequentBalanceChecks(t *testing.T) {
 	metadata := createTestAddress(chain.BSV, addr, 0, false)
 	store.AddAddress(metadata)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		utxo := createTestUTXO(chain.BSV, addr, testTxID(i), 0, 100, false)
 		store.AddUTXO(utxo)
 	}
@@ -329,7 +329,7 @@ func TestAIAgent_FrequentBalanceChecks(t *testing.T) {
 
 	// AI agents often check balance very frequently
 	// Verify consistency across 1000 rapid queries
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		balance := store.GetBalance(chain.BSV)
 		assert.Equal(t, expectedBalance, balance, "balance should be consistent on query %d", i)
 	}
@@ -376,7 +376,7 @@ func TestAIAgent_RecoveryAfterCrash(t *testing.T) {
 	metadata := createTestAddress(chain.BSV, addr, 0, false)
 	store.AddAddress(metadata)
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		utxo := createTestUTXO(chain.BSV, addr, testTxID(i), 0, 100, false)
 		store.AddUTXO(utxo)
 	}

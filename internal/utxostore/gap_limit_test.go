@@ -21,7 +21,7 @@ func TestGapLimit_FundsAtIndex19(t *testing.T) {
 	const fundedIndex = 19
 	const scanDepth = 40
 
-	for i := 0; i < scanDepth; i++ {
+	for i := range scanDepth {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -58,7 +58,7 @@ func TestGapLimit_FundsAtIndex20(t *testing.T) {
 	const fundedIndex = 20
 	const scanDepth = DefaultGapLimit // Only scan 20 addresses
 
-	for i := 0; i < scanDepth; i++ {
+	for i := range scanDepth {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -90,7 +90,7 @@ func TestGapLimit_FundsAt0And25(t *testing.T) {
 	// Standard scan: finds index 0, then scans 20 more (1-20), would miss 25
 	const scanDepth = 46 // Full scan to find both
 
-	for i := 0; i < scanDepth; i++ {
+	for i := range scanDepth {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -128,7 +128,7 @@ func TestGapLimit_MultipleGaps(t *testing.T) {
 	fundedIndices := []int{0, 15, 40, 60}
 	const scanDepth = 81 // Enough to find all with extended scanning
 
-	for i := 0; i < scanDepth; i++ {
+	for i := range scanDepth {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -158,7 +158,7 @@ func TestGapLimit_ResetOnActivity(t *testing.T) {
 	fundedIndices := []int{19, 39}
 	const scanDepth = 60
 
-	for i := 0; i < scanDepth; i++ {
+	for i := range scanDepth {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -185,7 +185,7 @@ func TestGapLimit_ConsecutiveFunds(t *testing.T) {
 	// Funds at consecutive addresses 0-9
 	const fundedCount = 10
 
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -215,7 +215,7 @@ func TestGapLimit_ChangeAddresses(t *testing.T) {
 	store := createTestStore(t)
 
 	// Create receive addresses with gap limit consideration
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -223,7 +223,7 @@ func TestGapLimit_ChangeAddresses(t *testing.T) {
 
 	// Create change addresses separately with their own gap limit
 	// Change addresses often have different usage patterns
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		addr := testAddressN(1000 + i) // Different range for change
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), true)
 		store.AddAddress(metadata)
@@ -258,7 +258,7 @@ func TestGapLimit_NoFundsInRange(t *testing.T) {
 	store := createTestStore(t)
 
 	// Scan 20 addresses, none funded
-	for i := 0; i < DefaultGapLimit; i++ {
+	for i := range DefaultGapLimit {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -280,7 +280,7 @@ func TestGapLimit_UnusedAddressesQuery(t *testing.T) {
 	// Create 30 addresses, fund 5
 	fundedIndices := map[int]bool{0: true, 5: true, 10: true, 15: true, 20: true}
 
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -311,7 +311,7 @@ func TestGapLimit_LargeGapScenario(t *testing.T) {
 	// This tests handling of very large gaps (common in recovery scenarios)
 	fundedIndices := []int{0, 100}
 
-	for i := 0; i <= 120; i++ {
+	for i := range 121 {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)

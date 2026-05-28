@@ -720,7 +720,7 @@ func TestGetBulkNativeBalance(t *testing.T) {
 
 		// Create 30 test addresses (will be split into 2 batches of 20 and 10)
 		addresses := make([]string, 30)
-		for i := 0; i < 30; i++ {
+		for i := range 30 {
 			addresses[i] = string(rune('A' + i))
 		}
 

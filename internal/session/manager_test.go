@@ -328,7 +328,7 @@ func TestManager_GetSession(t *testing.T) {
 		expiredSession := `"expires_at": "` + now.Format(time.RFC3339Nano) + `"`
 		// Find and replace the expires_at field
 		startIdx := 0
-		for i := 0; i < len(modifiedData)-12; i++ {
+		for i := range len(modifiedData) - 12 {
 			if modifiedData[i:i+12] == `"expires_at"` {
 				startIdx = i
 				break
@@ -627,7 +627,7 @@ func TestManager_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 100)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -638,7 +638,7 @@ func TestManager_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -646,7 +646,7 @@ func TestManager_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -172,7 +172,7 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 
 	// Worker pool: each worker atomically claims keys to generate.
 	var wg sync.WaitGroup
-	for i := 0; i < keygenWorkers; i++ {
+	for range keygenWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -81,7 +81,7 @@ func TestEdge_AllAddressesDust(t *testing.T) {
 	amountPerAddr := btcDustLimit // Exactly at dust limit
 
 	var totalAmount uint64
-	for i := 0; i < numAddresses; i++ {
+	for i := range numAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BTC, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -262,7 +262,7 @@ func TestEdge_MultipleVoutsFromSameTx(t *testing.T) {
 
 	// Same txid, different vouts
 	txid := testTxID(0)
-	for vout := uint32(0); vout < 5; vout++ {
+	for vout := range uint32(5) {
 		utxo := createTestUTXO(chain.BSV, addr, txid, vout, 1000+uint64(vout*100), false)
 		store.AddUTXO(utxo)
 	}
@@ -292,7 +292,7 @@ func TestEdge_RapidAddRemove(t *testing.T) {
 
 	// Rapidly add and spend UTXOs
 	const cycles = 100
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		// Add UTXO
 		utxo := createTestUTXO(chain.BSV, addr, testTxID(i), 0, 100, false)
 		store.AddUTXO(utxo)

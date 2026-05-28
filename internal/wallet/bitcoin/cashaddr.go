@@ -31,7 +31,7 @@ func cashAddrPolymod(values []uint64) uint64 {
 	for _, v := range values {
 		b := c >> 35
 		c = ((c & 0x07ffffffff) << 5) ^ v
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			if (b>>uint(i))&1 == 1 {
 				c ^= gen[i]
 			}

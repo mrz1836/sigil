@@ -253,7 +253,7 @@ func TestVectors(t *testing.T) {
 //nolint:gocognit // Fuzzing loop needs to be self-contained
 func TestFuzzSplitCombine(t *testing.T) {
 	// Simple fuzz-like test with random parameters
-	for i := 0; i < 1000; i++ { // Increased iterations
+	for i := range 1000 { // Increased iterations
 		secret := make([]byte, 32)
 		if _, err := rand.Read(secret); err != nil {
 			t.Fatalf("Failed to generate random secret iter %d: %v", i, err)

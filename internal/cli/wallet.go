@@ -10,14 +10,14 @@ import (
 // out is a helper for CLI output that ignores write errors (standard pattern for CLI tools).
 //
 //nolint:errcheck // CLI output writes to stdout are intentionally unchecked
-func out(w io.Writer, format string, args ...interface{}) {
+func out(w io.Writer, format string, args ...any) {
 	fmt.Fprintf(w, format, args...)
 }
 
 // outln is a helper for CLI output with newline.
 //
 //nolint:errcheck // CLI output writes to stdout are intentionally unchecked
-func outln(w io.Writer, args ...interface{}) {
+func outln(w io.Writer, args ...any) {
 	fmt.Fprintln(w, args...)
 }
 

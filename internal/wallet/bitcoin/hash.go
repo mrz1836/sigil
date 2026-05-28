@@ -89,7 +89,7 @@ func decodeBase58Payload(s string, zeros int) ([]byte, error) {
 
 // base58CharValue returns the value of a Base58 character.
 func base58CharValue(c byte) (int, bool) {
-	for i := 0; i < len(base58Alphabet); i++ {
+	for i := range len(base58Alphabet) {
 		if base58Alphabet[i] == c {
 			return i, true
 		}
@@ -124,7 +124,7 @@ func Base58CheckDecode(s string) ([]byte, error) {
 	checksum := decoded[len(decoded)-4:]
 	expectedChecksum := DoubleSHA256(payload)[:4]
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if checksum[i] != expectedChecksum[i] {
 			return nil, ErrInvalidBase58
 		}
@@ -167,7 +167,7 @@ func Base58Encode(data []byte) string {
 
 	// Build result string
 	result := make([]byte, zeros+len(buf)-j)
-	for i := 0; i < zeros; i++ {
+	for i := range zeros {
 		result[i] = '1'
 	}
 	for i, b := range buf[j:] {

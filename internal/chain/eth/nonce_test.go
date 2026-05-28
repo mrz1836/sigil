@@ -217,7 +217,7 @@ func TestNonceManager_ConcurrentSingleAddress(t *testing.T) {
 	results := make(chan uint64, numGoroutines)
 
 	// Launch 100 goroutines requesting nonces
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -271,7 +271,7 @@ func TestNonceManager_ConcurrentMultipleAddresses(t *testing.T) {
 
 	// For each address, launch requestsPerAddress goroutines
 	for _, addr := range addresses {
-		for i := 0; i < requestsPerAddress; i++ {
+		for range requestsPerAddress {
 			wg.Add(1)
 			go func(address string) {
 				defer wg.Done()
@@ -316,22 +316,22 @@ func TestNonceManager_ConcurrentResets(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Launch goroutines requesting nonces
-	for i := 0; i < numRequesters; i++ {
+	for range numRequesters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				nm.Next(addr, 0)
 			}
 		}()
 	}
 
 	// Launch goroutines calling Reset
-	for i := 0; i < numResetters; i++ {
+	for range numResetters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				nm.Reset(addr)
 			}
 		}()
@@ -372,7 +372,7 @@ func TestNonceManager_StressTest(t *testing.T) {
 	const numGoroutines = 1000
 	var wg sync.WaitGroup
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -381,7 +381,7 @@ func TestNonceManager_StressTest(t *testing.T) {
 			addr := addresses[idx%len(addresses)]
 
 			// Do some operations
-			for j := 0; j < 5; j++ {
+			for j := range 5 {
 				// Occasional reset
 				if (idx+j)%50 == 0 {
 					nm.Reset(addr)
@@ -492,12 +492,12 @@ func TestNonceManager_RapidSuccession(t *testing.T) {
 	const numTxs = 20
 	nonces := make([]uint64, numTxs)
 
-	for i := 0; i < numTxs; i++ {
+	for i := range numTxs {
 		nonces[i] = nm.Next(addr, 0) // RPC still reports 0
 	}
 
 	// Verify nonces are sequential
-	for i := 0; i < numTxs; i++ {
+	for i := range numTxs {
 		assert.Equal(t, uint64(i), nonces[i], "nonce at index %d", i)
 	}
 }

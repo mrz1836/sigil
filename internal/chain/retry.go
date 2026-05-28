@@ -60,7 +60,7 @@ func RetryWithConfig[T any](ctx context.Context, cfg RetryConfig, operation func
 	var result T
 	var err error
 
-	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
+	for attempt := range cfg.MaxAttempts {
 		result, err = operation()
 		if err == nil {
 			return result, nil

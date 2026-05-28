@@ -497,7 +497,7 @@ func TestLogger_Concurrent(t *testing.T) {
 
 	// Test concurrent access
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(n int) {
 			logger.Debug("message %d", n)
 			logger.Error("error %d", n)
@@ -507,7 +507,7 @@ func TestLogger_Concurrent(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 

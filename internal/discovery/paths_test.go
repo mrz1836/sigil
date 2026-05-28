@@ -228,7 +228,7 @@ func TestSortByPriority(t *testing.T) {
 	sorted := SortByPriority(schemes)
 
 	// Check that result is sorted by priority
-	for i := 0; i < len(sorted)-1; i++ {
+	for i := range len(sorted) - 1 {
 		if sorted[i].Priority > sorted[i+1].Priority {
 			t.Errorf("not sorted: schemes[%d].Priority (%d) > schemes[%d].Priority (%d)",
 				i, sorted[i].Priority, i+1, sorted[i+1].Priority)

@@ -221,7 +221,7 @@ func TestPrivateKeyToPublicKey_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Launch 100 goroutines deriving the same public key
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -269,7 +269,7 @@ func TestDeriveAddress_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Launch 100 goroutines deriving the same address
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -520,7 +520,7 @@ func TestSign_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Launch 100 goroutines signing the same message
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

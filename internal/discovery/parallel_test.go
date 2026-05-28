@@ -242,7 +242,7 @@ func TestScanParallel_WorkerPoolSaturation(t *testing.T) {
 
 	// Create many schemes
 	schemes := make([]PathScheme, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		schemes[i] = PathScheme{
 			Name:       string(rune('A' + i)),
 			CoinType:   uint32(i),

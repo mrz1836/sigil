@@ -199,7 +199,7 @@ func base58Encode(input []byte) string {
 	}
 
 	// Add leading '1's for each leading zero byte
-	for i := 0; i < leadingZeros; i++ {
+	for range leadingZeros {
 		result = append(result, '1')
 	}
 

@@ -695,8 +695,8 @@ func TestEstimateTxSize_FormulaVerification(t *testing.T) {
 	assert.Equal(t, 34, P2PKHOutputSize, "P2PKH output should be 34 bytes")
 
 	// Verify formula: overhead + (inputs * input_size) + (outputs * output_size)
-	for numIn := 0; numIn <= 10; numIn++ {
-		for numOut := 0; numOut <= 10; numOut++ {
+	for numIn := range 11 {
+		for numOut := range 11 {
 			expected := EstimateTxSize(numIn, numOut)
 			actual := EstimateTxSize(numIn, numOut)
 			assert.Equal(t, expected, actual, "size mismatch for %d inputs, %d outputs", numIn, numOut)

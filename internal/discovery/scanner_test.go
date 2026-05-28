@@ -752,7 +752,7 @@ func BenchmarkScanner_Scan(b *testing.B) {
 	seed := []byte("test-seed-32-bytes-long-enough!")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = scanner.Scan(context.Background(), seed)
 	}
 }
@@ -774,7 +774,7 @@ func TestScanner_Scan_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	var errCount int32
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

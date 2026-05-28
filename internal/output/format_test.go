@@ -446,7 +446,7 @@ func TestTable_ManyColumns(t *testing.T) {
 	t.Parallel()
 	headers := make([]string, 20)
 	row := make([]string, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		headers[i] = "Col" + string(rune('A'+i))
 		row[i] = "val" + string(rune('A'+i))
 	}
@@ -467,7 +467,7 @@ func TestTable_ManyColumns(t *testing.T) {
 func TestTable_ManyRows(t *testing.T) {
 	t.Parallel()
 	table := output.NewTable("Index", "Value")
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		table.AddRow(string(rune('0'+i%10)), "value"+string(rune('0'+i%10)))
 	}
 

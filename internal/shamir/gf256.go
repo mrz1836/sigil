@@ -44,7 +44,7 @@ func initTables() {
 		// exp[255] = exp[0] = 1 (cyclic).
 
 		var x uint16 = 1
-		for i := 0; i < fieldSize-1; i++ {
+		for i := range fieldSize - 1 {
 			expTable[i] = byte(x)
 			logTable[x] = byte(i)
 

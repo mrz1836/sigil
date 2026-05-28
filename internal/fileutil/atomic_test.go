@@ -61,7 +61,7 @@ func TestWriteAtomic_Concurrent(t *testing.T) {
 	const numGoroutines = 10
 	done := make(chan int, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			data := []byte("writer-" + string(rune('0'+id))) //nolint:gosec // G115: id is bounded by test goroutine count
 			err := WriteAtomic(target, data, 0o600)
@@ -71,7 +71,7 @@ func TestWriteAtomic_Concurrent(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 
@@ -114,7 +114,7 @@ func TestWriteAtomic_TempFileCleanup(t *testing.T) {
 	target := filepath.Join(tmpDir, "cleanup.json")
 
 	// Write multiple times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		data := []byte("iteration-" + string(rune('0'+i)))
 		err := WriteAtomic(target, data, 0o600)
 		require.NoError(t, err)

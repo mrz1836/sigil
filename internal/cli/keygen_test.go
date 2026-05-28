@@ -422,7 +422,7 @@ func TestGenerateOneKey_UnknownFormat(t *testing.T) {
 func BenchmarkGenerateOneKey(b *testing.B) {
 	for _, format := range []string{"hex", "wif", "wif-uncompressed", "mnemonic12", "mnemonic24"} {
 		b.Run(format, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _ = generateOneKey(format)
 			}
 		})

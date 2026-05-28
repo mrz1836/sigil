@@ -42,8 +42,8 @@ func TestDeriveETHAddress_MultipleIndices(t *testing.T) {
 	t.Parallel()
 	seed := getTestSeed(t)
 
-	var addresses []string
-	for i := uint32(0); i < 5; i++ {
+	addresses := make([]string, 0, 5)
+	for i := range uint32(5) {
 		addr, err := DeriveAddress(seed, ChainETH, 0, i)
 		require.NoError(t, err)
 		addresses = append(addresses, addr.Address)
@@ -78,8 +78,8 @@ func TestDeriveBSVAddress_MultipleIndices(t *testing.T) {
 	t.Parallel()
 	seed := getTestSeed(t)
 
-	var addresses []string
-	for i := uint32(0); i < 5; i++ {
+	addresses := make([]string, 0, 5)
+	for i := range uint32(5) {
 		addr, err := DeriveAddress(seed, ChainBSV, 0, i)
 		require.NoError(t, err)
 		addresses = append(addresses, addr.Address)
@@ -364,7 +364,7 @@ func TestDeriveAddressWithCoinType_MultipleIndices(t *testing.T) {
 	seed := getTestSeed(t)
 
 	addresses := make(map[string]bool)
-	for i := uint32(0); i < 10; i++ {
+	for i := range uint32(10) {
 		addr, _, path, err := DeriveAddressWithCoinType(seed, 236, 0, 0, i)
 		require.NoError(t, err)
 
@@ -446,7 +446,7 @@ func TestDeriveLegacyAddress_MultipleIndices(t *testing.T) {
 	seed := getTestSeed(t)
 
 	addresses := make(map[string]bool)
-	for i := uint32(0); i < 10; i++ {
+	for i := range uint32(10) {
 		addr, _, path, err := DeriveLegacyAddress(seed, i)
 		require.NoError(t, err)
 
@@ -792,7 +792,7 @@ func BenchmarkAddressFromPrivKeyBytes(b *testing.B) {
 	privKey, _ := DerivePrivateKey(seed, ChainBSV, 0, 0)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = AddressFromPrivKeyBytes(privKey)
 	}
 }
@@ -803,7 +803,7 @@ func BenchmarkDeriveAddressWithCoinType(b *testing.B) {
 	seed, _ := MnemonicToSeed(derivationTestMnemonic, "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		_, _, _, _ = DeriveAddressWithCoinType(seed, 236, 0, 0, uint32(i%1000))
 	}
 }
@@ -812,7 +812,7 @@ func BenchmarkDeriveLegacyAddress(b *testing.B) {
 	seed, _ := MnemonicToSeed(derivationTestMnemonic, "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		_, _, _, _ = DeriveLegacyAddress(seed, uint32(i%1000))
 	}
 }

@@ -52,7 +52,7 @@ func TestBuildRawTransaction_Basic(t *testing.T) {
 		builder := NewTxBuilder()
 
 		// Add multiple inputs
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			err := builder.AddInput(UTXO{
 				TxID:    testTxID(i + 1),
 				Vout:    0,
@@ -155,7 +155,7 @@ func TestBuildRawTransaction_Signing(t *testing.T) {
 		builder := NewTxBuilder()
 
 		// Add 10 inputs
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			err := builder.AddInput(UTXO{
 				TxID:    testTxID(i + 1),
 				Vout:    0,
@@ -405,7 +405,7 @@ func TestBuildRawTransaction_BSVSpecific(t *testing.T) {
 		builder := NewTxBuilder()
 
 		// Add 100 inputs
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			err := builder.AddInput(UTXO{
 				TxID:    testTxID(i + 1),
 				Vout:    0,

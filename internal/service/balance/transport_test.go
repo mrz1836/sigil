@@ -56,7 +56,7 @@ func TestTransportManager_Get_ConcurrentAccess(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// Launch many goroutines that call Get() concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			transport := tm.Get()
@@ -100,7 +100,7 @@ func TestTransportManager_Get_SyncOnceSemantics(t *testing.T) {
 	results := make(chan *http.Transport, numCalls)
 
 	// Call Get() from multiple goroutines
-	for i := 0; i < numCalls; i++ {
+	for range numCalls {
 		go func() {
 			defer wg.Done()
 			results <- tm.Get()
@@ -153,7 +153,7 @@ func TestSharedETHTransport_ConcurrentGlobal(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// Launch many goroutines that call sharedETHTransport() concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			transport := sharedETHTransport()

@@ -26,7 +26,7 @@ func bech32Polymod(values []byte) uint32 {
 	for _, v := range values {
 		b := chk >> 25
 		chk = (chk&0x1ffffff)<<5 ^ uint32(v)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			if (b>>uint(i))&1 == 1 {
 				chk ^= gen[i]
 			}
@@ -56,7 +56,7 @@ func bech32CreateChecksum(hrp string, data []byte) []byte {
 	values = append(values, 0, 0, 0, 0, 0, 0)
 	polymod := bech32Polymod(values) ^ 1
 	ret := make([]byte, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		ret[i] = byte((polymod >> uint(5*(5-i))) & 31)
 	}
 	return ret

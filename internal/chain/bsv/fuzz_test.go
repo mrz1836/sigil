@@ -211,7 +211,7 @@ func FuzzTxBuilder_Validate(f *testing.F) {
 		}
 
 		// Add inputs
-		for i := uint8(0); i < numInputs; i++ {
+		for i := range numInputs {
 			_ = builder.AddInput(UTXO{
 				TxID:   testTxID(int(i)),
 				Vout:   0,
@@ -222,7 +222,7 @@ func FuzzTxBuilder_Validate(f *testing.F) {
 		// Add outputs (only if amount is above dust)
 		dustLimit := chain.BSV.DustLimit()
 		if outputAmount >= dustLimit {
-			for i := uint8(0); i < numOutputs; i++ {
+			for range numOutputs {
 				_ = builder.AddOutput(testAddress, outputAmount)
 			}
 		}
@@ -253,7 +253,7 @@ func FuzzSelectUTXOs(f *testing.F) {
 
 		// Create UTXOs
 		utxos := make([]UTXO, numUTXOs)
-		for i := uint8(0); i < numUTXOs; i++ {
+		for i := range numUTXOs {
 			utxos[i] = UTXO{
 				TxID:   testTxID(int(i)),
 				Vout:   0,

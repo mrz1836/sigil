@@ -92,12 +92,12 @@ func createLargeScaleStore(t *testing.T, chainID chain.ID, numAddresses, utxosPe
 
 	var total uint64
 	txCounter := 0
-	for i := 0; i < numAddresses; i++ {
+	for i := range numAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chainID, addr, uint32(i), false)
 		store.AddAddress(metadata)
 
-		for j := 0; j < utxosPerAddress; j++ {
+		for j := range utxosPerAddress {
 			utxo := createTestUTXO(chainID, addr, testTxID(txCounter), uint32(j), amountPerUTXO, false)
 			store.AddUTXO(utxo)
 			total += amountPerUTXO

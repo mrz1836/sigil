@@ -287,7 +287,7 @@ func toChecksumAddress(addr []byte) (string, error) {
 	const hexLen = ethAddressBytes * 2 // 40
 	result := make([]byte, hexLen)
 
-	for i := 0; i < hexLen; i++ { // Explicit bounds: i < 40
+	for i := range hexLen { // Explicit bounds: i < 40
 		// SAFETY: i < 40, so i/2 < 20, which is < 32 (len(hashBytes))
 		result[i] = checksumChar(addrHex[i], hashBytes[i/2], i%2 == 1)
 	}
@@ -525,7 +525,7 @@ func (mc *MnemonicContext) DeriveGap(coinType, account, change uint32, gap int) 
 	}
 
 	results := make([]GapResult, 0, gap)
-	for i := uint32(0); i < uint32(gap); i++ { //nolint:gosec // gap is validated
+	for i := range uint32(gap) { //nolint:gosec // gap is validated
 		indexKey, iErr := changeKey.ChildBIP32Std(i)
 		if iErr != nil {
 			// BIP32 child derivation failure is extremely rare (degenerate key).

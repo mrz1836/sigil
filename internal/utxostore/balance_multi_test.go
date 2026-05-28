@@ -61,7 +61,7 @@ func TestMultiAddressBalance_50Addresses(t *testing.T) {
 	const amountPerFunded = uint64(1000)
 
 	// Create 50 addresses
-	for i := 0; i < totalAddresses; i++ {
+	for i := range totalAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -85,7 +85,7 @@ func TestMultiAddressBalance_MixedReceiveChange(t *testing.T) {
 
 	// Add 10 receive addresses with 1000 sats each
 	receiveAmount := uint64(1000)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false) // isChange = false
 		store.AddAddress(metadata)
@@ -96,7 +96,7 @@ func TestMultiAddressBalance_MixedReceiveChange(t *testing.T) {
 
 	// Add 5 change addresses with 500 sats each
 	changeAmount := uint64(500)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		addr := testAddressN(100 + i)                                   // Different address range
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), true) // isChange = true
 		store.AddAddress(metadata)
@@ -175,7 +175,7 @@ func TestMultiAddressBalance_ZeroBalanceMixed(t *testing.T) {
 	// Create addresses, only fund specific ones
 	fundedIndices := map[int]bool{0: true, 3: true, 5: true, 9: true}
 
-	for i := 0; i < totalAddresses; i++ {
+	for i := range totalAddresses {
 		addr := testAddressN(i)
 		metadata := createTestAddress(chain.BSV, addr, uint32(i), false)
 		store.AddAddress(metadata)
@@ -190,7 +190,7 @@ func TestMultiAddressBalance_ZeroBalanceMixed(t *testing.T) {
 	assertBalanceEquals(t, store, chain.BSV, fundedCount*amountPerFunded)
 
 	// Verify zero balance addresses
-	for i := 0; i < totalAddresses; i++ {
+	for i := range totalAddresses {
 		addr := testAddressN(i)
 		balance := store.GetAddressBalance(chain.BSV, addr)
 		if fundedIndices[i] {
@@ -214,7 +214,7 @@ func TestMultiAddressBalance_SingleSatoshiUTXOs(t *testing.T) {
 	metadata := createTestAddress(chain.BSV, addr, 0, false)
 	store.AddAddress(metadata)
 
-	for i := 0; i < numUTXOs; i++ {
+	for i := range numUTXOs {
 		utxo := createTestUTXO(chain.BSV, addr, testTxID(i), 0, amount, false)
 		store.AddUTXO(utxo)
 	}
@@ -333,7 +333,7 @@ func TestMultiAddressBalance_DustLimitAmounts(t *testing.T) {
 	store.AddAddress(bsvMeta)
 
 	// Add 10 UTXOs at BSV dust limit
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		utxo := createTestUTXO(chain.BSV, bsvAddr, testTxID(i), 0, bsvDustLimit, false)
 		store.AddUTXO(utxo)
 	}

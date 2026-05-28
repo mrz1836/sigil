@@ -778,7 +778,7 @@ func TestDefaults_ETHTokensOrdering(t *testing.T) {
 
 	// Generate 5 configs
 	configs := make([]*config.Config, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		configs[i] = config.Defaults()
 	}
 
@@ -795,7 +795,7 @@ func TestDefaults_FallbackRPCsOrdering(t *testing.T) {
 
 	// Generate 5 configs
 	configs := make([]*config.Config, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		configs[i] = config.Defaults()
 	}
 

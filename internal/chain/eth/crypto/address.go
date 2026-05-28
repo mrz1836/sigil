@@ -76,7 +76,7 @@ func ToChecksumAddress(address string) string {
 	result[0] = '0'
 	result[1] = 'x'
 
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		c := addr[i]
 		// If the hash nibble is >= 8, uppercase the character
 		hashNibble := hash[i]

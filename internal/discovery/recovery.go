@@ -161,7 +161,7 @@ func (r *RecoveryScenarios) RecoverBeyondGap(ctx context.Context, seed []byte, o
 	addresses := make([]string, opts.Count)
 	addressPaths := make([]string, opts.Count)
 
-	for i := 0; i < opts.Count; i++ {
+	for i := range opts.Count {
 		index := opts.StartIndex + uint32(i)
 
 		// Derive address (using m/44'/coinType/0'/0/index pattern)

@@ -19,6 +19,16 @@ import (
 
 func TestMain(m *testing.M) {
 	sigilcrypto.SetScryptWorkFactor(10) // Fast for tests
+
+	// Disable cobra's command sorting for the test binary. (*cobra.Command).Commands()
+	// lazily sorts the shared command slice in place on first call, and cobra resets
+	// that "sorted" flag whenever a command is added (e.g. the help/completion commands
+	// it injects during Execute). Several parallel tests call rootCmd.Commands(), so the
+	// concurrent in-place sort is a data race (caught by -race in CI). With sorting off,
+	// Commands() never mutates the slice, making those concurrent reads safe. This only
+	// affects help-listing order in the test binary; production behavior is unchanged.
+	cobra.EnableCommandSorting = false
+
 	os.Exit(m.Run())
 }
 

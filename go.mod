@@ -5,7 +5,7 @@ go 1.25.6
 require (
 	filippo.io/age v1.3.1
 	github.com/agnivade/levenshtein v1.2.1
-	github.com/bsv-blockchain/go-sdk v1.2.24
+	github.com/bsv-blockchain/go-sdk v1.3.0
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
@@ -16,9 +16,9 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/crypto v0.53.0
-	golang.org/x/sys v0.46.0
-	golang.org/x/term v0.44.0
+	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	rsc.io/qr v0.2.0

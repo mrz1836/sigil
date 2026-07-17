@@ -41,8 +41,9 @@ type mockCache struct{}
 func (m *mockCache) Get(_ chain.ID, _, _ string) (*cache.BalanceCacheEntry, bool, time.Duration) {
 	return nil, false, 0
 }
-func (m *mockCache) Set(_ cache.BalanceCacheEntry)                                     {}
-func (m *mockCache) IsStale(_ chain.ID, _, _ string) bool                              { return true }
+func (m *mockCache) Set(_ cache.BalanceCacheEntry)        {}
+func (m *mockCache) IsStale(_ chain.ID, _, _ string) bool { return true }
+
 func (m *mockCache) IsStaleWithDuration(_ chain.ID, _, _ string, _ time.Duration) bool { return true }
 func (m *mockCache) Delete(_ chain.ID, _, _ string)                                    {}
 func (m *mockCache) Clear()                                                            {}

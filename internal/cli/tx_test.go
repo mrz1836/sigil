@@ -467,7 +467,7 @@ func TestDisplayBSVTxResultText(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	displayBSVTxResultText(&buf, result)
+	displayBSVTxResultText(&buf, result, "main")
 	out := buf.String()
 
 	assert.Contains(t, out, "Transaction broadcast successfully!")
@@ -790,7 +790,7 @@ func TestDisplayBSVTxResult_TextAndJSON(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := newTestCmdWithContext(output.FormatText)
 		cmd.SetOut(&buf)
-		displayBSVTxResult(cmd, result)
+		displayBSVTxResult(cmd, result, "main")
 		assert.Contains(t, buf.String(), "Transaction broadcast successfully!")
 		assert.Contains(t, buf.String(), "whatsonchain.com/tx/bsvhash123")
 	})
@@ -800,7 +800,7 @@ func TestDisplayBSVTxResult_TextAndJSON(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := newTestCmdWithContext(output.FormatJSON)
 		cmd.SetOut(&buf)
-		displayBSVTxResult(cmd, result)
+		displayBSVTxResult(cmd, result, "main")
 		assert.Contains(t, buf.String(), `"hash": "bsvhash123"`)
 		assert.Contains(t, buf.String(), `"status": "pending"`)
 	})

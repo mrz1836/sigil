@@ -35,8 +35,8 @@ func runWalletRestore(cmd *cobra.Command, args []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
-	// Create wallet with derived addresses
-	w, err := createWalletWithAddresses(name, seed)
+	// Create wallet with derived addresses, stamped with the effective global network.
+	w, err := createWalletWithAddresses(name, seed, bsvNetworkForCmd(cmd))
 	if err != nil {
 		return err
 	}
@@ -132,11 +132,13 @@ func processShamirRestore(cmd *cobra.Command) ([]byte, error) {
 }
 
 // createWalletWithAddresses creates a new wallet and derives addresses.
-func createWalletWithAddresses(name string, seed []byte) (*wallet.Wallet, error) {
+// network stamps the wallet's BSV network ("main"/"test") before deriving.
+func createWalletWithAddresses(name string, seed []byte, network string) (*wallet.Wallet, error) {
 	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	if err != nil {
 		return nil, err
 	}
+	w.Network = network
 
 	if err := w.DeriveAddresses(seed, 1); err != nil {
 		return nil, err

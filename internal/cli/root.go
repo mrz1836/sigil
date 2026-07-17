@@ -64,6 +64,8 @@ var (
 	homeDir      string
 	outputFormat string
 	verbose      bool
+	networkFlag  string // --network: "main" or "test"
+	testnetFlag  bool   // --testnet: shortcut for --network test
 
 	// Global state initialized in PersistentPreRunE
 	cfg       *config.Config
@@ -168,6 +170,20 @@ func initGlobals(cmd *cobra.Command) error {
 		cfg.Output.DefaultFormat = outputFormat
 	}
 
+	// BSV network: --network wins; --testnet is a shortcut when --network is unset.
+	// Precedence overall: flag > env (applied above) > config file > default.
+	if net := networkFlag; net != "" || testnetFlag {
+		if net == "" {
+			net = "test"
+		}
+		if n, ok := config.NormalizeBSVNetwork(net); ok {
+			cfg.Networks.BSV.Network = n
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: invalid --network %q (use main or test); using main\n", net)
+			cfg.Networks.BSV.Network = "main"
+		}
+	}
+
 	// Expand tilde in Home path if present
 	if strings.HasPrefix(cfg.Home, "~/") {
 		if userHome, homeErr := os.UserHomeDir(); homeErr == nil {
@@ -262,4 +278,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&homeDir, "home", "", "sigil data directory (default: ~/.sigil)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "auto", "output format: text, json, auto")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&networkFlag, "network", "", "BSV network: main or test (default: config value)")
+	rootCmd.PersistentFlags().BoolVar(&testnetFlag, "testnet", false, "shortcut for --network test")
 }

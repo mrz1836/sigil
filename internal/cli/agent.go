@@ -246,11 +246,12 @@ func runAgentCreate(cmd *cobra.Command, _ []string) error {
 	}
 	defer wallet.ZeroBytes(password)
 
-	_, seed, loadErr := storage.Load(agentWallet, password)
+	agentWlt, seed, loadErr := storage.Load(agentWallet, password)
 	if loadErr != nil {
 		return loadErr
 	}
 	defer wallet.ZeroBytes(seed)
+	agentNet := agentWlt.Net()
 
 	// Generate token
 	token, err := agent.GenerateToken()
@@ -279,7 +280,7 @@ func runAgentCreate(cmd *cobra.Command, _ []string) error {
 	// Derive xpubs for allowed chains
 	cred.Xpubs = make(map[chain.ID]string, len(chains))
 	for _, ch := range chains {
-		xpub, xpubErr := wallet.DeriveAccountXpub(seed, ch, 0)
+		xpub, xpubErr := wallet.DeriveAccountXpubForNetwork(seed, ch, 0, agentNet)
 		if xpubErr != nil {
 			// Non-fatal: xpub is optional (used for read-only mode)
 			if cc.Log != nil {

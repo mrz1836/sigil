@@ -151,11 +151,14 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	utxoStore := loadUTXOStore(cmdCtx, balanceWalletName)
 	balanceCache := loadBalanceCache(cmdCtx, cmd.ErrOrStderr())
 
+	// The wallet's stamped network governs its balance queries (per-wallet model).
+	warnNetworkConflict(cmd, w)
 	balanceService := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  balance.NewCacheAdapter(balanceCache),
 		Metadata:       balance.NewMetadataAdapter(utxoStore),
 		ForceRefresh:   balanceRefresh,
+		Network:        effectiveBSVNetwork(w, cmdCtx.Cfg),
 	})
 
 	// 3. Build address list
@@ -241,7 +244,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 
 	// 4.5. Validate BSV UTXOs if requested
 	if balanceValidate && balanceChainFilter == "bsv" {
-		if validateErr := validateBSVUTXOs(ctx, cmdCtx, balanceWalletName, cmd.ErrOrStderr()); validateErr != nil {
+		if validateErr := validateBSVUTXOs(ctx, cmdCtx, balanceWalletName, effectiveBSVNetwork(w, cmdCtx.Cfg), cmd.ErrOrStderr()); validateErr != nil {
 			// Log but don't fail - validation is optional
 			if cmdCtx.Log != nil {
 				cmdCtx.Log.Error("UTXO validation failed: %v", validateErr)
@@ -558,7 +561,8 @@ func outputBalanceTableNarrow(w io.Writer, balances []BalanceResult) {
 			balanceStr += " *"
 		}
 
-		out(w, rowFmt,
+		out(
+			w, rowFmt,
 			strings.ToUpper(bal.Chain),
 			addr,
 			balanceStr,
@@ -595,7 +599,8 @@ func outputBalanceTableWide(w io.Writer, balances []BalanceResult) {
 			unconfStr = bal.Unconfirmed
 		}
 
-		out(w, rowFmt,
+		out(
+			w, rowFmt,
 			strings.ToUpper(bal.Chain),
 			addr,
 			balanceStr,
@@ -615,8 +620,8 @@ func truncateAddress(addr string) string {
 	return addr
 }
 
-// validateBSVUTXOs validates cached UTXOs for a BSV wallet.
-func validateBSVUTXOs(ctx context.Context, cmdCtx *CommandContext, walletName string, w io.Writer) error {
+// validateBSVUTXOs validates cached UTXOs for a BSV wallet on the given network.
+func validateBSVUTXOs(ctx context.Context, cmdCtx *CommandContext, walletName, network string, w io.Writer) error {
 	// Load UTXO store
 	walletDir := filepath.Join(cmdCtx.Cfg.GetHome(), "wallets", walletName)
 	utxoStore := utxostore.New(walletDir)
@@ -626,7 +631,8 @@ func validateBSVUTXOs(ctx context.Context, cmdCtx *CommandContext, walletName st
 
 	// Create BSV client with bulk operations
 	bsvOpts := &bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+		APIKey:  cmdCtx.Cfg.GetBSVAPIKey(),
+		Network: bsvClientNetwork(network),
 	}
 	client := bsv.NewClient(ctx, bsvOpts)
 

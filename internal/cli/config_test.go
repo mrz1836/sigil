@@ -145,6 +145,7 @@ func TestGetNetworkValue(t *testing.T) {
 	testCfg := config.Defaults()
 	testCfg.Networks.ETH.RPC = "https://mainnet.infura.io"
 	testCfg.Networks.BSV.APIKey = "woc-api-key"
+	testCfg.Networks.BSV.Network = "test"
 
 	tests := []struct {
 		name    string
@@ -156,6 +157,7 @@ func TestGetNetworkValue(t *testing.T) {
 		{name: "eth.rpc", network: "eth", key: "rpc", want: "https://mainnet.infura.io"},
 		{name: "eth.unknown", network: "eth", key: "unknown", wantErr: true},
 		{name: "bsv.api_key", network: "bsv", key: "api_key", want: "woc-api-key"},
+		{name: "bsv.network", network: "bsv", key: "network", want: "test"},
 		{name: "bsv.unknown", network: "bsv", key: "unknown", wantErr: true},
 		{name: "unknown.key", network: "unknown", key: "key", wantErr: true},
 	}
@@ -496,6 +498,25 @@ func TestSetNetworkValue(t *testing.T) {
 			},
 		},
 		{name: "bsv unknown", network: "bsv", key: "unknown", value: "val", wantErr: true},
+		{
+			name:    "bsv network test",
+			network: "bsv",
+			key:     "network",
+			value:   "test",
+			verify: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "test", c.Networks.BSV.Network)
+			},
+		},
+		{
+			name:    "bsv network testnet alias",
+			network: "bsv",
+			key:     "network",
+			value:   "testnet",
+			verify: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "test", c.Networks.BSV.Network)
+			},
+		},
+		{name: "bsv network invalid", network: "bsv", key: "network", value: "regtest", wantErr: true},
 		{name: "unknown network", network: "btc", key: "rpc", value: "val", wantErr: true},
 	}
 

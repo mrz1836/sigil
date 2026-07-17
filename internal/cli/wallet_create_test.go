@@ -109,7 +109,7 @@ func TestCreateAndSaveWallet_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)
 
-	w, err := createAndSaveWallet("create_test", seed, storage)
+	w, err := createAndSaveWallet("create_test", seed, storage, "main")
 	require.NoError(t, err)
 	require.NotNil(t, w)
 
@@ -131,7 +131,7 @@ func TestCreateAndSaveWallet_InvalidSeed(t *testing.T) {
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
 
 	// An empty seed should cause DeriveAddresses to fail
-	_, err := createAndSaveWallet("bad_seed", []byte{}, storage)
+	_, err := createAndSaveWallet("bad_seed", []byte{}, storage, "main")
 	require.Error(t, err)
 }
 

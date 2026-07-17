@@ -35,6 +35,7 @@ type mockConfigProvider struct {
 	ethProvider        string
 	ethEtherscanAPIKey string
 	bsvAPIKey          string
+	bsvNetwork         string
 	bsvBroadcast       string
 	bsvFeeStrategy     string
 	bsvMinMiners       int
@@ -45,10 +46,16 @@ type mockConfigProvider struct {
 	security           config.SecurityConfig
 }
 
-func (m *mockConfigProvider) GetHome() string                    { return m.home }
-func (m *mockConfigProvider) GetETHRPC() string                  { return m.ethRPC }
-func (m *mockConfigProvider) GetETHFallbackRPCs() []string       { return m.fallbackRPCs }
-func (m *mockConfigProvider) GetBSVAPIKey() string               { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetHome() string              { return m.home }
+func (m *mockConfigProvider) GetETHRPC() string            { return m.ethRPC }
+func (m *mockConfigProvider) GetETHFallbackRPCs() []string { return m.fallbackRPCs }
+func (m *mockConfigProvider) GetBSVAPIKey() string         { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetBSVNetwork() string {
+	if m.bsvNetwork == "" {
+		return "main"
+	}
+	return m.bsvNetwork
+}
 func (m *mockConfigProvider) GetBSVBroadcast() string            { return m.bsvBroadcast }
 func (m *mockConfigProvider) GetLoggingLevel() string            { return m.logLevel }
 func (m *mockConfigProvider) GetLoggingFile() string             { return m.logFile }

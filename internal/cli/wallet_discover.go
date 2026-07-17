@@ -173,11 +173,14 @@ func runWalletDiscover(cmd *cobra.Command, _ []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
-	// Create BSV client
-	client := bsv.NewClient(cmd.Context(), nil)
+	// Create BSV client on the effective global network (discover is wallet-less).
+	network := bsvNetworkForCmd(cmd)
+	client := bsv.NewClient(cmd.Context(), &bsv.ClientOptions{
+		Network: bsvClientNetwork(network),
+	})
 
-	// Create key deriver adapter
-	deriver := &walletKeyDeriver{}
+	// Create key deriver adapter that encodes addresses for the same network.
+	deriver := &walletKeyDeriver{net: walletNetwork(network)}
 
 	// Configure options
 	opts := discovery.DefaultOptions()
@@ -434,7 +437,8 @@ func outputDiscoverText(w io.Writer, response DiscoverResponse, showMigration bo
 			displayAddr = displayAddr[:8] + "..." + displayAddr[len(displayAddr)-6:]
 		}
 
-		out(w, "%-18s  %-17s  %-22s  %s BSV\n",
+		out(
+			w, "%-18s  %-17s  %-22s  %s BSV\n",
 			truncateString(addr.Scheme, 18),
 			displayAddr,
 			truncateString(addr.Path, 22),
@@ -444,7 +448,8 @@ func outputDiscoverText(w io.Writer, response DiscoverResponse, showMigration bo
 
 	outln(w)
 	outln(w, "───────────────────────────────────────────────────────────────")
-	out(w, "Total: %s BSV (%d addresses, %d UTXOs)\n",
+	out(
+		w, "Total: %s BSV (%d addresses, %d UTXOs)\n",
 		formatSatoshis(response.TotalBalance),
 		len(response.Addresses),
 		response.TotalUTXOs,
@@ -568,14 +573,15 @@ func (a *bulkOperationsAdapter) BulkAddressUTXOFetch(ctx context.Context, addres
 }
 
 // walletKeyDeriver adapts wallet derivation to the discovery.KeyDeriver interface.
-type walletKeyDeriver struct{}
+// net encodes discovered addresses for the active network (default mainnet).
+type walletKeyDeriver struct{ net wallet.Network }
 
 func (d *walletKeyDeriver) DeriveAddress(seed []byte, coinType, account, change, index uint32) (string, string, error) {
-	addr, _, path, err := wallet.DeriveAddressWithCoinType(seed, coinType, account, change, index)
+	addr, _, path, err := wallet.DeriveAddressWithCoinTypeForNetwork(seed, coinType, account, change, index, d.net)
 	return addr, path, err
 }
 
 func (d *walletKeyDeriver) DeriveLegacyAddress(seed []byte, index uint32) (string, string, error) {
-	addr, _, path, err := wallet.DeriveLegacyAddress(seed, index)
+	addr, _, path, err := wallet.DeriveLegacyAddressForNetwork(seed, index, d.net)
 	return addr, path, err
 }

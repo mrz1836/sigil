@@ -247,7 +247,7 @@ func runSingleLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, sche
 	}
 
 	start := time.Now()
-	matches := deriveAndLookup(input, addrSet, schemes, lookupGap, passphrase)
+	matches := deriveAndLookup(input, addrSet, schemes, lookupGap, passphrase, walletNetwork(bsvNetworkForCmd(cmd)))
 	duration := time.Since(start)
 
 	if isJSON {
@@ -292,6 +292,7 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 
 	ctx := cmd.Context()
 	start := time.Now()
+	batchNet := walletNetwork(bsvNetworkForCmd(cmd))
 
 	// Progress reporting — fires every second to stderr.
 	var keysProcessed atomic.Int64
@@ -356,7 +357,7 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 					return
 				default:
 				}
-				matches := deriveAndLookup(job.input, addrSet, schemes, lookupGap, nil)
+				matches := deriveAndLookup(job.input, addrSet, schemes, lookupGap, nil, batchNet)
 				for i := range matches {
 					matches[i].KeyLine = job.line
 				}
@@ -419,7 +420,8 @@ func runBatchLookup(cmd *cobra.Command, addrSet *addresslookup.AddressSet, schem
 }
 
 // deriveAndLookup derives addresses from a key and checks the address set.
-func deriveAndLookup(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte) []lookupMatch {
+// net selects the network for address encoding (mainnet or testnet).
+func deriveAndLookup(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte, net wallet.Network) []lookupMatch {
 	format := detectFormat(input)
 	if format == wallet.FormatUnknown {
 		return nil
@@ -427,11 +429,11 @@ func deriveAndLookup(input string, addrSet *addresslookup.AddressSet, schemes []
 
 	switch format { //nolint:exhaustive // FormatUnknown handled above
 	case wallet.FormatWIF:
-		return lookupWIF(input, addrSet)
+		return lookupWIF(input, addrSet, net)
 	case wallet.FormatHex:
-		return lookupHex(input, addrSet)
+		return lookupHex(input, addrSet, net)
 	case wallet.FormatMnemonic:
-		return lookupMnemonic(input, addrSet, schemes, gap, passphrase)
+		return lookupMnemonic(input, addrSet, schemes, gap, passphrase, net)
 	default:
 		return nil
 	}
@@ -450,22 +452,22 @@ func detectFormat(input string) wallet.InputFormat {
 	}
 }
 
-func lookupWIF(input string, addrSet *addresslookup.AddressSet) []lookupMatch {
+func lookupWIF(input string, addrSet *addresslookup.AddressSet, net wallet.Network) []lookupMatch {
 	privKey, err := wallet.ParseWIF(input)
 	if err != nil {
 		return nil
 	}
 	defer wallet.ZeroBytes(privKey)
-	return lookupPrivKey(privKey, addrSet)
+	return lookupPrivKey(privKey, addrSet, net)
 }
 
-func lookupHex(input string, addrSet *addresslookup.AddressSet) []lookupMatch {
+func lookupHex(input string, addrSet *addresslookup.AddressSet, net wallet.Network) []lookupMatch {
 	privKey, err := wallet.ParseHexKey(input)
 	if err != nil {
 		return nil
 	}
 	defer wallet.ZeroBytes(privKey)
-	return lookupPrivKey(privKey, addrSet)
+	return lookupPrivKey(privKey, addrSet, net)
 }
 
 // lookupNetworks defines the networks to check for each private key.
@@ -481,10 +483,21 @@ var lookupNetworks = []struct {
 	{"DOGE", wallet.DOGEMainnetParams()},
 }
 
-func lookupPrivKey(privKey []byte, addrSet *addresslookup.AddressSet) []lookupMatch {
+func lookupPrivKey(privKey []byte, addrSet *addresslookup.AddressSet, net wallet.Network) []lookupMatch {
+	networks := lookupNetworks
+	if net == wallet.Testnet {
+		// On testnet, scan the Bitcoin-family testnet encoding (covers BSV/BTC).
+		networks = []struct {
+			label  string
+			params wallet.NetworkParams
+		}{
+			{"BSV/BTC testnet", wallet.BSVTestnetParams()},
+		}
+	}
+
 	var matches []lookupMatch
-	for _, net := range lookupNetworks {
-		addrs, err := wallet.AllAddressesFromPrivKey(privKey, net.params)
+	for _, n := range networks {
+		addrs, err := wallet.AllAddressesFromPrivKey(privKey, n.params)
 		if err != nil {
 			continue
 		}
@@ -494,7 +507,7 @@ func lookupPrivKey(privKey []byte, addrSet *addresslookup.AddressSet) []lookupMa
 				matches = append(matches, lookupMatch{
 					Address: addr,
 					Balance: result.Balance,
-					Format:  net.label + " " + addrs.FormatLabel(addr),
+					Format:  n.label + " " + addrs.FormatLabel(addr),
 				})
 			}
 		}
@@ -503,14 +516,14 @@ func lookupPrivKey(privKey []byte, addrSet *addresslookup.AddressSet) []lookupMa
 }
 
 //nolint:gocognit // mnemonic derivation requires nested loops across schemes/accounts/chains/indices
-func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte) []lookupMatch {
+func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []discovery.PathScheme, gap int, passphrase []byte, net wallet.Network) []lookupMatch {
 	seed, err := wallet.MnemonicToSeed(input, string(passphrase))
 	if err != nil {
 		return nil
 	}
 	defer wallet.ZeroBytes(seed)
 
-	mc, err := wallet.NewMnemonicContext(seed)
+	mc, err := wallet.NewMnemonicContextForNetwork(seed, net)
 	if err != nil {
 		return nil
 	}
@@ -539,7 +552,7 @@ func lookupMnemonic(input string, addrSet *addresslookup.AddressSet, schemes []d
 			continue
 		}
 
-		netParams := wallet.NetworkParamsForCoinType(scheme.CoinType)
+		netParams := wallet.NetworkParamsForCoinTypeAndNetwork(scheme.CoinType, net)
 		netLabel := wallet.NetworkLabelForCoinType(scheme.CoinType)
 
 		for _, account := range scheme.Accounts {

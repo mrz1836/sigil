@@ -131,6 +131,7 @@ func runConfigInit(cmd *cobra.Command, _ []string) error {
 	outln(w)
 	outln(w, "Edit this file to configure:")
 	outln(w, "  - networks.eth.rpc: Your Ethereum RPC endpoint")
+	outln(w, "  - networks.bsv.network: BSV network, main or test (default: main)")
 	outln(w, "  - networks.bsv.api_key: Your WhatsOnChain API key (optional)")
 	outln(w, "  - output.default_format: Output format (text/json)")
 	outln(w, "  - logging.level: Log level (off/error/debug)")
@@ -293,6 +294,8 @@ func getNetworkValue(c *config.Config, network, key string) (string, error) {
 		switch key {
 		case "api_key":
 			return c.Networks.BSV.APIKey, nil
+		case "network":
+			return c.GetBSVNetwork(), nil
 		default:
 			return "", sigilerr.WithDetails(
 				sigilerr.ErrUnknownConfigKey,
@@ -427,6 +430,16 @@ func setNetworkValue(c *config.Config, network, key, value string) error {
 		case "api_key":
 			c.Networks.BSV.APIKey = value
 			return nil
+		case "network":
+			n, ok := config.NormalizeBSVNetwork(value)
+			if !ok {
+				return sigilerr.WithDetails(
+					sigilerr.ErrInvalidValue,
+					map[string]string{"key": "networks.bsv.network", "value": value, "valid": "main or test"},
+				)
+			}
+			c.Networks.BSV.Network = n
+			return nil
 		default:
 			return sigilerr.WithDetails(
 				sigilerr.ErrUnknownConfigKey,
@@ -467,6 +480,7 @@ func displayConfigText(w interface {
 	}
 	out(w, "      rpc: %s\n", rpc)
 	outln(w, "    BSV:")
+	out(w, "      network: %s\n", c.GetBSVNetwork())
 	apiKey := c.Networks.BSV.APIKey
 	if apiKey == "" {
 		apiKey = "(not configured)"
@@ -488,8 +502,9 @@ func displayConfigJSON(w interface {
 }, c *config.Config,
 ) error {
 	type networkJSON struct {
-		RPC    string `json:"rpc,omitempty"`
-		APIKey string `json:"api_key,omitempty"`
+		RPC     string `json:"rpc,omitempty"`
+		Network string `json:"network,omitempty"`
+		APIKey  string `json:"api_key,omitempty"`
 	}
 	type configJSON struct {
 		Version int    `json:"version"`
@@ -528,7 +543,7 @@ func displayConfigJSON(w interface {
 	outCfg.Logging.Level = c.Logging.Level
 	outCfg.Logging.File = c.Logging.File
 	outCfg.Networks.ETH = networkJSON{RPC: c.Networks.ETH.RPC}
-	outCfg.Networks.BSV = networkJSON{APIKey: maskedKey}
+	outCfg.Networks.BSV = networkJSON{Network: c.GetBSVNetwork(), APIKey: maskedKey}
 
 	return writeJSON(w, outCfg)
 }

@@ -405,7 +405,7 @@ func TestGenerateOneKey_AllFormats(t *testing.T) {
 	for _, tt := range formats {
 		t.Run(tt.format, func(t *testing.T) {
 			t.Parallel()
-			key, err := generateOneKey(tt.format)
+			key, err := generateOneKey(tt.format, 0x80)
 			require.NoError(t, err)
 			assert.NotEmpty(t, key)
 			tt.validate(t, key)
@@ -415,7 +415,7 @@ func TestGenerateOneKey_AllFormats(t *testing.T) {
 
 func TestGenerateOneKey_UnknownFormat(t *testing.T) {
 	t.Parallel()
-	_, err := generateOneKey("unknown")
+	_, err := generateOneKey("unknown", 0x80)
 	require.Error(t, err)
 }
 
@@ -423,7 +423,7 @@ func BenchmarkGenerateOneKey(b *testing.B) {
 	for _, format := range []string{"hex", "wif", "wif-uncompressed", "mnemonic12", "mnemonic24"} {
 		b.Run(format, func(b *testing.B) {
 			for range b.N {
-				_, _ = generateOneKey(format)
+				_, _ = generateOneKey(format, 0x80)
 			}
 		})
 	}

@@ -1050,7 +1050,7 @@ func TestDeriveAndLookup_FormatUnknown(t *testing.T) {
 	schemes := discovery.DefaultSchemes()
 
 	// "not-a-key-or-mnemonic" should be detected as FormatUnknown and return nil
-	matches := deriveAndLookup("not-a-key-or-mnemonic", addrSet, schemes, 20, nil)
+	matches := deriveAndLookup("not-a-key-or-mnemonic", addrSet, schemes, 20, nil, wallet.Mainnet)
 	assert.Nil(t, matches)
 }
 

@@ -240,14 +240,14 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		displayReceiveJSON(cmd, addr, chainID, label, isNew)
 	} else {
-		displayReceiveText(cmd, addr, chainID, label, isNew)
+		displayReceiveText(cmd, addr, chainID, label, isNew, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
 	}
 
 	return nil
 }
 
 // displayReceiveText shows the receiving address in text format.
-func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.ID, label string, isNew bool) {
+func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.ID, label string, isNew bool, bsvNetwork string) {
 	w := cmd.OutOrStdout()
 
 	outln(w)
@@ -278,8 +278,10 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 	// Show explorer link based on chain
 	switch chainID {
 	case chain.BSV:
-		outln(w, "View on WhatsOnChain:")
-		out(w, "  https://whatsonchain.com/address/%s\n", addr.Address)
+		outln(w, "View on block explorer:")
+		for _, link := range bsvExplorerAddressLinks(bsvNetwork, addr.Address) {
+			out(w, "  %s\n", link)
+		}
 	case chain.ETH:
 		outln(w, "View on Etherscan:")
 		out(w, "  https://etherscan.io/address/%s\n", addr.Address)
@@ -352,17 +354,19 @@ func runReceiveCheckETH(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 
 // runReceiveCheckBSV dispatches BSV UTXO checking for --check mode.
 func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, currentAddr *wallet.Address, chainID chain.ID) error {
-	// Create discovery service
+	// Create discovery service on the wallet's network (per-wallet model).
 	balanceSvc := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  nil, // Not using cache for checks
 		Metadata:       nil,
 		ForceRefresh:   true,
+		Network:        effectiveBSVNetwork(wlt, cmdCtx.Cfg),
 	})
 	discoverySvc := discovery.NewService(&discovery.Config{
 		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
 		BalanceService: balanceSvc,
 		Config:         cmdCtx.Cfg,
+		Network:        effectiveBSVNetwork(wlt, cmdCtx.Cfg),
 	})
 
 	switch {
@@ -374,9 +378,9 @@ func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 		if err != nil {
 			return err
 		}
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, addr, chainID)
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, addr, chainID, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
 	default:
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, currentAddr, chainID)
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, currentAddr, chainID, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
 	}
 }
 
@@ -390,7 +394,7 @@ type addressCheckResult struct {
 }
 
 // runReceiveCheckSingle checks a single address and displays the result.
-func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandContext, _ *utxostore.Store, discoverySvc *discovery.Service, addr *wallet.Address, chainID chain.ID) error {
+func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandContext, _ *utxostore.Store, discoverySvc *discovery.Service, addr *wallet.Address, chainID chain.ID, bsvNetwork string) error {
 	// Check address using discovery service
 	result, err := discoverySvc.CheckAddress(ctx, &discovery.CheckRequest{
 		ChainID: chainID,
@@ -415,7 +419,7 @@ func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandCont
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		displayReceiveCheckJSON(w, addr, chainID, result.Label, result.Balance, storeUTXOs)
 	} else {
-		displayReceiveCheckText(w, addr, chainID, result.Label, result.Balance, storeUTXOs)
+		displayReceiveCheckText(w, addr, chainID, result.Label, result.Balance, storeUTXOs, bsvNetwork)
 	}
 
 	return nil
@@ -497,17 +501,20 @@ func runReceiveCheckAllChains(cmd *cobra.Command, cmdCtx *CommandContext, wlt *w
 
 	w := cmd.OutOrStdout()
 
-	// Create discovery service
+	// Create discovery service on the wallet's network (per-wallet model).
+	bsvNet := effectiveBSVNetwork(wlt, cmdCtx.Cfg)
 	balanceSvc := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  nil,
 		Metadata:       nil,
 		ForceRefresh:   true,
+		Network:        bsvNet,
 	})
 	discoverySvc := discovery.NewService(&discovery.Config{
 		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
 		BalanceService: balanceSvc,
 		Config:         cmdCtx.Cfg,
+		Network:        bsvNet,
 	})
 
 	// Check BSV addresses (UTXO-based)
@@ -687,7 +694,7 @@ func findWalletAddress(wlt *wallet.Wallet, chainID chain.ID, address string) (*w
 }
 
 // displayReceiveCheckText shows the check result for a single address in text format.
-func displayReceiveCheckText(w io.Writer, addr *wallet.Address, chainID chain.ID, label string, balance uint64, utxos []*utxostore.StoredUTXO) {
+func displayReceiveCheckText(w io.Writer, addr *wallet.Address, chainID chain.ID, label string, balance uint64, utxos []*utxostore.StoredUTXO, bsvNetwork string) {
 	outln(w)
 	outln(w, "Receive address check:")
 	outln(w)
@@ -711,8 +718,10 @@ func displayReceiveCheckText(w io.Writer, addr *wallet.Address, chainID chain.ID
 
 	switch chainID {
 	case chain.BSV:
-		outln(w, "View on WhatsOnChain:")
-		out(w, "  https://whatsonchain.com/address/%s\n", addr.Address)
+		outln(w, "View on block explorer:")
+		for _, link := range bsvExplorerAddressLinks(bsvNetwork, addr.Address) {
+			out(w, "  %s\n", link)
+		}
 	case chain.ETH:
 		outln(w, "View on Etherscan:")
 		out(w, "  https://etherscan.io/address/%s\n", addr.Address)

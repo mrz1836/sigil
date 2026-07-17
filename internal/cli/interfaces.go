@@ -33,6 +33,9 @@ type ConfigProvider interface {
 	// GetBSVAPIKey returns the BSV API key.
 	GetBSVAPIKey() string
 
+	// GetBSVNetwork returns the configured BSV network ("main" or "test").
+	GetBSVNetwork() string
+
 	// GetBSVBroadcast returns the BSV broadcast provider or custom URL.
 	GetBSVBroadcast() string
 

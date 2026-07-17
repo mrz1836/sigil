@@ -103,7 +103,9 @@ func validateKeygenFlags() error {
 }
 
 // generateOneKey creates a single key string in the requested format.
-func generateOneKey(format string) (string, error) {
+// wifVersion is the Base58Check version byte for WIF output (0x80 mainnet, 0xef testnet);
+// it is ignored for hex/mnemonic formats, which are network-independent.
+func generateOneKey(format string, wifVersion byte) (string, error) {
 	switch format {
 	case "hex":
 		privKey := make([]byte, 32)
@@ -119,12 +121,12 @@ func generateOneKey(format string) (string, error) {
 		if _, err := io.ReadFull(rand.Reader, privKey); err != nil {
 			return "", err
 		}
-		// Compressed WIF: version 0x80 + 32 bytes + compression flag 0x01
+		// Compressed WIF: version + 32 bytes + compression flag 0x01
 		payload := make([]byte, 33)
 		defer wallet.ZeroBytes(payload)
 		copy(payload, privKey)
 		payload[32] = 0x01
-		return bitcoin.Base58CheckEncode(0x80, payload), nil
+		return bitcoin.Base58CheckEncode(wifVersion, payload), nil
 
 	case "wif-uncompressed":
 		privKey := make([]byte, 32)
@@ -132,8 +134,8 @@ func generateOneKey(format string) (string, error) {
 		if _, err := io.ReadFull(rand.Reader, privKey); err != nil {
 			return "", err
 		}
-		// Uncompressed WIF: version 0x80 + 32 bytes (no compression flag)
-		return bitcoin.Base58CheckEncode(0x80, privKey), nil
+		// Uncompressed WIF: version + 32 bytes (no compression flag)
+		return bitcoin.Base58CheckEncode(wifVersion, privKey), nil
 
 	case "mnemonic12":
 		return wallet.GenerateMnemonic(12)
@@ -153,6 +155,10 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 	}
 
 	ctx := cmd.Context()
+
+	// WIF output is encoded for the effective BSV network (mainnet unless the
+	// global --network/--testnet flag or config selects testnet).
+	wifVersion := wallet.NetworkFromString(bsvNetworkForCmd(cmd)).WIFVersion()
 
 	f, err := os.Create(keygenFile) //nolint:gosec // G304: path comes from --file flag
 	if err != nil {
@@ -185,7 +191,7 @@ func runKeygen(cmd *cobra.Command, _ []string) (retErr error) {
 					return
 				default:
 				}
-				key, genKeyErr := generateOneKey(keygenFormat)
+				key, genKeyErr := generateOneKey(keygenFormat, wifVersion)
 				if genKeyErr != nil {
 					genErr.Store(&genKeyErr)
 					return

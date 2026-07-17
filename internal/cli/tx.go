@@ -185,8 +185,12 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 }
 
 // runTxSendWithService executes a transaction using the transaction service.
-func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain.ID, _ *wallet.Wallet, addresses []wallet.Address, seed []byte, storage *wallet.FileStorage) error {
+func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain.ID, wlt *wallet.Wallet, addresses []wallet.Address, seed []byte, storage *wallet.FileStorage) error {
 	cc := GetCmdContext(cmd)
+
+	// The wallet's stamped network governs this send (per-wallet model).
+	warnNetworkConflict(cmd, wlt)
+	bsvNetwork := effectiveBSVNetwork(wlt, cc.Cfg)
 
 	// Create transaction service
 	txService := cc.TransactionService
@@ -209,6 +213,7 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 		Token:         txToken,
 		GasSpeed:      txGasSpeed,
 		Addresses:     addresses, // For BSV multi-address
+		Network:       bsvNetwork,
 		Confirm:       txConfirm,
 		Seed:          seed,
 		ValidateUTXOs: txValidate, // Enable UTXO validation if requested
@@ -242,7 +247,7 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 	// Display result
 	switch chainID {
 	case chain.BSV:
-		displayBSVTxResult(cmd, convertToBSVTransactionResult(result))
+		displayBSVTxResult(cmd, convertToBSVTransactionResult(result), bsvNetwork)
 	case chain.ETH:
 		displayTxResult(cmd, convertToETHTransactionResult(result))
 	case chain.BTC, chain.BCH, chain.LTC:
@@ -348,9 +353,10 @@ func prepareBSVConfirmation(
 ) (*bsvConfirmationDetails, error) {
 	cc := GetCmdContext(cmd)
 
-	// Create BSV client
+	// Create BSV client on the request's network (populated from the wallet).
 	opts := &bsv.ClientOptions{
 		APIKey:      cc.Cfg.GetBSVAPIKey(),
+		Network:     bsvClientNetwork(req.Network),
 		Logger:      cc.Log,
 		FeeStrategy: bsv.FeeStrategy(cc.Cfg.GetBSVFeeStrategy()),
 		MinMiners:   cc.Cfg.GetBSVMinMiners(),
@@ -594,7 +600,7 @@ func displayBSVTxDetailsEnhanced(cmd *cobra.Command, details *bsvConfirmationDet
 }
 
 // displayBSVTxResult shows the BSV transaction result.
-func displayBSVTxResult(cmd *cobra.Command, result *chain.TransactionResult) {
+func displayBSVTxResult(cmd *cobra.Command, result *chain.TransactionResult, network string) {
 	cc := GetCmdContext(cmd)
 	w := cmd.OutOrStdout()
 	format := cc.Fmt.Format()
@@ -602,14 +608,14 @@ func displayBSVTxResult(cmd *cobra.Command, result *chain.TransactionResult) {
 	if format == output.FormatJSON {
 		displayBSVTxResultJSON(w, result)
 	} else {
-		displayBSVTxResultText(w, result)
+		displayBSVTxResultText(w, result, network)
 	}
 }
 
 // displayBSVTxResultText shows BSV transaction result in text format.
 func displayBSVTxResultText(w interface {
 	Write(p []byte) (n int, err error)
-}, result *chain.TransactionResult,
+}, result *chain.TransactionResult, network string,
 ) {
 	outln(w, "\nTransaction broadcast successfully!")
 	outln(w)
@@ -618,8 +624,10 @@ func displayBSVTxResultText(w interface {
 	out(w, "  Amount: %s BSV\n", result.Amount)
 	out(w, "  Fee:    %s BSV\n", result.Fee)
 	outln(w)
-	outln(w, "Track your transaction on WhatsOnChain:")
-	out(w, "  https://whatsonchain.com/tx/%s\n", result.Hash)
+	outln(w, "Track your transaction:")
+	for _, link := range bsvExplorerTxLinks(network, result.Hash) {
+		out(w, "  %s\n", link)
+	}
 }
 
 // displayBSVTxResultJSON shows BSV transaction result in JSON format.

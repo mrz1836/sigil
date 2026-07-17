@@ -63,11 +63,14 @@ func generateWalletSeed(wordCount int, usePassphrase bool) (mnemonic string, see
 }
 
 // createAndSaveWallet creates wallet, derives addresses, and saves to storage.
-func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage) (*wallet.Wallet, error) {
+// network stamps the wallet's BSV network ("main"/"test") before deriving so its
+// addresses are encoded for the correct network.
+func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage, network string) (*wallet.Wallet, error) {
 	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
 	if err != nil {
 		return nil, err
 	}
+	w.Network = network
 
 	err = w.DeriveAddresses(seed, 1)
 	if err != nil {
@@ -134,7 +137,8 @@ func scanWalletUTXOs(w *wallet.Wallet, cmd *cobra.Command) error {
 
 	// Scan BSV addresses (currently the only UTXO chain supported)
 	client := bsv.NewClient(scanCtx, &bsv.ClientOptions{
-		APIKey: ctx.Cfg.GetBSVAPIKey(),
+		APIKey:  ctx.Cfg.GetBSVAPIKey(),
+		Network: bsvClientNetwork(effectiveBSVNetwork(w, ctx.Cfg)),
 	})
 
 	// Wrap client in adapter
@@ -187,8 +191,8 @@ func runWalletCreate(cmd *cobra.Command, args []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
-	// Create and save wallet
-	w, err := createAndSaveWallet(name, seed, storage)
+	// Create and save wallet, stamped with the effective global BSV network.
+	w, err := createAndSaveWallet(name, seed, storage, bsvNetworkForCmd(cmd))
 	if err != nil {
 		return err
 	}

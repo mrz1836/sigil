@@ -234,9 +234,14 @@ func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading UTXO store: %w", loadErr)
 	}
 
+	// Resolve the wallet's network from its metadata (falls back to config).
+	meta, _ := storage.LoadMetadata(utxoWallet)
+	warnNetworkConflict(cmd, meta)
+
 	// Create BSV client
 	client := bsv.NewClient(ctx, &bsv.ClientOptions{
-		APIKey: cmdCtx.Cfg.GetBSVAPIKey(),
+		APIKey:  cmdCtx.Cfg.GetBSVAPIKey(),
+		Network: bsvClientNetwork(effectiveBSVNetwork(meta, cmdCtx.Cfg)),
 	})
 
 	// Create adapter for refresh

@@ -170,7 +170,7 @@ func TestDisplayReceiveText(t *testing.T) {
 				"Path:    m/44'/236'/0'/0/5",
 				"Index:   5",
 				"Label:   Payment from Alice",
-				"WhatsOnChain",
+				"whatsonchain.com",
 			},
 		},
 		{
@@ -232,7 +232,7 @@ func TestDisplayReceiveText(t *testing.T) {
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 
-			displayReceiveText(cmd, tc.addr, tc.chainID, tc.label, tc.isNew)
+			displayReceiveText(cmd, tc.addr, tc.chainID, tc.label, tc.isNew, "main")
 
 			result := buf.String()
 			for _, s := range tc.contains {
@@ -255,7 +255,7 @@ func TestDisplayReceiveText_WithNonEmptyLabel(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 
-	displayReceiveText(cmd, addr, chain.BSV, "MyLabel", false)
+	displayReceiveText(cmd, addr, chain.BSV, "MyLabel", false, "main")
 
 	result := buf.String()
 	assert.Contains(t, result, "Label:   MyLabel")
@@ -274,7 +274,7 @@ func TestDisplayReceiveText_NoLabelExcluded(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 
-	displayReceiveText(cmd, addr, chain.BSV, "", false)
+	displayReceiveText(cmd, addr, chain.BSV, "", false, "main")
 
 	result := buf.String()
 	assert.NotContains(t, result, "Label:")
@@ -449,7 +449,7 @@ func TestDisplayReceiveCheckText(t *testing.T) {
 				"UTXOs:   2",
 				"150000 satoshis",
 				"0.00150000 BSV",
-				"WhatsOnChain",
+				"whatsonchain.com",
 			},
 		},
 		{
@@ -494,7 +494,7 @@ func TestDisplayReceiveCheckText(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			displayReceiveCheckText(&buf, tc.addr, tc.chainID, tc.label, tc.balance, tc.utxos)
+			displayReceiveCheckText(&buf, tc.addr, tc.chainID, tc.label, tc.balance, tc.utxos, "main")
 
 			result := buf.String()
 			for _, s := range tc.contains {
@@ -998,10 +998,10 @@ func TestDisplayReceiveCheckText_BSVExplorer(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	displayReceiveCheckText(&buf, addr, chain.BSV, "savings", 50000, utxos)
+	displayReceiveCheckText(&buf, addr, chain.BSV, "savings", 50000, utxos, "main")
 
 	result := buf.String()
-	assert.Contains(t, result, "WhatsOnChain")
+	assert.Contains(t, result, "whatsonchain.com")
 	assert.Contains(t, result, "1BSVCheckAddr")
 	assert.Contains(t, result, "savings")
 	assert.Contains(t, result, "Funds received")
@@ -1013,7 +1013,7 @@ func TestDisplayReceiveCheckText_ETHExplorer(t *testing.T) {
 	addr := &wallet.Address{Index: 0, Address: "0xETHCheckAddr", Path: "m/44'/60'/0'/0/0"}
 
 	var buf bytes.Buffer
-	displayReceiveCheckText(&buf, addr, chain.ETH, "", 0, nil)
+	displayReceiveCheckText(&buf, addr, chain.ETH, "", 0, nil, "main")
 
 	result := buf.String()
 	assert.Contains(t, result, "Etherscan")
@@ -1027,7 +1027,7 @@ func TestDisplayReceiveCheckText_NoLabel(t *testing.T) {
 	addr := &wallet.Address{Index: 2, Address: "1NoLabelAddr", Path: "m/44'/236'/0'/0/2"}
 
 	var buf bytes.Buffer
-	displayReceiveCheckText(&buf, addr, chain.BSV, "", 0, nil)
+	displayReceiveCheckText(&buf, addr, chain.BSV, "", 0, nil, "main")
 
 	result := buf.String()
 	assert.NotContains(t, result, "Label:")

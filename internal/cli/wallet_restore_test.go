@@ -172,7 +172,7 @@ func TestCreateWalletWithAddresses(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			w, err := createWalletWithAddresses(tc.walletName, tc.seed)
+			w, err := createWalletWithAddresses(tc.walletName, tc.seed, "main")
 			require.NoError(t, err)
 			require.NotNil(t, w)
 
@@ -253,7 +253,7 @@ func TestConfirmAndSaveWallet_Confirmed(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)
 
-	w, err := createWalletWithAddresses("confirm_test", seed)
+	w, err := createWalletWithAddresses("confirm_test", seed, "main")
 	require.NoError(t, err)
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
@@ -290,7 +290,7 @@ func TestConfirmAndSaveWallet_Rejected(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)
 
-	w, err := createWalletWithAddresses("reject_test", seed)
+	w, err := createWalletWithAddresses("reject_test", seed, "main")
 	require.NoError(t, err)
 
 	storage := wallet.NewFileStorage(filepath.Join(tmpDir, "wallets"))
@@ -416,7 +416,7 @@ func TestDisplayAddressVerification(t *testing.T) {
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)
 
-	wlt, err := createWalletWithAddresses("verify_test", seed)
+	wlt, err := createWalletWithAddresses("verify_test", seed, "main")
 	require.NoError(t, err)
 
 	var buf bytes.Buffer

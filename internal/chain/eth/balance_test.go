@@ -215,7 +215,8 @@ func TestGetNativeBalancePendingGuard(t *testing.T) {
 	t.Run("discards stale zero pending balance", func(t *testing.T) {
 		t.Parallel()
 		// Simulate: confirmed = 1 ETH, pending = 0 (stale RPC data)
-		server := httptest.NewServer(rpcHandler(t,
+		server := httptest.NewServer(rpcHandler(
+			t,
 			"0xde0b6b3a7640000", // 1 ETH
 			"0x0",               // stale pending returns 0
 		))
@@ -238,7 +239,8 @@ func TestGetNativeBalancePendingGuard(t *testing.T) {
 	t.Run("shows legitimate pending delta", func(t *testing.T) {
 		t.Parallel()
 		// Simulate: confirmed = 1 ETH, pending = 1.5 ETH (incoming pending tx)
-		server := httptest.NewServer(rpcHandler(t,
+		server := httptest.NewServer(rpcHandler(
+			t,
 			"0xde0b6b3a7640000",  // 1 ETH
 			"0x14d1120d7b160000", // 1.5 ETH
 		))
@@ -262,7 +264,8 @@ func TestGetNativeBalancePendingGuard(t *testing.T) {
 	t.Run("shows negative delta for outgoing pending tx", func(t *testing.T) {
 		t.Parallel()
 		// Simulate: confirmed = 1 ETH, pending = 0.5 ETH (outgoing pending tx)
-		server := httptest.NewServer(rpcHandler(t,
+		server := httptest.NewServer(rpcHandler(
+			t,
 			"0xde0b6b3a7640000", // 1 ETH
 			"0x6f05b59d3b20000", // 0.5 ETH
 		))
@@ -285,7 +288,8 @@ func TestGetNativeBalancePendingGuard(t *testing.T) {
 
 	t.Run("no delta when pending equals latest", func(t *testing.T) {
 		t.Parallel()
-		server := httptest.NewServer(rpcHandler(t,
+		server := httptest.NewServer(rpcHandler(
+			t,
 			"0xde0b6b3a7640000", // 1 ETH
 			"0xde0b6b3a7640000", // 1 ETH (same)
 		))

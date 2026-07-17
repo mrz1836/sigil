@@ -30,6 +30,7 @@ type mockConfigProvider struct {
 	ethRPC             string
 	ethFallbackRPCs    []string
 	ethEtherscanAPIKey string
+	bsvNetwork         string
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -38,7 +39,15 @@ func newMockConfigProvider() *mockConfigProvider {
 		ethRPC:             "https://eth-rpc.example.com",
 		ethFallbackRPCs:    []string{"https://eth-fallback.example.com"},
 		ethEtherscanAPIKey: "test-api-key",
+		bsvNetwork:         "main",
 	}
+}
+
+func (m *mockConfigProvider) GetBSVNetwork() string {
+	if m.bsvNetwork == "" {
+		return "main"
+	}
+	return m.bsvNetwork
 }
 
 func (m *mockConfigProvider) GetETHProvider() string {

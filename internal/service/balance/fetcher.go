@@ -24,6 +24,10 @@ type Fetcher struct {
 	cfg   ConfigProvider
 	cache CacheProvider
 
+	// bsvNetwork optionally overrides the ConfigProvider's BSV network (e.g. to
+	// use a loaded wallet's stamped network). Empty means fall back to config.
+	bsvNetwork string
+
 	newETHClient       func(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error)
 	newEtherscanClient func(apiKey string, opts *etherscan.ClientOptions) (ethBalanceReader, error)
 	newBSVClient       func(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient
@@ -91,6 +95,15 @@ func (f *Fetcher) FetchForChain(ctx context.Context, chainID chain.ID, address s
 	default:
 		return nil, false, fmt.Errorf("%w: %s", ErrUnsupportedChain, chainID)
 	}
+}
+
+// bsvNetworkString returns the effective BSV network: the per-fetcher override
+// (a loaded wallet's network) if set, otherwise the ConfigProvider's value.
+func (f *Fetcher) bsvNetworkString() string {
+	if f.bsvNetwork != "" {
+		return f.bsvNetwork
+	}
+	return f.cfg.GetBSVNetwork()
 }
 
 // fetchETH fetches ETH and USDC balances using the configured provider with failover.
@@ -392,7 +405,7 @@ func (f *Fetcher) fetchBSV(ctx context.Context, address string) ([]CacheEntry, b
 	entries := make([]CacheEntry, 0, 1)
 	var stale bool
 
-	client := f.newBSVBalanceClient(ctx, nil)
+	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
 
 	// Fetch BSV balance
 	bsvBalance, err := client.GetNativeBalance(ctx, address)
@@ -463,7 +476,7 @@ func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[str
 	}
 
 	// Bulk fetch remaining addresses
-	client := f.newBSVBalanceClient(ctx, nil)
+	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
 	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
 	if err != nil {
 		// On error, fall back to cached data for all addresses

@@ -22,6 +22,7 @@ type Service struct {
 	utxoStore      UTXOProvider
 	balanceService BalanceProvider
 	config         ConfigProvider
+	network        string // optional per-wallet override of the config network
 }
 
 // Config contains dependencies for creating a discovery service.
@@ -29,6 +30,9 @@ type Config struct {
 	UTXOStore      UTXOProvider
 	BalanceService BalanceProvider
 	Config         ConfigProvider
+	// Network optionally overrides the ConfigProvider's BSV network so a wallet's
+	// stamped network governs discovery. Empty falls back to config.
+	Network string
 }
 
 // NewService creates a new discovery service instance.
@@ -37,14 +41,25 @@ func NewService(cfg *Config) *Service {
 		utxoStore:      cfg.UTXOStore,
 		balanceService: cfg.BalanceService,
 		config:         cfg.Config,
+		network:        cfg.Network,
 	}
+}
+
+// bsvNetwork returns the effective BSV network: the per-service override if set,
+// otherwise the ConfigProvider's value.
+func (s *Service) bsvNetwork() string {
+	if s.network != "" {
+		return s.network
+	}
+	return s.config.GetBSVNetwork()
 }
 
 // createBSVAdapter creates a BSV client adapter for UTXO refresh operations.
 func (s *Service) createBSVAdapter(ctx context.Context) *bsvRefreshAdapter {
 	apiKey := s.config.GetBSVAPIKey()
 	client := bsv.NewClient(ctx, &bsv.ClientOptions{
-		APIKey: apiKey,
+		APIKey:  apiKey,
+		Network: bsv.Network(s.bsvNetwork()),
 	})
 	return &bsvRefreshAdapter{client: client}
 }

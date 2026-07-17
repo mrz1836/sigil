@@ -13,6 +13,7 @@ type ConfigProvider interface {
 	GetETHFallbackRPCs() []string
 	GetETHProvider() string
 	GetETHEtherscanAPIKey() string
+	GetBSVNetwork() string
 }
 
 // CacheProvider provides balance cache operations.

@@ -20,17 +20,24 @@ import (
 //
 //nolint:gocognit,gocyclo,nestif // Transaction flow is inherently complex (migrated from CLI)
 func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, error) {
-	// Validate BSV address
-	if err := bsv.ValidateBase58CheckAddress(req.To); err != nil {
+	// Resolve the network: the wallet-stamped value on the request wins; otherwise
+	// fall back to config. Then validate the recipient against that network so a
+	// mainnet address cannot be paid from a testnet wallet (and vice versa).
+	network := req.Network
+	if network == "" {
+		network = s.config.GetBSVNetwork()
+	}
+	if err := bsv.ValidateBase58CheckAddressForNetwork(req.To, bsv.Network(network)); err != nil {
 		return nil, sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidAddress,
-			fmt.Sprintf("invalid BSV address: %s", req.To),
+			fmt.Sprintf("invalid BSV %s address: %s", network, req.To),
 		)
 	}
 
 	// Create BSV client
 	opts := &bsv.ClientOptions{
 		APIKey:      s.config.GetBSVAPIKey(),
+		Network:     bsv.Network(network),
 		Logger:      s.logger,
 		FeeStrategy: bsv.FeeStrategy(s.config.GetBSVFeeStrategy()),
 		MinMiners:   s.config.GetBSVMinMiners(),

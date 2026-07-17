@@ -669,6 +669,10 @@ func (m *mockConfigProvider) GetBSVAPIKey() string {
 	return m.bsvAPIKey
 }
 
+func (m *mockConfigProvider) GetBSVNetwork() string {
+	return "main"
+}
+
 func (m *mockConfigProvider) GetETHEtherscanAPIKey() string {
 	return m.ethEtherscanAPIKey
 }

@@ -432,6 +432,7 @@ func (m *mockConfigProvider) GetETHRPC() string             { return m.ethRPC }
 func (m *mockConfigProvider) GetETHFallbackRPCs() []string  { return m.ethFallbackRPCs }
 func (m *mockConfigProvider) GetETHEtherscanAPIKey() string { return m.ethEtherscanAPIKey }
 func (m *mockConfigProvider) GetBSVAPIKey() string          { return m.bsvAPIKey }
+func (m *mockConfigProvider) GetBSVNetwork() string         { return "main" }
 func (m *mockConfigProvider) GetBSVFeeStrategy() string     { return m.bsvFeeStrategy }
 func (m *mockConfigProvider) GetBSVMinMiners() int          { return m.bsvMinMiners }
 

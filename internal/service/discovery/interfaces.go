@@ -29,5 +29,6 @@ type BalanceProvider interface {
 // ConfigProvider provides configuration access.
 type ConfigProvider interface {
 	GetBSVAPIKey() string
+	GetBSVNetwork() string
 	GetETHEtherscanAPIKey() string
 }

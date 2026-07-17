@@ -20,6 +20,10 @@ type Config struct {
 	CacheProvider  CacheProvider
 	Metadata       AddressMetadataProvider
 	ForceRefresh   bool
+	// Network optionally overrides the BSV network from ConfigProvider, so a
+	// wallet's stamped network (main/test) governs its balance queries. Empty
+	// falls back to ConfigProvider.GetBSVNetwork().
+	Network string
 }
 
 // Service provides balance fetching functionality with caching and refresh policy.
@@ -33,6 +37,7 @@ type Service struct {
 // NewService creates a new balance service.
 func NewService(cfg *Config) *Service {
 	fetcher := NewFetcher(cfg.ConfigProvider, cfg.CacheProvider)
+	fetcher.bsvNetwork = cfg.Network
 
 	var policy *RefreshPolicy
 	if cfg.Metadata != nil && cfg.CacheProvider != nil && !cfg.ForceRefresh {

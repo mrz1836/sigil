@@ -23,6 +23,7 @@ type SendRequest struct {
 
 	// BSV-specific (populated by service layer)
 	Addresses []wallet.Address // All wallet addresses for BSV multi-address support
+	Network   string           // BSV network ("main"/"test"); empty falls back to config
 
 	// Flags
 	Confirm       bool // If false, prompt user for confirmation

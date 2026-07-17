@@ -37,9 +37,68 @@ func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance
 	}
 	if resp.Unconfirmed != 0 {
 		bal.Unconfirmed = big.NewInt(resp.Unconfirmed)
+	} else {
+		// The WhatsOnChain balance endpoint does not always reflect mempool
+		// (unconfirmed) funds — notably on testnet, where it can report 0 while
+		// a pending UTXO exists. When the endpoint reports no unconfirmed delta,
+		// reconcile from the unspent UTXO set so incoming pending funds appear.
+		if mempool := c.mempoolValue(ctx, address); mempool > 0 {
+			bal.Unconfirmed = big.NewInt(mempool)
+		}
 	}
 
 	return bal, nil
+}
+
+// mempoolValue returns the total value (satoshis) of an address's unconfirmed
+// (mempool, height == 0) unspent outputs. Returns 0 on any error — this is a
+// best-effort enrichment of the balance, never a hard failure.
+func (c *Client) mempoolValue(ctx context.Context, address string) int64 {
+	utxos, err := c.woc.AddressUnspentTransactions(ctx, address)
+	if err != nil {
+		c.debug("mempool reconcile: unspent fetch failed for %s: %v", address, err)
+		return 0
+	}
+	var total int64
+	for _, u := range utxos {
+		if u == nil || u.Height > 0 {
+			continue // skip confirmed UTXOs
+		}
+		total += u.Value
+	}
+	return total
+}
+
+// bulkMempoolValues returns per-address total value (satoshis) of unconfirmed
+// (mempool) unspent outputs for a batch of addresses. Best-effort: returns an
+// empty map on error so balance reconciliation never fails the balance fetch.
+func (c *Client) bulkMempoolValues(ctx context.Context, addresses []string) map[string]int64 {
+	out := make(map[string]int64, len(addresses))
+	resp, err := c.woc.BulkAddressUnconfirmedUTXOs(ctx, &whatsonchain.AddressList{Addresses: addresses})
+	if err != nil {
+		c.debug("bulk mempool reconcile: unconfirmed UTXO fetch failed: %v", err)
+		return out
+	}
+	for _, rec := range resp {
+		if rec == nil {
+			continue
+		}
+		if total := sumHistoryValues(rec.Utxos); total > 0 {
+			out[rec.Address] = total
+		}
+	}
+	return out
+}
+
+// sumHistoryValues sums the (nil-safe) values of a set of unspent records.
+func sumHistoryValues(recs []*whatsonchain.HistoryRecord) int64 {
+	var total int64
+	for _, u := range recs {
+		if u != nil {
+			total += u.Value
+		}
+	}
+	return total
 }
 
 // GetAllBalances retrieves all BSV balances (just native for BSV).
@@ -97,6 +156,10 @@ func (c *Client) GetBulkNativeBalance(ctx context.Context, addresses []string) (
 			return nil, sigilerr.Wrap(err, "fetching bulk unconfirmed balances")
 		}
 
+		// The balance endpoint under-reports mempool funds (notably on testnet),
+		// so also fetch mempool UTXOs to reconcile the unconfirmed amount below.
+		mempool := c.bulkMempoolValues(ctx, batch)
+
 		metrics.Global.RecordRPCCall("bsv", time.Since(start), nil)
 
 		// Merge results
@@ -146,6 +209,10 @@ func (c *Client) GetBulkNativeBalance(ctx context.Context, addresses []string) (
 			}
 			if unconfirmedBalance != 0 {
 				bal.Unconfirmed = big.NewInt(unconfirmedBalance)
+			} else if mp := mempool[addr]; mp > 0 {
+				// Endpoint reported no unconfirmed delta but the address has
+				// pending mempool UTXOs — surface them as unconfirmed.
+				bal.Unconfirmed = big.NewInt(mp)
 			}
 
 			results[addr] = bal

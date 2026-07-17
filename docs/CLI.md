@@ -82,11 +82,45 @@ sigil backup create --wallet main
 
 These flags can be used with any command:
 
-| Flag        | Short | Default    | Description                           |
-|-------------|-------|------------|---------------------------------------|
-| `--home`    | -     | `~/.sigil` | Sigil data directory                  |
-| `--output`  | `-o`  | `auto`     | Output format: `text`, `json`, `auto` |
-| `--verbose` | `-v`  | `false`    | Enable verbose output                 |
+| Flag        | Short | Default    | Description                             |
+|-------------|-------|------------|-----------------------------------------|
+| `--home`    | -     | `~/.sigil` | Sigil data directory                    |
+| `--output`  | `-o`  | `auto`     | Output format: `text`, `json`, `auto`   |
+| `--verbose` | `-v`  | `false`    | Enable verbose output                   |
+| `--network` | -     | `main`     | BSV network: `main` or `test` (testnet) |
+| `--testnet` | -     | `false`    | Shortcut for `--network test`           |
+
+<br>
+
+### BSV Testnet
+
+Sigil supports the BSV **testnet** for safe, cost-free testing. The network is a
+**per-wallet** property: it is recorded when the wallet is created and governs how that
+wallet's addresses are encoded (testnet addresses start with `m`/`n`) and which network
+its balances and transactions use. A mainnet wallet is never reinterpreted as testnet.
+
+Select the network (highest precedence wins): the `--network`/`--testnet` flag →
+`SIGIL_BSV_NETWORK` env → `networks.bsv.network` in config → default `main`. This value is
+the default stamped onto **new** wallets and the fallback for wallet-less operations
+(`keygen`, `wallet discover`).
+
+```bash
+# Create a testnet wallet and get a testnet receive address (m.../n...)
+sigil wallet create tnet --testnet
+sigil receive --wallet tnet --chain bsv
+
+# Fund it from the faucet: https://faucet.bananablocks.com/
+# Check the balance and send
+sigil balance show --wallet tnet --refresh
+sigil tx send --wallet tnet --to <testnet-address> --amount 0.00001000
+
+# Or set testnet as the default for new wallets
+sigil config set networks.bsv.network test
+```
+
+Explorer links for testnet output point to `https://test.whatsonchain.com` and
+`https://test.bananablocks.com`. Sending to an address of the wrong network is rejected
+before signing.
 
 <br>
 
@@ -1467,6 +1501,7 @@ Environment variables override configuration file settings.
 | `SIGIL_ETH_PROVIDER`     | ETH balance provider: `etherscan` (default) or `rpc`                     |
 | `ETHERSCAN_API_KEY`      | Etherscan API key (required when provider is `etherscan`)                |
 | `SIGIL_BSV_API_KEY`      | WhatsOnChain API key (optional, fallback: `WHATS_ON_CHAIN_API_KEY`)      |
+| `SIGIL_BSV_NETWORK`      | BSV network: `main` (default) or `test` (testnet)                       |
 | `SIGIL_BSV_FEE_STRATEGY` | BSV fee strategy: `economy`, `normal` (default), `priority`              |
 | `SIGIL_BSV_MIN_MINERS`   | Minimum miners for normal fee strategy (default: 2)                      |
 | `SIGIL_OUTPUT_FORMAT`    | Default output format (`text`, `json`, `auto`)                           |
@@ -1554,3 +1589,4 @@ Use dot notation with `config get` and `config set`:
 | `networks.eth.etherscan_api_key` | Etherscan API key                  | Any string                       |
 | `networks.eth.rpc`               | Ethereum RPC URL                   | Any URL                          |
 | `networks.bsv.api_key`           | WhatsOnChain API key               | Any string                       |
+| `networks.bsv.network`           | BSV network for new wallets        | `main` (default), `test`         |

@@ -184,6 +184,27 @@ Sends cryptocurrency to the specified address.
 
 <br>
 
+### Use BSV testnet
+
+```bash
+# Create a testnet wallet (addresses start with m/n)
+sigil wallet create tnet --testnet
+
+# Get a testnet receive address, then fund it from the faucet
+sigil receive --wallet tnet --chain bsv
+# Faucet: https://faucet.bananablocks.com/  •  Explorer: https://test.bananablocks.com/
+
+# Check the balance and send on testnet
+sigil balance show --wallet tnet --refresh
+sigil tx send --wallet tnet --to <testnet-address> --amount 0.00001 --chain bsv
+```
+
+The BSV network is a per-wallet setting stamped at creation (or via `--network test`,
+`SIGIL_BSV_NETWORK=test`, or `networks.bsv.network` in config). See the
+[CLI Documentation](docs/CLI.md#bsv-testnet) for details.
+
+<br>
+
 ### Back up your wallet
 
 ```bash
@@ -236,7 +257,7 @@ View the comprehensive documentation for Sigil:
 
 | Chain | Status | Description |
 |-------|--------|-------------|
-| ✅ Bitcoin SV (BSV) | **Supported** | UTXO-based transaction support |
+| ✅ Bitcoin SV (BSV) | **Supported** | UTXO-based transaction support (mainnet + testnet) |
 | ✅ Ethereum (ETH) | **Supported** | Full transaction and balance support |
 | ✅ USDC | **Supported** | ERC-20 token on Ethereum network |
 | 🚧 Bitcoin (BTC) | **Planned** | Coming in future release |
@@ -247,6 +268,7 @@ View the comprehensive documentation for Sigil:
 ### Key Features
 
 - 🔑 **HD Wallet Support** — BIP39 mnemonic phrases with BIP32/BIP44 derivation
+- 🧪 **BSV Testnet** — Per-wallet mainnet/testnet with faucet-friendly `m`/`n` addresses
 - 🛡️ **Shamir's Secret Sharing** — Split your wallet seed into multiple shares for enhanced security
 - 💰 **Multi-Chain Balances** — Check balances across all supported networks
 - 📤 **Transaction Management** — Create, sign, and broadcast transactions

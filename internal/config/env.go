@@ -29,6 +29,7 @@ const (
 	EnvSessionTTL      = "SIGIL_SESSION_TTL"
 	EnvBSVFeeStrategy  = "SIGIL_BSV_FEE_STRATEGY"
 	EnvBSVMinMiners    = "SIGIL_BSV_MIN_MINERS"
+	EnvBSVNetwork      = "SIGIL_BSV_NETWORK"
 	EnvAgentToken      = "SIGIL_AGENT_TOKEN" //nolint:gosec // G101 -- false positive, this is a const name not a credential
 	EnvAgentXpub       = "SIGIL_AGENT_XPUB"
 )
@@ -78,6 +79,17 @@ func ApplyEnvironment(cfg *Config) {
 	if v := os.Getenv(EnvBSVMinMiners); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.Fees.BSVMinMiners = n
+		}
+	}
+
+	// SIGIL_BSV_NETWORK selects mainnet or testnet
+	if v := os.Getenv(EnvBSVNetwork); v != "" {
+		if n, ok := NormalizeBSVNetwork(v); ok {
+			cfg.Networks.BSV.Network = n
+		} else {
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("SIGIL_BSV_NETWORK: invalid value %q (use main or test); defaulting to main", v))
+			cfg.Networks.BSV.Network = "main"
 		}
 	}
 

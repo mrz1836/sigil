@@ -40,6 +40,7 @@ func Defaults() *Config {
 			},
 			BSV: BSVNetworkConfig{
 				Enabled:   true,
+				Network:   "main",
 				API:       "whatsonchain",
 				Broadcast: "whatsonchain",
 				APIKey:    "",

@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,7 +60,11 @@ type TokenConfig struct {
 
 // BSVNetworkConfig defines BSV network settings.
 type BSVNetworkConfig struct {
-	Enabled   bool   `yaml:"enabled"`
+	Enabled bool `yaml:"enabled"`
+	// Network selects the BSV chain: "main" (default) or "test" (testnet).
+	Network string `yaml:"network"`
+	// API and Broadcast are reserved provider selectors kept for config
+	// back-compat; they are not currently mapped to behavior.
 	API       string `yaml:"api"`
 	Broadcast string `yaml:"broadcast"`
 	APIKey    string `yaml:"api_key"`
@@ -171,6 +176,28 @@ func (c *Config) GetETHFallbackRPCs() []string {
 // GetBSVAPIKey returns the BSV API key.
 func (c *Config) GetBSVAPIKey() string {
 	return c.Networks.BSV.APIKey
+}
+
+// GetBSVNetwork returns the normalized BSV network ("main" or "test"),
+// defaulting to "main" for empty or unrecognized values.
+func (c *Config) GetBSVNetwork() string {
+	n, _ := NormalizeBSVNetwork(c.Networks.BSV.Network)
+	return n
+}
+
+// NormalizeBSVNetwork maps a user-supplied network string to its canonical form.
+// It accepts "main"/"mainnet" and "test"/"testnet" (case-insensitive), returning
+// the canonical "main" or "test". The empty string resolves to "main". The bool
+// is false only when the value was non-empty but unrecognized (invalid input).
+func NormalizeBSVNetwork(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "main", "mainnet":
+		return "main", true
+	case "test", "testnet":
+		return "test", true
+	default:
+		return "main", false
+	}
 }
 
 // GetBSVBroadcast returns the BSV broadcast provider or custom URL.

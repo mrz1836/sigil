@@ -333,7 +333,8 @@ func TestLogger_DebugAttrs(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = logger.Close() }()
 
-	logger.DebugAttrs("debug with attrs",
+	logger.DebugAttrs(
+		"debug with attrs",
 		slog.String("key1", "value1"),
 		slog.Int("key2", 42),
 	)
@@ -379,7 +380,8 @@ func TestLogger_ErrorAttrs(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = logger.Close() }()
 
-	logger.ErrorAttrs("error with attrs",
+	logger.ErrorAttrs(
+		"error with attrs",
 		slog.String("error_code", "E001"),
 		slog.Bool("fatal", true),
 	)

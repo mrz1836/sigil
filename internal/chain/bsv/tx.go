@@ -66,6 +66,9 @@ type TxBuilder struct {
 	Inputs  []UTXO
 	Outputs []TxOutput
 	FeeRate uint64
+	// network scopes output-address validation. The zero value validates
+	// against mainnet, preserving behavior for callers that don't set it.
+	network Network
 }
 
 // NewTxBuilder creates a new transaction builder.
@@ -73,6 +76,11 @@ func NewTxBuilder() *TxBuilder {
 	return &TxBuilder{
 		FeeRate: DefaultFeeRate,
 	}
+}
+
+// SetNetwork sets the network used to validate output addresses.
+func (b *TxBuilder) SetNetwork(network Network) {
+	b.network = network
 }
 
 // AddInput adds a UTXO as an input.
@@ -83,7 +91,7 @@ func (b *TxBuilder) AddInput(utxo UTXO) error {
 
 // AddOutput adds an output to the transaction.
 func (b *TxBuilder) AddOutput(address string, amount uint64) error {
-	if err := ValidateBase58CheckAddress(address); err != nil {
+	if err := ValidateBase58CheckAddressForNetwork(address, b.network); err != nil {
 		return fmt.Errorf("invalid output address: %w", err)
 	}
 
@@ -179,17 +187,19 @@ func (b *TxBuilder) SetFeeRate(rate uint64) {
 //
 //nolint:gocognit,gocyclo // Transaction building involves multiple steps
 func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.TransactionResult, error) {
-	// Validate addresses: From is required unless pre-fetched UTXOs are provided
+	// Validate addresses against this client's network. From is required unless
+	// pre-fetched UTXOs are provided. Network-scoped validation prevents sending
+	// to (or from) an address that belongs to the other network.
 	if len(req.UTXOs) == 0 {
-		if err := ValidateBase58CheckAddress(req.From); err != nil {
+		if err := c.ValidateAddress(req.From); err != nil {
 			return nil, fmt.Errorf("invalid from address: %w", err)
 		}
 	} else if req.From != "" {
-		if err := ValidateBase58CheckAddress(req.From); err != nil {
+		if err := c.ValidateAddress(req.From); err != nil {
 			return nil, fmt.Errorf("invalid from address: %w", err)
 		}
 	}
-	if err := ValidateBase58CheckAddress(req.To); err != nil {
+	if err := c.ValidateAddress(req.To); err != nil {
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
@@ -259,6 +269,7 @@ func (c *Client) Send(ctx context.Context, req chain.SendRequest) (*chain.Transa
 
 	// Build transaction
 	builder := NewTxBuilder()
+	builder.SetNetwork(c.network)
 	builder.SetFeeRate(feeRate)
 
 	for _, utxo := range selected {

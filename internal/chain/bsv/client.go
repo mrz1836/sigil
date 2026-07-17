@@ -62,7 +62,11 @@ var (
 	}
 
 	// Base58 character set (excludes 0, O, I, l).
+	// Mainnet P2PKH/P2SH addresses start with 1 or 3.
 	base58Regex = regexp.MustCompile("^[13][1-9A-HJ-NP-Za-km-z]{25,34}$")
+
+	// Testnet P2PKH addresses start with m or n; P2SH with 2.
+	base58RegexTestnet = regexp.MustCompile("^[mn2][1-9A-HJ-NP-Za-km-z]{25,34}$")
 )
 
 // WOCClient is the narrow interface for WhatsOnChain SDK methods used by this package.
@@ -84,7 +88,7 @@ type WOCClient interface {
 }
 
 // Compile-time check that the real SDK client satisfies WOCClient.
-var _ WOCClient = (whatsonchain.ClientInterface)(nil)
+var _ WOCClient = whatsonchain.ClientInterface(nil)
 
 // Logger is the interface for client logging.
 // Supports both debug (verbose) and error (always captured) levels.
@@ -198,7 +202,18 @@ func (c *Client) initializeBroadcasters(opts *ClientOptions) {
 		return
 	}
 
-	// Production: WhatsOnChain SDK (primary) + GorillaPool ARC (fallback).
+	if c.network == NetworkTestnet {
+		// Testnet: use only the WhatsOnChain SDK broadcaster (network-aware).
+		// GorillaPool ARC (arc.gorillapool.io) is a mainnet-only endpoint with no
+		// documented public BSV testnet ARC, so a fallback there would reject
+		// testnet transactions. WhatsOnChain broadcasts testnet transactions fine.
+		c.broadcasters = []Broadcaster{
+			&WOCSDKBroadcaster{woc: c.woc},
+		}
+		return
+	}
+
+	// Production (mainnet): WhatsOnChain SDK (primary) + GorillaPool ARC (fallback).
 	c.broadcasters = []Broadcaster{
 		&WOCSDKBroadcaster{woc: c.woc},
 		&GorillaPoolARCBroadcaster{
@@ -375,9 +390,18 @@ func (c *Client) EstimateFee(_ context.Context, _, _ string, _ *big.Int) (*big.I
 	return big.NewInt(fee), nil
 }
 
-// ValidateAddress checks if an address is valid for BSV.
+// ValidateAddress checks if an address is valid for BSV on this client's network.
+// It performs full Base58Check (checksum + version-byte) validation scoped to the
+// client's network, so a mainnet address is rejected on a testnet client and vice
+// versa. This prevents cross-network balance lookups and transaction sends.
 func (c *Client) ValidateAddress(address string) error {
-	return chain.ValidateAddressWithRegex(address, base58Regex, ErrInvalidAddress)
+	if ValidateBase58CheckAddressForNetwork(address, c.network) != nil {
+		// Normalize to the package's ErrInvalidAddress sentinel so callers get a
+		// stable error regardless of the underlying validation failure (bad
+		// format, bad checksum, or wrong-network version byte).
+		return ErrInvalidAddress
+	}
+	return nil
 }
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BSV string.

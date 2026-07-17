@@ -55,6 +55,16 @@ func DOGEMainnetParams() NetworkParams {
 	}
 }
 
+// BSVTestnetParams returns network parameters for Bitcoin SV testnet.
+// BSV has no SegWit/CashAddr, so only the P2PKH/P2SH version bytes differ.
+// Testnet P2PKH addresses start with "m"/"n"; P2SH with "2".
+func BSVTestnetParams() NetworkParams {
+	return NetworkParams{
+		P2PKHVersion: 0x6f,
+		P2SHVersion:  0xc4,
+	}
+}
+
 // DerivedAddresses holds all address formats derived from a single public key.
 type DerivedAddresses struct {
 	P2PKH    string // Base58Check P2PKH address
@@ -116,9 +126,26 @@ func AllAddressesFromPrivKey(privKey []byte, params NetworkParams) (*DerivedAddr
 	return AllAddressesFromPubKey(pubKey, params)
 }
 
-// NetworkParamsForCoinType returns the NetworkParams for a given BIP44 coin type.
+// NetworkParamsForCoinType returns the mainnet NetworkParams for a given BIP44 coin type.
 // Returns BTC params as default for unknown coin types (since BTC/BSV share version bytes).
 func NetworkParamsForCoinType(coinType uint32) NetworkParams {
+	return NetworkParamsForCoinTypeAndNetwork(coinType, Mainnet)
+}
+
+// NetworkParamsForCoinTypeAndNetwork returns the NetworkParams for a given BIP44 coin
+// type on the given network. On testnet only the Bitcoin-family (BTC/BSV) version bytes
+// are remapped to the shared Bitcoin testnet bytes (P2PKH 0x6f, P2SH 0xc4); LTC/DOGE/BCH
+// testnet encodings are out of scope and fall back to their mainnet params.
+func NetworkParamsForCoinTypeAndNetwork(coinType uint32, net Network) NetworkParams {
+	if net == Testnet {
+		switch coinType {
+		case 0, 236: // BTC / BSV share Bitcoin testnet version bytes
+			return BSVTestnetParams()
+		default: // LTC/DOGE/BCH testnet not supported — fall back to mainnet params
+			return NetworkParamsForCoinType(coinType)
+		}
+	}
+
 	switch coinType {
 	case 2: // LTC
 		return LTCMainnetParams()

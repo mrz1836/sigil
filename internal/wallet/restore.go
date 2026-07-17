@@ -92,13 +92,16 @@ func isMnemonicFormat(input string) bool {
 }
 
 // isWIFFormat checks if input looks like a WIF private key.
+// Accepts both mainnet (first char 5/K/L) and testnet (first char 9/c) WIFs.
 func isWIFFormat(input string) bool {
 	if len(input) < 51 || len(input) > 52 {
 		return false
 	}
 
-	first := input[0]
-	if first != '5' && first != 'K' && first != 'L' {
+	switch input[0] {
+	case '5', 'K', 'L', // mainnet: uncompressed / compressed
+		'9', 'c': // testnet: uncompressed / compressed
+	default:
 		return false
 	}
 
@@ -135,8 +138,9 @@ func ParseWIF(wif string) ([]byte, error) {
 		return nil, ErrInvalidWIF
 	}
 
-	// Version byte should be 0x80 for mainnet
-	if decoded[0] != 0x80 {
+	// Version byte should be 0x80 (mainnet) or 0xef (testnet). The private key
+	// material is identical across networks; only the WIF/address encoding differs.
+	if decoded[0] != 0x80 && decoded[0] != 0xef {
 		return nil, ErrInvalidWIF
 	}
 

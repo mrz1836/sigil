@@ -42,11 +42,14 @@ const (
 )
 
 // hdNetParams satisfies hdkeychain.NetworkParams for BIP32 key derivation.
-// Uses standard Bitcoin mainnet HD version bytes.
-type hdNetParams struct{}
+// The zero value uses standard Bitcoin mainnet HD version bytes; set net to
+// Testnet for tprv/tpub serialization. The version bytes only affect the
+// serialized extended-key string — raw child key bytes are identical on both
+// networks — so address/private-key derivation is unaffected by this field.
+type hdNetParams struct{ net Network }
 
-func (hdNetParams) HDPrivKeyVersion() [4]byte { return [4]byte{0x04, 0x88, 0xAD, 0xE4} }
-func (hdNetParams) HDPubKeyVersion() [4]byte  { return [4]byte{0x04, 0x88, 0xB2, 0x1E} }
+func (p hdNetParams) HDPrivKeyVersion() [4]byte { return p.net.HDPrivVersion() }
+func (p hdNetParams) HDPubKeyVersion() [4]byte  { return p.net.HDPubVersion() }
 
 var (
 	// ErrUnsupportedChain indicates the chain is not supported.
@@ -88,47 +91,28 @@ func GetDerivationPathFull(chain ChainID, account, change, index uint32) string 
 	return fmt.Sprintf("m/44'/%d'/%d'/%d/%d", coinType, account, change, index)
 }
 
-// DeriveAddress derives an address for the given chain and index from a BIP39 seed.
+// DeriveAddress derives a mainnet address for the given chain and index from a BIP39 seed.
 func DeriveAddress(seed []byte, chain ChainID, account, index uint32) (*Address, error) {
-	// Create master key from seed
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create master key: %w", err)
-	}
-
-	// Derive the key using BIP44 path
-	key, err := deriveBIP44Key(masterKey, chain, account, index)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get public key and derive address based on chain
-	var address, pubKeyHex string
-	switch chain {
-	case ChainETH:
-		address, pubKeyHex, err = deriveETHAddress(key)
-	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
-		address, pubKeyHex, err = deriveBSVAddress(key)
-	default:
-		return nil, ErrUnsupportedChain
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &Address{
-		Path:      GetDerivationPath(chain, account, index),
-		Index:     index,
-		Address:   address,
-		PublicKey: pubKeyHex,
-	}, nil
+	return DeriveAddressForNetwork(seed, chain, account, index, Mainnet)
 }
 
-// DeriveAddressWithChange derives an address for the given chain, change type, and index.
+// DeriveAddressForNetwork derives an address for the given chain, index, and network.
+func DeriveAddressForNetwork(seed []byte, chain ChainID, account, index uint32, net Network) (*Address, error) {
+	return DeriveAddressWithChangeForNetwork(seed, chain, account, ExternalChain, index, net)
+}
+
+// DeriveAddressWithChange derives a mainnet address for the given chain, change type, and index.
 // Use ExternalChain (0) for receiving addresses, InternalChain (1) for change addresses.
 func DeriveAddressWithChange(seed []byte, chain ChainID, account, change, index uint32) (*Address, error) {
+	return DeriveAddressWithChangeForNetwork(seed, chain, account, change, index, Mainnet)
+}
+
+// DeriveAddressWithChangeForNetwork derives an address for the given chain, change type,
+// index, and network. On testnet, Bitcoin-family (BSV) addresses are encoded with the
+// testnet version byte; ETH addresses are network-independent.
+func DeriveAddressWithChangeForNetwork(seed []byte, chain ChainID, account, change, index uint32, net Network) (*Address, error) {
 	// Create master key from seed
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{net})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -145,7 +129,7 @@ func DeriveAddressWithChange(seed []byte, chain ChainID, account, change, index 
 	case ChainETH:
 		address, pubKeyHex, err = deriveETHAddress(key)
 	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
-		address, pubKeyHex, err = deriveBSVAddress(key)
+		address, pubKeyHex, err = deriveBSVAddress(key, net.P2PKHVersion())
 	default:
 		return nil, ErrUnsupportedChain
 	}
@@ -193,13 +177,6 @@ func DerivePrivateKeyWithChange(seed []byte, chain ChainID, account, change, ind
 	return privKey, nil
 }
 
-// deriveBIP44Key derives a key following BIP44 path structure using external chain.
-// Path: m / purpose' / coin_type' / account' / 0 / address_index
-// For backward compatibility, uses ExternalChain (change=0).
-func deriveBIP44Key(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, index uint32) (*hdkeychain.ExtendedKey, error) {
-	return deriveBIP44KeyWithChange(masterKey, chain, account, ExternalChain, index)
-}
-
 // deriveBIP44KeyWithChange derives a key following BIP44 path structure with explicit change chain.
 // Path: m / purpose' / coin_type' / account' / change / address_index
 func deriveBIP44KeyWithChange(masterKey *hdkeychain.ExtendedKey, chain ChainID, account, change, index uint32) (*hdkeychain.ExtendedKey, error) {
@@ -234,12 +211,13 @@ func deriveETHAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, e
 	return address, pubKeyHex, nil
 }
 
-// deriveBSVAddress derives a Bitcoin SV (or BTC/BCH) address from a BIP32 key.
+// deriveBSVAddress derives a Bitcoin SV (or BTC/BCH) address from a BIP32 key,
+// encoding the P2PKH address with the supplied version byte (0x00 mainnet, 0x6f testnet).
 //
 //nolint:unparam // error return is for interface consistency with deriveETHAddress
-func deriveBSVAddress(key *hdkeychain.ExtendedKey) (address, pubKeyHex string, _ error) {
+func deriveBSVAddress(key *hdkeychain.ExtendedKey, p2pkhVersion byte) (address, pubKeyHex string, _ error) {
 	pubKey := key.SerializedPubKey()
-	address = bitcoin.Base58CheckEncode(0x00, bitcoin.Hash160(pubKey))
+	address = bitcoin.Base58CheckEncode(p2pkhVersion, bitcoin.Hash160(pubKey))
 	pubKeyHex = hex.EncodeToString(pubKey)
 	return address, pubKeyHex, nil
 }
@@ -385,8 +363,14 @@ func DerivePrivateKeyForChain(seed []byte, chain ChainID, index uint32) ([]byte,
 //
 // Returns the address string, public key hex, and derivation path.
 func DeriveAddressWithCoinType(seed []byte, coinType, account, change, index uint32) (string, string, string, error) {
+	return DeriveAddressWithCoinTypeForNetwork(seed, coinType, account, change, index, Mainnet)
+}
+
+// DeriveAddressWithCoinTypeForNetwork is the network-aware form of DeriveAddressWithCoinType.
+// On testnet the P2PKH address is encoded with the testnet version byte.
+func DeriveAddressWithCoinTypeForNetwork(seed []byte, coinType, account, change, index uint32, net Network) (string, string, string, error) {
 	// Create master key from seed
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{net})
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -398,7 +382,7 @@ func DeriveAddressWithCoinType(seed []byte, coinType, account, change, index uin
 	}
 
 	// Derive BSV-style address (P2PKH)
-	address, pubKeyHex, err := deriveBSVAddress(key)
+	address, pubKeyHex, err := deriveBSVAddress(key, net.P2PKHVersion())
 	if err != nil {
 		return "", "", "", err
 	}
@@ -417,11 +401,18 @@ type MnemonicContext struct {
 	coinTypeKeys map[uint32]*hdkeychain.ExtendedKey // coinType → m/44'/coinType'
 	accountKeys  map[uint64]*hdkeychain.ExtendedKey // (coinType<<32|account) → m/44'/coinType'/account'
 	legacyKey    *hdkeychain.ExtendedKey            // cached m/0'
+	net          Network                            // network for address encoding (default Mainnet)
 }
 
-// NewMnemonicContext creates a MnemonicContext from a BIP39 seed.
+// NewMnemonicContext creates a mainnet MnemonicContext from a BIP39 seed.
 func NewMnemonicContext(seed []byte) (*MnemonicContext, error) {
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	return NewMnemonicContextForNetwork(seed, Mainnet)
+}
+
+// NewMnemonicContextForNetwork creates a MnemonicContext for the given network.
+// All addresses derived through the context are encoded for that network.
+func NewMnemonicContextForNetwork(seed []byte, net Network) (*MnemonicContext, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{net})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -429,6 +420,7 @@ func NewMnemonicContext(seed []byte) (*MnemonicContext, error) {
 		masterKey:    masterKey,
 		coinTypeKeys: make(map[uint32]*hdkeychain.ExtendedKey),
 		accountKeys:  make(map[uint64]*hdkeychain.ExtendedKey),
+		net:          net,
 	}, nil
 }
 
@@ -468,7 +460,7 @@ func (mc *MnemonicContext) DeriveAddressWithCoinType(coinType, account, change, 
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
 	}
-	address, pubKeyHex, err := deriveBSVAddress(indexKey)
+	address, pubKeyHex, err := deriveBSVAddress(indexKey, mc.net.P2PKHVersion())
 	if err != nil {
 		return "", "", "", err
 	}
@@ -487,7 +479,7 @@ func (mc *MnemonicContext) DeriveLegacyAddress(index uint32) (string, string, st
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
 	}
-	address, pubKeyHex, err := deriveBSVAddress(indexKey)
+	address, pubKeyHex, err := deriveBSVAddress(indexKey, mc.net.P2PKHVersion())
 	if err != nil {
 		return "", "", "", err
 	}
@@ -628,10 +620,15 @@ func DerivePrivateKeyWithCoinType(seed []byte, coinType, account, change, index 
 	return privKey, nil
 }
 
-// DeriveLegacyAddress derives an address using the legacy HandCash 1.x path (m/0'/index).
+// DeriveLegacyAddress derives a mainnet address using the legacy HandCash 1.x path (m/0'/index).
 // This non-standard path was used by early versions of HandCash.
 func DeriveLegacyAddress(seed []byte, index uint32) (string, string, string, error) {
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	return DeriveLegacyAddressForNetwork(seed, index, Mainnet)
+}
+
+// DeriveLegacyAddressForNetwork is the network-aware form of DeriveLegacyAddress.
+func DeriveLegacyAddressForNetwork(seed []byte, index uint32, net Network) (string, string, string, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{net})
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -648,7 +645,7 @@ func DeriveLegacyAddress(seed []byte, index uint32) (string, string, string, err
 		return "", "", "", fmt.Errorf("failed to derive index key: %w", err)
 	}
 
-	address, pubKeyHex, err := deriveBSVAddress(indexKey)
+	address, pubKeyHex, err := deriveBSVAddress(indexKey, net.P2PKHVersion())
 	if err != nil {
 		return "", "", "", err
 	}
@@ -722,17 +719,22 @@ func deriveBIP44KeyWithCoinType(masterKey *hdkeychain.ExtendedKey, coinType, acc
 	return indexKey, nil
 }
 
-// AddressFromPrivKeyBytes derives a P2PKH address from raw private key bytes.
-// This is the hot path for batch WIF/hex key processing:
-// secp256k1 scalar multiplication → compressed pubkey → Hash160 → Base58Check.
+// AddressFromPrivKeyBytes derives a mainnet P2PKH address from raw private key bytes.
 func AddressFromPrivKeyBytes(privKey []byte) (string, error) {
+	return AddressFromPrivKeyBytesForNetwork(privKey, Mainnet)
+}
+
+// AddressFromPrivKeyBytesForNetwork derives a P2PKH address from raw private key bytes
+// for the given network. This is the hot path for batch WIF/hex key processing:
+// secp256k1 scalar multiplication → compressed pubkey → Hash160 → Base58Check.
+func AddressFromPrivKeyBytesForNetwork(privKey []byte, net Network) (string, error) {
 	if len(privKey) != 32 {
 		return "", fmt.Errorf("%w: expected 32 bytes, got %d", ErrInvalidPrivKeyLength, len(privKey))
 	}
 
 	sk := secp256k1.PrivKeyFromBytes(privKey)
 	pubKey := sk.PubKey().SerializeCompressed()
-	return bitcoin.Base58CheckEncode(0x00, bitcoin.Hash160(pubKey)), nil
+	return bitcoin.Base58CheckEncode(net.P2PKHVersion(), bitcoin.Hash160(pubKey)), nil
 }
 
 // ZeroBytes zeros out a byte slice.

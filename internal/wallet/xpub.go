@@ -3,6 +3,7 @@ package wallet
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/decred/dcrd/hdkeychain/v3"
 
@@ -17,7 +18,13 @@ var ErrXpubIsPrivate = errors.New("expected xpub but got xprv (private key)")
 // The xpub can be shared with agents for read-only address derivation
 // without exposing the seed or any private key material.
 func DeriveAccountXpub(seed []byte, chainID chain.ID, account uint32) (string, error) {
-	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
+	return DeriveAccountXpubForNetwork(seed, chainID, account, Mainnet)
+}
+
+// DeriveAccountXpubForNetwork derives the extended public key for a BIP44 account on the
+// given network. On testnet the returned string is a "tpub..." extended key.
+func DeriveAccountXpubForNetwork(seed []byte, chainID chain.ID, account uint32, net Network) (string, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{net})
 	if err != nil {
 		return "", fmt.Errorf("failed to create master key: %w", err)
 	}
@@ -52,8 +59,17 @@ func DeriveAccountXpub(seed []byte, chainID chain.ID, account uint32) (string, e
 // This allows address generation without access to the seed or any private keys.
 // change: 0 for external (receiving), 1 for internal (change).
 func DeriveAddressFromXpub(xpubStr string, chainID chain.ID, change, index uint32) (*Address, error) {
+	// Auto-detect the network from the extended-key prefix so that parsing and
+	// address encoding stay consistent. A "tpub"/"tprv" is testnet; anything else
+	// (xpub/xprv) is mainnet. NewKeyFromString validates the version bytes against
+	// the supplied params, so a mismatched prefix/params pair is rejected.
+	net := Mainnet
+	if strings.HasPrefix(xpubStr, "tpub") || strings.HasPrefix(xpubStr, "tprv") {
+		net = Testnet
+	}
+
 	// Parse the xpub string back into an extended key
-	xpub, err := hdkeychain.NewKeyFromString(xpubStr, hdNetParams{})
+	xpub, err := hdkeychain.NewKeyFromString(xpubStr, hdNetParams{net})
 	if err != nil {
 		return nil, fmt.Errorf("invalid xpub: %w", err)
 	}
@@ -81,7 +97,7 @@ func DeriveAddressFromXpub(xpubStr string, chainID chain.ID, change, index uint3
 	case ChainETH:
 		address, pubKeyHex, err = deriveETHAddress(indexKey)
 	case ChainBSV, ChainBTC, ChainBCH, ChainLTC:
-		address, pubKeyHex, err = deriveBSVAddress(indexKey)
+		address, pubKeyHex, err = deriveBSVAddress(indexKey, net.P2PKHVersion())
 	default:
 		return nil, ErrUnsupportedChain
 	}

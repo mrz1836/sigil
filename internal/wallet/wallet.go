@@ -42,6 +42,12 @@ type Wallet struct {
 	// CreatedAt is the wallet creation timestamp.
 	CreatedAt time.Time `json:"created_at"`
 
+	// Network is the BSV network this wallet operates on ("main" or "test").
+	// Empty means mainnet (backward compatible with pre-testnet wallet files).
+	// It governs how this wallet's Bitcoin-family addresses are encoded and which
+	// network its balances/transactions are queried and broadcast on.
+	Network string `json:"network,omitempty"`
+
 	// Addresses contains derived receiving addresses per chain (external chain).
 	Addresses map[ChainID][]Address `json:"addresses"`
 
@@ -133,6 +139,11 @@ func NewWallet(name string, enabledChains []ChainID) (*Wallet, error) {
 	}, nil
 }
 
+// Net returns the wallet's encoding network (Mainnet if unset).
+func (w *Wallet) Net() Network {
+	return NetworkFromString(w.Network)
+}
+
 // DeriveAddresses derives addresses for all enabled chains.
 func (w *Wallet) DeriveAddresses(seed []byte, count int) error {
 	// Validate bounds before conversion to uint32
@@ -151,8 +162,8 @@ func (w *Wallet) DeriveAddresses(seed []byte, count int) error {
 		for i := range count {
 			idx := uint32(i)
 
-			addr, err := DeriveAddress(seed, chain,
-				w.DerivationConfig.DefaultAccount, idx)
+			addr, err := DeriveAddressForNetwork(seed, chain,
+				w.DerivationConfig.DefaultAccount, idx, w.Net())
 			if err != nil {
 				return fmt.Errorf("deriving address %d for chain %s: %w",
 					idx, chain, err)
@@ -200,8 +211,8 @@ func (w *Wallet) DeriveNextReceiveAddress(seed []byte, chain ChainID) (*Address,
 	}
 
 	//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
-	addr, err := DeriveAddressWithChange(seed, chain,
-		w.DerivationConfig.DefaultAccount, ExternalChain, uint32(nextIndex))
+	addr, err := DeriveAddressWithChangeForNetwork(seed, chain,
+		w.DerivationConfig.DefaultAccount, ExternalChain, uint32(nextIndex), w.Net())
 	if err != nil {
 		return nil, fmt.Errorf("deriving receive address %d for chain %s: %w",
 			nextIndex, chain, err)
@@ -226,8 +237,8 @@ func (w *Wallet) DeriveNextChangeAddress(seed []byte, chain ChainID) (*Address, 
 	}
 
 	//nolint:gosec // G115: Safe - validated against MaxAddressDerivation
-	addr, err := DeriveAddressWithChange(seed, chain,
-		w.DerivationConfig.DefaultAccount, InternalChain, uint32(nextIndex))
+	addr, err := DeriveAddressWithChangeForNetwork(seed, chain,
+		w.DerivationConfig.DefaultAccount, InternalChain, uint32(nextIndex), w.Net())
 	if err != nil {
 		return nil, fmt.Errorf("deriving change address %d for chain %s: %w",
 			nextIndex, chain, err)

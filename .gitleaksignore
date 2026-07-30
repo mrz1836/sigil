@@ -16,7 +16,11 @@ internal/chain/eth/crypto/crypto_test.go:generic-api-key:263
 internal/chain/eth/crypto/crypto_test.go:generic-api-key:512
 
 # CLI tests
+# balance_test.go: public USDC ERC-20 contract address (0xA0b869...), not a secret.
+# Both lines pinned: :396 is the git-mode introduction line, :415 the current line
+# after edits above it (keeps dir-mode and git-mode scans clean).
 internal/cli/balance_test.go:generic-api-key:396
+internal/cli/balance_test.go:generic-api-key:415
 internal/cli/config_test.go:generic-api-key:548
 internal/cli/config_test.go:generic-api-key:615
 internal/cli/wallet_restore_test.go:generic-api-key:209
@@ -29,6 +33,10 @@ internal/config/env_test.go:generic-api-key:278
 # BSV tests
 internal/chain/bsv/tx_test_helpers_test.go:generic-api-key:161
 internal/chain/bsv/tx_test_helpers_test.go:generic-api-key:197
+
+# BTC tests (well-known public test vectors: deterministic fixed private keys)
+internal/chain/btc/tx_test_helpers_test.go:generic-api-key:18
+internal/chain/btc/tx_test_helpers_test.go:generic-api-key:19
 
 # Wallet derivation tests (well-known public test vectors)
 internal/wallet/derivation_test.go:generic-api-key:779

@@ -405,8 +405,6 @@ type UTXOSpentStatus struct {
 // Uses BulkSpentOutputs endpoint.
 
 // validateUTXOsBatch validates a single batch of UTXOs.
-//
-//nolint:gocognit // UTXO validation logic inherently complex
 func (b *BulkOperations) validateUTXOsBatch(ctx context.Context, utxos []UTXO) ([]UTXOSpentStatus, error) {
 	start := time.Now()
 
@@ -438,32 +436,27 @@ func (b *BulkOperations) validateUTXOsBatch(ctx context.Context, utxos []UTXO) (
 
 	b.recordRequest(start, false)
 
-	// Build results
-	results := make([]UTXOSpentStatus, len(utxos))
-	for i, u := range utxos {
-		status := UTXOSpentStatus{
-			TxID:  u.TxID,
-			Vout:  u.Vout,
-			Spent: false,
+	// Build a set of spent outpoints once so each UTXO is an O(1) lookup
+	// instead of an O(n*m) nested scan.
+	spentSet := make(map[string]struct{}, len(spentResults))
+	for _, spentResult := range spentResults {
+		if spentResult.Spent != nil {
+			spentSet[fmt.Sprintf("%s:%d", spentResult.TxID, spentResult.Vout)] = struct{}{}
 		}
-
-		// Check if this UTXO appears in spent results
-		key := fmt.Sprintf("%s:%d", u.TxID, u.Vout)
-		for _, spentResult := range spentResults {
-			spentKey := fmt.Sprintf("%s:%d", spentResult.TxID, spentResult.Vout)
-			if key == spentKey && spentResult.Spent != nil {
-				status.Spent = true
-				break
-			}
-		}
-
-		results[i] = status
 	}
 
+	// Build results
+	results := make([]UTXOSpentStatus, len(utxos))
 	spentCount := 0
-	for _, r := range results {
-		if r.Spent {
+	for i, u := range utxos {
+		_, spent := spentSet[fmt.Sprintf("%s:%d", u.TxID, u.Vout)]
+		if spent {
 			spentCount++
+		}
+		results[i] = UTXOSpentStatus{
+			TxID:  u.TxID,
+			Vout:  u.Vout,
+			Spent: spent,
 		}
 	}
 

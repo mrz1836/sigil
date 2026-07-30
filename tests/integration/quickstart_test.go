@@ -181,7 +181,7 @@ func TestQuickstartWorkflow(t *testing.T) {
 		}
 
 		// Try parsing combined output
-		var v map[string]interface{}
+		var v map[string]any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(combined)), &v); err != nil {
 			t.Errorf("version output is not valid JSON: %s (stdout: %s, stderr: %s)", combined, stdout, stderr)
 		} else if _, ok := v["version"]; !ok {
@@ -255,7 +255,7 @@ func TestJSONOutput(t *testing.T) {
 			t.Fatalf("wallet list json failed with exit code %d", exitCode)
 		}
 
-		var list []interface{}
+		var list []any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &list); err != nil {
 			t.Errorf("wallet list output is not valid JSON array: %s (error: %v)", stdout, err)
 		}

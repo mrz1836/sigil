@@ -1,11 +1,12 @@
 package btc
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math/big"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -264,11 +265,12 @@ func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []U
 		return nil, 0, ErrInsufficientFunds
 	}
 
-	// Sort UTXOs by amount (largest first) for simple selection.
-	sorted := make([]UTXO, len(utxos))
-	copy(sorted, utxos)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Amount > sorted[j].Amount
+	// Sort UTXOs by amount (largest first) for simple selection. A stable sort
+	// keeps equal-amount UTXOs in input order, giving deterministic, reproducible
+	// coin selection.
+	sorted := slices.Clone(utxos)
+	slices.SortStableFunc(sorted, func(a, b UTXO) int {
+		return cmp.Compare(b.Amount, a.Amount) // descending
 	})
 
 	dustLimit := chain.BTC.DustLimit()

@@ -1,12 +1,13 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -233,15 +234,7 @@ func runAddressesList(cmd *cobra.Command, _ []string) error {
 	allAddresses = address.FilterUsage(allAddresses, addressesUsed, addressesUnused)
 
 	// Sort by chain, type, index
-	sort.Slice(allAddresses, func(i, j int) bool {
-		if allAddresses[i].ChainID != allAddresses[j].ChainID {
-			return allAddresses[i].ChainID < allAddresses[j].ChainID
-		}
-		if allAddresses[i].Type != allAddresses[j].Type {
-			return allAddresses[i].Type < allAddresses[j].Type
-		}
-		return allAddresses[i].Index < allAddresses[j].Index
-	})
+	slices.SortFunc(allAddresses, compareAddressInfo)
 
 	// Save updated cache
 	if saveErr := cacheStorage.Save(balanceCache); saveErr != nil {
@@ -370,15 +363,7 @@ func runAddressesRefresh(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Sort by chain, type, index
-	sort.Slice(allAddresses, func(i, j int) bool {
-		if allAddresses[i].ChainID != allAddresses[j].ChainID {
-			return allAddresses[i].ChainID < allAddresses[j].ChainID
-		}
-		if allAddresses[i].Type != allAddresses[j].Type {
-			return allAddresses[i].Type < allAddresses[j].Type
-		}
-		return allAddresses[i].Index < allAddresses[j].Index
-	})
+	slices.SortFunc(allAddresses, compareAddressInfo)
 
 	// Display results
 	errorCount := len(refreshErrors)
@@ -452,12 +437,9 @@ func resolveSpecificTargets(wlt *wallet.Wallet, chains []chain.ID, specificAddrs
 
 // findInAddresses returns true if the address exists in the slice.
 func findInAddresses(addresses []wallet.Address, target string) bool {
-	for _, a := range addresses {
-		if a.Address == target {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(addresses, func(a wallet.Address) bool {
+		return a.Address == target
+	})
 }
 
 // refreshTargetAddresses performs the actual refresh for all targets.
@@ -658,22 +640,25 @@ func isNonZeroBalance(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, c := range s {
-		if c != '0' && c != '.' && c != '-' {
-			return true
-		}
-	}
-	return false
+	return strings.ContainsFunc(s, func(c rune) bool {
+		return c != '0' && c != '.' && c != '-'
+	})
+}
+
+// compareAddressInfo orders addresses by chain, then type, then derivation index.
+func compareAddressInfo(a, b address.AddressInfo) int {
+	return cmp.Or(
+		cmp.Compare(a.ChainID, b.ChainID),
+		cmp.Compare(a.Type, b.Type),
+		cmp.Compare(a.Index, b.Index),
+	)
 }
 
 // hasUnconfirmedAddressData returns true if any address has non-empty unconfirmed data.
 func hasUnconfirmedAddressData(addresses []address.AddressInfo) bool {
-	for _, addr := range addresses {
-		if addr.Unconfirmed != "" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(addresses, func(addr address.AddressInfo) bool {
+		return addr.Unconfirmed != ""
+	})
 }
 
 func displayAddressesText(cmd *cobra.Command, addresses []address.AddressInfo) {

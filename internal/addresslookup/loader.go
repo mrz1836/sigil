@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -143,12 +144,9 @@ func loadPairs(path string) ([]addrBal, error) {
 // isAddressFile returns true if the file extension suggests it contains address data.
 func isAddressFile(name string) bool {
 	lower := strings.ToLower(name)
-	for _, ext := range []string{".tsv", ".csv", ".txt", ".gz"} {
-		if strings.HasSuffix(lower, ext) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc([]string{".tsv", ".csv", ".txt", ".gz"}, func(ext string) bool {
+		return strings.HasSuffix(lower, ext)
+	})
 }
 
 // collectAddressFiles walks a directory recursively and returns paths of all address data files.

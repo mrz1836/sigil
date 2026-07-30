@@ -99,7 +99,7 @@ func TestWriteJSON_WriterError(t *testing.T) {
 func TestWriteJSON_Map(t *testing.T) {
 	t.Parallel()
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"string":  "value",
 		"number":  123,
 		"boolean": true,
@@ -112,7 +112,7 @@ func TestWriteJSON_Map(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify valid JSON
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 	assert.Equal(t, "value", result["string"])
 	assert.InDelta(t, float64(123), result["number"], 0.0) // JSON numbers are float64

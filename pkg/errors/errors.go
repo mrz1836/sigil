@@ -6,7 +6,8 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 )
 
 // Exit codes per FR-006.
@@ -34,12 +35,7 @@ func (e *SigilError) Error() string {
 
 	// Include details in error message (sorted for deterministic output)
 	if len(e.Details) > 0 {
-		keys := make([]string, 0, len(e.Details))
-		for k := range e.Details {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(e.Details)) {
 			msg = fmt.Sprintf("%s (%s: %s)", msg, k, e.Details[k])
 		}
 	}

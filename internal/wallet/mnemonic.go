@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/agnivade/levenshtein"
@@ -131,13 +132,7 @@ func GetWordList() []string {
 
 // IsValidWord checks if a word is in the BIP39 word list.
 func IsValidWord(word string) bool {
-	word = strings.ToLower(word)
-	for _, w := range bip39.WordList {
-		if w == word {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(bip39.WordList, strings.ToLower(word))
 }
 
 // MaxTypoDistance is the maximum Levenshtein distance to consider a suggestion.

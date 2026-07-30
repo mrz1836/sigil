@@ -3,6 +3,11 @@
 // by various BSV wallets (RelayX, MoneyButton, HandCash, etc.).
 package discovery
 
+import (
+	"cmp"
+	"slices"
+)
+
 // PathScheme defines a derivation path scheme used by specific wallets.
 // Different wallets use different BIP44 coin types and derivation structures.
 type PathScheme struct {
@@ -167,32 +172,22 @@ func SchemeByName(name string) *PathScheme {
 func SchemesForWallet(walletName string) []PathScheme {
 	var matches []PathScheme
 	for _, scheme := range DefaultSchemes() {
-		for _, w := range scheme.Wallets {
-			if w == walletName {
-				matches = append(matches, scheme)
-				break
-			}
+		if slices.Contains(scheme.Wallets, walletName) {
+			matches = append(matches, scheme)
 		}
 	}
 	return matches
 }
 
 // SortByPriority returns schemes sorted by priority (ascending).
+// A stable sort preserves the input order of schemes that share a priority.
 func SortByPriority(schemes []PathScheme) []PathScheme {
-	// Make a copy to avoid mutating the input
+	// Copy to avoid mutating the input. Use make (not slices.Clone) so a nil
+	// input yields a non-nil empty slice, matching the documented contract.
 	result := make([]PathScheme, len(schemes))
 	copy(result, schemes)
-
-	// Simple insertion sort (small slice, stable sort preferred)
-	for i := 1; i < len(result); i++ {
-		key := result[i]
-		j := i - 1
-		for j >= 0 && result[j].Priority > key.Priority {
-			result[j+1] = result[j]
-			j--
-		}
-		result[j+1] = key
-	}
-
+	slices.SortStableFunc(result, func(a, b PathScheme) int {
+		return cmp.Compare(a.Priority, b.Priority)
+	})
 	return result
 }

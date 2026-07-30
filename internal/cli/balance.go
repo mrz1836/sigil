@@ -1,12 +1,13 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -416,16 +417,12 @@ func convertToBalanceResponse(walletName string, batchResult *balance.FetchBatch
 
 // sortBalanceResults sorts balance results by chain, address, and token.
 func sortBalanceResults(balances []BalanceResult) {
-	sort.Slice(balances, func(i, j int) bool {
-		left := balances[i]
-		right := balances[j]
-		if left.Chain != right.Chain {
-			return left.Chain < right.Chain
-		}
-		if left.Address != right.Address {
-			return left.Address < right.Address
-		}
-		return left.Token < right.Token
+	slices.SortFunc(balances, func(a, b BalanceResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Chain, b.Chain),
+			cmp.Compare(a.Address, b.Address),
+			cmp.Compare(a.Token, b.Token),
+		)
 	})
 }
 
@@ -480,12 +477,9 @@ func outputBalanceJSON(w io.Writer, response BalanceShowResponse) error {
 
 // hasUnconfirmedData returns true if any balance entry has non-zero unconfirmed data.
 func hasUnconfirmedData(balances []BalanceResult) bool {
-	for _, bal := range balances {
-		if bal.Unconfirmed != "" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(balances, func(bal BalanceResult) bool {
+		return bal.Unconfirmed != ""
+	})
 }
 
 // outputBalanceText outputs balances in text table format.

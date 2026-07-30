@@ -759,15 +759,15 @@ type mockLogger struct {
 	debug  []string
 }
 
-func (m *mockLogger) Info(format string, v ...interface{}) {
+func (m *mockLogger) Info(format string, v ...any) {
 	m.info = append(m.info, fmt.Sprintf(format, v...))
 }
 
-func (m *mockLogger) Error(format string, v ...interface{}) {
+func (m *mockLogger) Error(format string, v ...any) {
 	m.errors = append(m.errors, fmt.Sprintf(format, v...))
 }
 
-func (m *mockLogger) Debug(format string, v ...interface{}) {
+func (m *mockLogger) Debug(format string, v ...any) {
 	m.debug = append(m.debug, fmt.Sprintf(format, v...))
 }
 

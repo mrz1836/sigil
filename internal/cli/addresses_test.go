@@ -386,7 +386,7 @@ func TestDisplayAddressesJSON(t *testing.T) {
 			tc.validate(t, output)
 
 			// Verify it's valid JSON
-			var result map[string]interface{}
+			var result map[string]any
 			err := json.Unmarshal([]byte(output), &result)
 			require.NoError(t, err, "output should be valid JSON: %s", output)
 		})
@@ -1126,7 +1126,7 @@ func TestDisplayAddressesRefreshJSON(t *testing.T) {
 			tc.validate(t, output)
 
 			// Verify it's valid JSON
-			var result map[string]interface{}
+			var result map[string]any
 			err := json.Unmarshal([]byte(output), &result)
 			require.NoError(t, err, "output should be valid JSON: %s", output)
 

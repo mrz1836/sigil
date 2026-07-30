@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/big"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -101,12 +102,7 @@ func (c *Credential) TTL() time.Duration {
 
 // HasChain returns true if the agent is authorized for the given chain.
 func (c *Credential) HasChain(id chain.ID) bool {
-	for _, ch := range c.Chains {
-		if ch == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Chains, id)
 }
 
 // Policy defines spending limits and restrictions for an agent.

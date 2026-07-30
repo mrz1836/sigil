@@ -43,7 +43,7 @@ func NewFileStore(basePath string) *FileStore {
 func (s *FileStore) Create(_ string, _ []byte, _ string, _ Policy,
 	_ string, _ interface{ UnixNano() int64 }, _ []interface{ String() string },
 ) (*Credential, error) {
-	// This method signature uses interface{} to avoid import cycles.
+	// This method signature uses anonymous interface types to avoid import cycles.
 	// Use CreateCredential instead for typed access.
 	return nil, ErrUseCreateCredential
 }

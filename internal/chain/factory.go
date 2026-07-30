@@ -3,6 +3,8 @@ package chain
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -69,11 +71,7 @@ func (f *ConfigurableFactory) IsSupported(id ID) bool {
 
 // SupportedChains returns all registered chain IDs.
 func (f *ConfigurableFactory) SupportedChains() []ID {
-	chains := make([]ID, 0, len(f.creators))
-	for id := range f.creators {
-		chains = append(chains, id)
-	}
-	return chains
+	return slices.Collect(maps.Keys(f.creators))
 }
 
 // Compile-time interface check

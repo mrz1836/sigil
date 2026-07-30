@@ -1,8 +1,10 @@
 package discovery
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
@@ -186,16 +188,9 @@ func (p *ParallelScanner) worker(
 
 // sortResultsByIndex sorts results by their original index.
 func sortResultsByIndex(results []scanResult) {
-	// Simple insertion sort since the list is small
-	for i := 1; i < len(results); i++ {
-		key := results[i]
-		j := i - 1
-		for j >= 0 && results[j].index > key.index {
-			results[j+1] = results[j]
-			j--
-		}
-		results[j+1] = key
-	}
+	slices.SortFunc(results, func(a, b scanResult) int {
+		return cmp.Compare(a.index, b.index)
+	})
 }
 
 // ScanSchemesParallel scans specific schemes in parallel.

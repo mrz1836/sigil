@@ -501,7 +501,7 @@ func TestAgentCreate_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse JSON output
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(buf.Bytes(), &result)
 	require.NoError(t, err)
 
@@ -795,12 +795,12 @@ func TestAgentList_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse JSON
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(buf.Bytes(), &result)
 	require.NoError(t, err)
 
 	assert.Contains(t, result, "agents")
-	agents := result["agents"].([]interface{})
+	agents := result["agents"].([]any)
 	assert.Len(t, agents, 1)
 }
 
@@ -920,7 +920,7 @@ func TestAgentInfo_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse JSON
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(buf.Bytes(), &result)
 	require.NoError(t, err)
 

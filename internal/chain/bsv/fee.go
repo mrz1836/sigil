@@ -1,9 +1,10 @@
 package bsv
 
 import (
+	"cmp"
 	"context"
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	whatsonchain "github.com/mrz1836/go-whatsonchain"
@@ -132,8 +133,8 @@ func maxFeeRateFrom(entries []*whatsonchain.MinerFeeStats) float64 {
 // nthFeeRate sorts entries descending and returns the rate at index (minMiners-1),
 // clamped to [0, len-1]. This guarantees at least minMiners miners accept the rate.
 func nthFeeRate(entries []*whatsonchain.MinerFeeStats, minMiners int) float64 {
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].MinFeeRate > entries[j].MinFeeRate
+	slices.SortFunc(entries, func(a, b *whatsonchain.MinerFeeStats) int {
+		return cmp.Compare(b.MinFeeRate, a.MinFeeRate) // descending
 	})
 	idx := minMiners - 1
 	if idx < 0 {

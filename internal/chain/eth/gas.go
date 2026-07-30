@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/mrz1836/sigil/internal/chain/eth/rpc"
@@ -178,10 +178,9 @@ func medianBigInt(values []*big.Int) *big.Int {
 	}
 
 	// Sort a copy to avoid mutating the input
-	sorted := make([]*big.Int, len(values))
-	copy(sorted, values)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Cmp(sorted[j]) < 0
+	sorted := slices.Clone(values)
+	slices.SortFunc(sorted, func(a, b *big.Int) int {
+		return a.Cmp(b)
 	})
 
 	mid := len(sorted) / 2

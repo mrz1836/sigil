@@ -14,7 +14,7 @@ func TestGetLimiter_DoubleCheckLock(t *testing.T) {
 
 		var wg sync.WaitGroup
 		const goroutines = 100
-		limiters := make(chan interface{}, goroutines)
+		limiters := make(chan any, goroutines)
 
 		// Launch many goroutines simultaneously
 		for range goroutines {
@@ -30,7 +30,7 @@ func TestGetLimiter_DoubleCheckLock(t *testing.T) {
 		close(limiters)
 
 		// All should receive the same limiter instance
-		var first interface{}
+		var first any
 		count := 0
 		for limiter := range limiters {
 			if first == nil {

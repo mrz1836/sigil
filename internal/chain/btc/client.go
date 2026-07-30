@@ -1,12 +1,9 @@
 package btc
 
 import (
-	"cmp"
 	"context"
-	"fmt"
 	"math/big"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -44,10 +41,8 @@ var (
 type UTXO = chain.UTXO
 
 // Logger is the interface for client logging (debug + always-captured error).
-type Logger interface {
-	Debug(format string, args ...any)
-	Error(format string, args ...any)
-}
+// It is an alias for the shared chain.Logger.
+type Logger = chain.Logger
 
 // ClientOptions contains optional configuration for the BTC client.
 type ClientOptions struct {
@@ -257,52 +252,11 @@ func (c *Client) doListUTXOs(ctx context.Context, address string) ([]UTXO, error
 
 // SelectUTXOs chooses UTXOs (largest-first) to fund a transaction. The fee is
 // sat/vByte × estimated vsize; since only legacy P2PKH inputs are spent, vsize
-// equals the serialized size. Change below the 546-satoshi dust limit is dropped.
-//
-//nolint:gocognit // Overflow checks add necessary complexity for fund safety
+// equals the serialized size. Change below the dust limit is dropped. Selection
+// is delegated to the shared chain.SelectBitcoinUTXOs, injecting BTC's fee
+// function, dust limit, and insufficient-funds sentinel.
 func (c *Client) SelectUTXOs(utxos []UTXO, amount, feeRate uint64) (selected []UTXO, change uint64, err error) {
-	if len(utxos) == 0 {
-		return nil, 0, ErrInsufficientFunds
-	}
-
-	// Sort UTXOs by amount (largest first) for simple selection. A stable sort
-	// keeps equal-amount UTXOs in input order, giving deterministic, reproducible
-	// coin selection.
-	sorted := slices.Clone(utxos)
-	slices.SortStableFunc(sorted, func(a, b UTXO) int {
-		return cmp.Compare(b.Amount, a.Amount) // descending
-	})
-
-	dustLimit := chain.BTC.DustLimit()
-
-	var total uint64
-	var estimatedFee uint64
-	for _, utxo := range sorted {
-		selected = append(selected, utxo)
-
-		sum, addErr := checkedAdd(total, utxo.Amount)
-		if addErr != nil {
-			return nil, 0, fmt.Errorf("UTXO sum: %w", addErr)
-		}
-		total = sum
-
-		// Assume 2 outputs (recipient + change) while selecting.
-		estimatedFee = EstimateFeeForTx(len(selected), 2, feeRate)
-		target, targetErr := checkedAdd(amount, estimatedFee)
-		if targetErr != nil {
-			return nil, 0, fmt.Errorf("target amount: %w", targetErr)
-		}
-		if total >= target {
-			change = total - target
-			if change < dustLimit {
-				change = 0
-			}
-			return selected, change, nil
-		}
-	}
-
-	target, _ := checkedAdd(amount, estimatedFee)
-	return nil, 0, fmt.Errorf("%w: need %d satoshis, have %d", ErrInsufficientFunds, target, total)
+	return chain.SelectBitcoinUTXOs(utxos, amount, feeRate, chain.BTC.DustLimit(), EstimateFeeForTx, ErrInsufficientFunds)
 }
 
 // EstimateFee estimates the fee for a typical 1-input, 2-output transaction using

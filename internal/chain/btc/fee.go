@@ -3,6 +3,8 @@ package btc
 import (
 	"context"
 	"math"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 const (
@@ -17,49 +19,36 @@ const (
 	// absurd API values.
 	MaxFeeRate = 5000
 
-	// P2PKHInputSize is the size of a legacy P2PKH input in bytes
-	// (outpoint 36 + scriptSig ~107 + sequence 4 + script-len byte).
-	P2PKHInputSize = 148
-
-	// P2PKHOutputSize is the serialized size of a P2PKH output in bytes
-	// (value 8 + varint 1 + script 25). Change outputs are always P2PKH.
-	P2PKHOutputSize = 34
-
-	// TxOverhead is the fixed transaction overhead in bytes
-	// (version 4 + locktime 4 + input-count 1 + output-count 1).
-	TxOverhead = 10
+	// P2PKH sizing constants are shared across the Bitcoin-family chains.
+	P2PKHInputSize  = chain.P2PKHInputSize
+	P2PKHOutputSize = chain.P2PKHOutputSize
+	TxOverhead      = chain.TxOverhead
 )
 
-// FeeStrategy selects which mempool.space fee tier to use.
-type FeeStrategy string
+// FeeStrategy selects which mempool.space fee tier to use. It is an alias for the
+// shared chain.FeeStrategy so cli/config values map directly.
+type FeeStrategy = chain.FeeStrategy
 
 // Fee strategy constants map to mempool.space recommended-fee tiers.
 const (
 	// FeeStrategyEconomy targets the economyFee tier (cheapest, slowest).
-	FeeStrategyEconomy FeeStrategy = "economy"
+	FeeStrategyEconomy = chain.FeeStrategyEconomy
 	// FeeStrategyNormal targets the halfHourFee tier (balanced default).
-	FeeStrategyNormal FeeStrategy = "normal"
+	FeeStrategyNormal = chain.FeeStrategyNormal
 	// FeeStrategyPriority targets the fastestFee tier (next-block).
-	FeeStrategyPriority FeeStrategy = "priority"
+	FeeStrategyPriority = chain.FeeStrategyPriority
 )
 
 // ValidateFeeRate clamps a fee rate (satoshis per vByte) to sane bounds.
 func ValidateFeeRate(rate uint64) uint64 {
-	if rate < MinFeeRate {
-		return MinFeeRate
-	}
-	if rate > MaxFeeRate {
-		return MaxFeeRate
-	}
-	return rate
+	return chain.ClampFeeRate(rate, MinFeeRate, MaxFeeRate)
 }
 
 // EstimateTxSize estimates the transaction vsize in bytes assuming legacy P2PKH
 // inputs and P2PKH outputs. Since Sigil only spends legacy P2PKH inputs, vsize
 // equals the serialized size (there is no witness discount to apply).
 func EstimateTxSize(numInputs, numOutputs int) uint64 {
-	//nolint:gosec // Safe: input/output counts are always small and non-negative
-	return uint64(TxOverhead + (numInputs * P2PKHInputSize) + (numOutputs * P2PKHOutputSize))
+	return chain.EstimateP2PKHTxSize(numInputs, numOutputs)
 }
 
 // EstimateFeeForTx estimates the fee for a P2PKH transaction with the given

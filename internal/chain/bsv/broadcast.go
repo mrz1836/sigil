@@ -7,27 +7,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
-// txIDRegex matches a valid 64-character hex transaction ID.
-var txIDRegex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
-
-// txIDExtractRegex finds a 64-character hex string in text.
-var txIDExtractRegex = regexp.MustCompile(`[0-9a-fA-F]{64}`)
-
 // isValidTxID checks if a string is a valid 64-character hex transaction ID.
 func isValidTxID(s string) bool {
-	return txIDRegex.MatchString(s)
+	return chain.IsValidTxID(s)
 }
 
 // extractTxID attempts to extract a valid txid from a string (e.g., an error message).
 func extractTxID(s string) string {
-	match := txIDExtractRegex.FindString(s)
-	return match
+	return chain.ExtractTxID(s)
 }
 
 const (

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -25,20 +25,14 @@ const (
 // treats this as success and returns the locally-computed txid.
 var errAlreadyKnown = errors.New("transaction already known to network")
 
-// txIDRegex matches a valid 64-character hex transaction ID.
-var txIDRegex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
-
-// txIDExtractRegex finds a 64-character hex string within arbitrary text.
-var txIDExtractRegex = regexp.MustCompile(`[0-9a-fA-F]{64}`)
-
 // isValidTxID reports whether s is a 64-character hex transaction ID.
 func isValidTxID(s string) bool {
-	return txIDRegex.MatchString(s)
+	return chain.IsValidTxID(s)
 }
 
 // extractTxID returns the first 64-hex substring of s, or "" if none.
 func extractTxID(s string) string {
-	return txIDExtractRegex.FindString(s)
+	return chain.ExtractTxID(s)
 }
 
 // isAlreadyBroadcasted reports whether an error/response body indicates the

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	whatsonchain "github.com/mrz1836/go-whatsonchain"
+
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 const (
@@ -24,26 +26,23 @@ const (
 	// feeWindowSeconds is the lookback window for miner fee stats (24 hours).
 	feeWindowSeconds = 86400
 
-	// P2PKHInputSize is the size of a P2PKH input in bytes.
-	P2PKHInputSize = 148
-
-	// P2PKHOutputSize is the size of a P2PKH output in bytes.
-	P2PKHOutputSize = 34
-
-	// TxOverhead is the fixed overhead for a transaction in bytes.
-	TxOverhead = 10
+	// P2PKH sizing constants are shared across the Bitcoin-family chains.
+	P2PKHInputSize  = chain.P2PKHInputSize
+	P2PKHOutputSize = chain.P2PKHOutputSize
+	TxOverhead      = chain.TxOverhead
 )
 
-// FeeStrategy defines the fee selection strategy for BSV transactions.
-type FeeStrategy string
+// FeeStrategy defines the fee selection strategy for BSV transactions. It is an
+// alias for the shared chain.FeeStrategy so cli/config values map directly.
+type FeeStrategy = chain.FeeStrategy
 
 const (
 	// FeeStrategyEconomy selects the lowest MinFeeRate from any miner.
-	FeeStrategyEconomy FeeStrategy = "economy"
+	FeeStrategyEconomy = chain.FeeStrategyEconomy
 	// FeeStrategyNormal selects the Nth-lowest rate (sorted descending) to ensure at least N miners accept.
-	FeeStrategyNormal FeeStrategy = "normal"
+	FeeStrategyNormal = chain.FeeStrategyNormal
 	// FeeStrategyPriority selects the highest MinFeeRate across all miners.
-	FeeStrategyPriority FeeStrategy = "priority"
+	FeeStrategyPriority = chain.FeeStrategyPriority
 )
 
 // FeeQuote represents a fee quote from a miner.
@@ -146,14 +145,10 @@ func nthFeeRate(entries []*whatsonchain.MinerFeeStats, minMiners int) float64 {
 	return entries[idx].MinFeeRate
 }
 
-// EstimateTxSize estimates the transaction size in bytes.
+// EstimateTxSize estimates the transaction size in bytes for legacy P2PKH inputs
+// and outputs, delegating to the shared chain helper.
 func EstimateTxSize(numInputs, numOutputs int) uint64 {
-	// P2PKH transaction size estimate:
-	// - Fixed overhead: 10 bytes (version: 4, locktime: 4, vin count: 1, vout count: 1)
-	// - Per input: ~148 bytes (outpoint: 36, scriptSig: 107, sequence: 4)
-	// - Per output: ~34 bytes (value: 8, scriptPubKey: 25)
-	//nolint:gosec // Safe: transaction sizes are always positive and within bounds
-	return uint64(TxOverhead + (numInputs * P2PKHInputSize) + (numOutputs * P2PKHOutputSize))
+	return chain.EstimateP2PKHTxSize(numInputs, numOutputs)
 }
 
 // EstimateFeeForTx estimates the fee for a transaction with given inputs/outputs.
@@ -188,11 +183,5 @@ func defaultFeeQuote() *FeeQuote {
 
 // ValidateFeeRate ensures a fee rate is within acceptable bounds.
 func ValidateFeeRate(rate uint64) uint64 {
-	if rate < MinFeeRate {
-		return MinFeeRate
-	}
-	if rate > MaxFeeRate {
-		return MaxFeeRate
-	}
-	return rate
+	return chain.ClampFeeRate(rate, MinFeeRate, MaxFeeRate)
 }

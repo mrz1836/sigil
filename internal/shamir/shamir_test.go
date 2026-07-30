@@ -322,6 +322,6 @@ func TestCombineMixedLengths(t *testing.T) {
 	if err == nil {
 		t.Error("Combine should fail when shares have different lengths")
 	} else if !errors.Is(err, ErrLengthMismatch) {
-		t.Logf("Got error: %v, want %v", err, ErrLengthMismatch)
+		t.Fatalf("Expected ErrLengthMismatch, got %v", err)
 	}
 }

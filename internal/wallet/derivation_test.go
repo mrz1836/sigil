@@ -15,6 +15,7 @@ import (
 var derivationTestMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
 func getTestSeed(t *testing.T) []byte {
+	t.Helper()
 	seed, err := MnemonicToSeed(derivationTestMnemonic, "")
 	require.NoError(t, err)
 	return seed

@@ -39,7 +39,10 @@ internal/chain/btc/tx_test_helpers_test.go:generic-api-key:18
 internal/chain/btc/tx_test_helpers_test.go:generic-api-key:19
 
 # Wallet derivation tests (well-known public test vectors)
+# :779 is the git-mode introduction line; :780 is the current line after a
+# t.Helper() addition above it shifted the constant down by one.
 internal/wallet/derivation_test.go:generic-api-key:779
+internal/wallet/derivation_test.go:generic-api-key:780
 
 # Wallet format tests (well-known public test vectors)
 internal/wallet/formats_test.go:generic-api-key:12

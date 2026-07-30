@@ -159,14 +159,130 @@ func TestApplyEnvironment(t *testing.T) {
 	assert.Equal(t, "debug", cfg.Logging.Level)
 }
 
-func TestApplyEnvironment_NoColor(t *testing.T) {
-	// Can't use t.Parallel() with t.Setenv()
-	cfg := config.Defaults()
+// TestApplyEnvironmentScalars consolidates the single-purpose ApplyEnvironment
+// cases (one or two env vars mapping to one field, with optional pre-setup) into
+// a table. Cases with their own value tables stay as dedicated tests.
+// Cannot use t.Parallel() with t.Setenv().
+func TestApplyEnvironmentScalars(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(*config.Config)
+		env    map[string]string
+		assert func(*testing.T, *config.Config)
+	}{
+		{
+			name:   "NO_COLOR forces color never",
+			env:    map[string]string{"NO_COLOR": "1"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "never", c.Output.Color) },
+		},
+		{
+			name:   "session TTL override",
+			env:    map[string]string{"SIGIL_SESSION_TTL": "30"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, 30, c.Security.SessionTTLMinutes) },
+		},
+		{
+			name: "ETH RPC URL trimmed of spaces",
+			env:  map[string]string{"SIGIL_ETH_RPC": "  https://mainnet.infura.io/v3/KEY  "},
+			assert: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "https://mainnet.infura.io/v3/KEY", c.Networks.ETH.RPC)
+			},
+		},
+		{
+			name: "ETH RPC URL trimmed of tabs",
+			env:  map[string]string{"SIGIL_ETH_RPC": "\thttps://mainnet.infura.io/v3/KEY\t"},
+			assert: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "https://mainnet.infura.io/v3/KEY", c.Networks.ETH.RPC)
+			},
+		},
+		{
+			name: "ETH RPC URL trimmed of newlines",
+			env:  map[string]string{"SIGIL_ETH_RPC": "https://mainnet.infura.io/v3/KEY\n"},
+			assert: func(t *testing.T, c *config.Config) {
+				assert.Equal(t, "https://mainnet.infura.io/v3/KEY", c.Networks.ETH.RPC)
+			},
+		},
+		{
+			name:   "WOC API key fallback",
+			env:    map[string]string{"WHATS_ON_CHAIN_API_KEY": "woc-env-key"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "woc-env-key", c.Networks.BSV.APIKey) },
+		},
+		{
+			name:   "WOC API key fallback trimmed",
+			env:    map[string]string{"WHATS_ON_CHAIN_API_KEY": "  woc-env-key  "},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "woc-env-key", c.Networks.BSV.APIKey) },
+		},
+		{
+			name:   "SIGIL BSV API key takes precedence over WOC",
+			env:    map[string]string{"SIGIL_BSV_API_KEY": "sigil-key", "WHATS_ON_CHAIN_API_KEY": "woc-key"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "sigil-key", c.Networks.BSV.APIKey) },
+		},
+		{
+			name:   "WOC fallback not used when config already has key",
+			setup:  func(c *config.Config) { c.Networks.BSV.APIKey = "config-file-key" },
+			env:    map[string]string{"WHATS_ON_CHAIN_API_KEY": "woc-key"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "config-file-key", c.Networks.BSV.APIKey) },
+		},
+		{
+			name:   "Etherscan API key",
+			env:    map[string]string{"ETHERSCAN_API_KEY": "env-key"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "env-key", c.Networks.ETH.EtherscanAPIKey) },
+		},
+		{
+			name:   "Etherscan API key trimmed",
+			env:    map[string]string{"ETHERSCAN_API_KEY": "  env-key  "},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "env-key", c.Networks.ETH.EtherscanAPIKey) },
+		},
+		{
+			name:   "ETH provider rpc",
+			env:    map[string]string{"SIGIL_ETH_PROVIDER": "rpc"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "rpc", c.Networks.ETH.Provider) },
+		},
+		{
+			name:   "ETH provider etherscan overrides rpc",
+			setup:  func(c *config.Config) { c.Networks.ETH.Provider = "rpc" },
+			env:    map[string]string{"SIGIL_ETH_PROVIDER": "etherscan"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "etherscan", c.Networks.ETH.Provider) },
+		},
+		{
+			name:   "ETH provider case-insensitive",
+			env:    map[string]string{"SIGIL_ETH_PROVIDER": "RPC"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "rpc", c.Networks.ETH.Provider) },
+		},
+		{
+			name:   "ETH provider invalid keeps default",
+			env:    map[string]string{"SIGIL_ETH_PROVIDER": "invalid"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "etherscan", c.Networks.ETH.Provider) },
+		},
+		{
+			name:   "BSV fee strategy case-insensitive",
+			env:    map[string]string{"SIGIL_BSV_FEE_STRATEGY": "NORMAL"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "normal", c.Fees.BSVFeeStrategy) },
+		},
+		{
+			name:   "BSV fee strategy invalid keeps default",
+			env:    map[string]string{"SIGIL_BSV_FEE_STRATEGY": "invalid"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, "normal", c.Fees.BSVFeeStrategy) },
+		},
+		{
+			name:   "BSV min miners override",
+			env:    map[string]string{"SIGIL_BSV_MIN_MINERS": "5"},
+			assert: func(t *testing.T, c *config.Config) { assert.Equal(t, 5, c.Fees.BSVMinMiners) },
+		},
+	}
 
-	t.Setenv("NO_COLOR", "1")
-	config.ApplyEnvironment(cfg)
-
-	assert.Equal(t, "never", cfg.Output.Color)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Defaults()
+			if tt.setup != nil {
+				tt.setup(cfg)
+			}
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			config.ApplyEnvironment(cfg)
+			tt.assert(t, cfg)
+		})
+	}
 }
 
 func TestApplyEnvironment_VerboseValues(t *testing.T) {
@@ -206,15 +322,6 @@ func TestDefaultHome(t *testing.T) {
 	t.Parallel()
 	home := config.DefaultHome()
 	assert.Contains(t, home, ".sigil")
-}
-
-func TestApplyEnvironment_SessionTTL(t *testing.T) {
-	cfg := config.Defaults()
-
-	t.Setenv("SIGIL_SESSION_TTL", "30")
-	config.ApplyEnvironment(cfg)
-
-	assert.Equal(t, 30, cfg.Security.SessionTTLMinutes)
 }
 
 func TestApplyEnvironment_SessionTTL_InvalidValues(t *testing.T) {
@@ -345,40 +452,6 @@ func TestSanitizeURL(t *testing.T) {
 	}
 }
 
-// TestApplyEnvironment_URLSanitization tests that URLs are sanitized when applied.
-func TestApplyEnvironment_URLSanitization(t *testing.T) {
-	cfg := config.Defaults()
-
-	// Set URL with extra whitespace
-	t.Setenv("SIGIL_ETH_RPC", "  https://mainnet.infura.io/v3/KEY  ")
-	config.ApplyEnvironment(cfg)
-
-	// Verify whitespace was trimmed
-	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
-}
-
-// TestApplyEnvironment_URLSanitization_WithTabs tests tab handling in URLs.
-func TestApplyEnvironment_URLSanitization_WithTabs(t *testing.T) {
-	cfg := config.Defaults()
-
-	// Set URL with tabs (common copy-paste error)
-	t.Setenv("SIGIL_ETH_RPC", "\thttps://mainnet.infura.io/v3/KEY\t")
-	config.ApplyEnvironment(cfg)
-
-	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
-}
-
-// TestApplyEnvironment_URLSanitization_WithNewlines tests newline handling in URLs.
-func TestApplyEnvironment_URLSanitization_WithNewlines(t *testing.T) {
-	cfg := config.Defaults()
-
-	// Set URL with newlines (common in multi-line pastes)
-	t.Setenv("SIGIL_ETH_RPC", "https://mainnet.infura.io/v3/KEY\n")
-	config.ApplyEnvironment(cfg)
-
-	assert.Equal(t, "https://mainnet.infura.io/v3/KEY", cfg.Networks.ETH.RPC)
-}
-
 func TestConfig_GetHome(t *testing.T) {
 	t.Parallel()
 	cfg := config.Defaults()
@@ -488,82 +561,6 @@ func TestConfig_GetETHEtherscanAPIKey(t *testing.T) {
 	assert.Equal(t, "my-key", cfg.GetETHEtherscanAPIKey())
 }
 
-func TestApplyEnvironment_WOCAPIKeyFallback(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-env-key")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "woc-env-key", cfg.Networks.BSV.APIKey)
-}
-
-func TestApplyEnvironment_WOCAPIKeyFallback_Trimmed(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("WHATS_ON_CHAIN_API_KEY", "  woc-env-key  ")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "woc-env-key", cfg.Networks.BSV.APIKey)
-}
-
-func TestApplyEnvironment_SigilBSVAPIKeyTakesPrecedence(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_BSV_API_KEY", "sigil-key")
-	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-key")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "sigil-key", cfg.Networks.BSV.APIKey)
-}
-
-func TestApplyEnvironment_WOCAPIKeyNotUsedWhenSigilKeySet(t *testing.T) {
-	cfg := config.Defaults()
-	cfg.Networks.BSV.APIKey = "config-file-key"
-	t.Setenv("WHATS_ON_CHAIN_API_KEY", "woc-key")
-	config.ApplyEnvironment(cfg)
-	// Config file key should remain since SIGIL_BSV_API_KEY is not set
-	// but the config already has a key, so WOC fallback should not override it
-	assert.Equal(t, "config-file-key", cfg.Networks.BSV.APIKey)
-}
-
-func TestApplyEnvironment_EtherscanAPIKey(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("ETHERSCAN_API_KEY", "env-key")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "env-key", cfg.Networks.ETH.EtherscanAPIKey)
-}
-
-func TestApplyEnvironment_EtherscanAPIKey_Trimmed(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("ETHERSCAN_API_KEY", "  env-key  ")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "env-key", cfg.Networks.ETH.EtherscanAPIKey)
-}
-
-func TestApplyEnvironment_ETHProvider(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_ETH_PROVIDER", "rpc")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "rpc", cfg.Networks.ETH.Provider)
-}
-
-func TestApplyEnvironment_ETHProvider_Etherscan(t *testing.T) {
-	cfg := config.Defaults()
-	cfg.Networks.ETH.Provider = "rpc" // Override to rpc first
-	t.Setenv("SIGIL_ETH_PROVIDER", "etherscan")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
-}
-
-func TestApplyEnvironment_ETHProvider_CaseInsensitive(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_ETH_PROVIDER", "RPC")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "rpc", cfg.Networks.ETH.Provider)
-}
-
-func TestApplyEnvironment_ETHProvider_Invalid(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_ETH_PROVIDER", "invalid")
-	config.ApplyEnvironment(cfg)
-	// Should not change from default since "invalid" is not "rpc" or "etherscan"
-	assert.Equal(t, "etherscan", cfg.Networks.ETH.Provider)
-}
-
 func TestDefaults_BSVFeeStrategy(t *testing.T) {
 	t.Parallel()
 	cfg := config.Defaults()
@@ -613,28 +610,6 @@ func TestApplyEnvironment_BSVFeeStrategy(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.Fees.BSVFeeStrategy)
 		})
 	}
-}
-
-func TestApplyEnvironment_BSVFeeStrategy_CaseInsensitive(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_BSV_FEE_STRATEGY", "NORMAL")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
-}
-
-func TestApplyEnvironment_BSVFeeStrategy_Invalid(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_BSV_FEE_STRATEGY", "invalid")
-	config.ApplyEnvironment(cfg)
-	// Should not change from default since "invalid" is not a valid strategy
-	assert.Equal(t, "normal", cfg.Fees.BSVFeeStrategy)
-}
-
-func TestApplyEnvironment_BSVMinMiners(t *testing.T) {
-	cfg := config.Defaults()
-	t.Setenv("SIGIL_BSV_MIN_MINERS", "5")
-	config.ApplyEnvironment(cfg)
-	assert.Equal(t, 5, cfg.Fees.BSVMinMiners)
 }
 
 func TestApplyEnvironment_BSVMinMiners_InvalidValues(t *testing.T) {

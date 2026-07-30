@@ -14,8 +14,10 @@ var errAddressNotInWallet = errors.New("address not found in wallet")
 
 // deriveKeysForUTXOs derives private keys for each unique address that appears in the UTXO set.
 // Returns a map of address → private key. The caller must zero all keys after use.
+// The chainID selects the BIP44 coin type, so BSV (236) and BTC (0) derive
+// distinct keys for the same seed/index.
 // Migrated from cli/tx.go lines 1046-1070
-func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
+func deriveKeysForUTXOs(chainID chain.ID, utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
 	// Build address → index lookup
 	addrIndex := make(map[string]uint32, len(addresses))
 	for _, addr := range addresses {
@@ -28,7 +30,7 @@ func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []b
 	// Derive private key for each unique address
 	keys := make(map[string][]byte, len(needed))
 	for addr := range needed {
-		key, err := deriveKeyForAddress(addr, addrIndex, seed)
+		key, err := deriveKeyForAddress(chainID, addr, addrIndex, seed)
 		if err != nil {
 			zeroKeyMap(keys)
 			return nil, err
@@ -40,18 +42,19 @@ func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []b
 }
 
 // DeriveKeysForUTXOs is the exported version for external use.
-func DeriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
-	return deriveKeysForUTXOs(utxos, addresses, seed)
+func DeriveKeysForUTXOs(chainID chain.ID, utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
+	return deriveKeysForUTXOs(chainID, utxos, addresses, seed)
 }
 
 // deriveKeyForAddress derives a private key for a single address using the index lookup.
+// The chainID selects the BIP44 coin type for derivation.
 // Migrated from cli/tx.go lines 1072-1083
-func deriveKeyForAddress(addr string, addrIndex map[string]uint32, seed []byte) ([]byte, error) {
+func deriveKeyForAddress(chainID chain.ID, addr string, addrIndex map[string]uint32, seed []byte) ([]byte, error) {
 	index, ok := addrIndex[addr]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errAddressNotInWallet, addr)
 	}
-	privKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, index)
+	privKey, err := wallet.DerivePrivateKeyForChain(seed, chainID, index)
 	if err != nil {
 		return nil, fmt.Errorf("deriving key for address %s (index %d): %w", addr, index, err)
 	}

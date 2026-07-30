@@ -203,7 +203,7 @@ func (s *SweepService) Sweep(ctx context.Context, opts *SweepOptions) (*SweepRes
 	}
 
 	// Derive private keys for all addresses
-	privateKeys, err := deriveKeysForUTXOs(allUTXOs, opts.Addresses, opts.Seed)
+	privateKeys, err := deriveKeysForUTXOs(chain.BSV, allUTXOs, opts.Addresses, opts.Seed)
 	if err != nil {
 		return nil, fmt.Errorf("deriving private keys: %w", err)
 	}

@@ -25,7 +25,7 @@ func TestDeriveKeysForUTXOs_SingleAddress(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.NoError(t, err)
 	require.NotNil(t, keys)
 	assert.Len(t, keys, 1, "should derive exactly one key for one unique address")
@@ -61,7 +61,7 @@ func TestDeriveKeysForUTXOs_MultipleAddresses(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.NoError(t, err)
 	require.NotNil(t, keys)
 	assert.Len(t, keys, 3, "should derive three keys for three unique addresses")
@@ -99,7 +99,7 @@ func TestDeriveKeysForUTXOs_DuplicateAddresses(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.NoError(t, err)
 	require.NotNil(t, keys)
 	assert.Len(t, keys, 2, "should derive only 2 keys despite 5 UTXOs")
@@ -126,7 +126,7 @@ func TestDeriveKeysForUTXOs_AddressNotInWallet(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.Error(t, err)
 	assert.Nil(t, keys, "should return nil keys on error")
 	assert.Contains(t, err.Error(), "1NOTFOUND")
@@ -145,7 +145,7 @@ func TestDeriveKeysForUTXOs_EmptyUTXOs(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.NoError(t, err)
 	require.NotNil(t, keys)
 	assert.Empty(t, keys, "should return empty map for empty UTXO list")
@@ -166,7 +166,7 @@ func TestDeriveKeysForUTXOs_InvalidSeed(t *testing.T) {
 	// Invalid seed (too short)
 	invalidSeed := []byte{0x01, 0x02}
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, invalidSeed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, invalidSeed)
 	require.Error(t, err)
 	assert.Nil(t, keys, "should return nil keys on derivation error")
 	assert.Contains(t, err.Error(), "deriving key")
@@ -190,7 +190,7 @@ func TestDeriveKeysForUTXOs_KeysZeroedOnError(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.Error(t, err)
 	assert.Nil(t, keys, "should return nil keys on error")
 
@@ -209,7 +209,7 @@ func TestDeriveKeyForAddress_Success(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	key, err := deriveKeyForAddress("1ABC", addrIndex, seed)
+	key, err := deriveKeyForAddress(chain.BSV, "1ABC", addrIndex, seed)
 	require.NoError(t, err)
 	assert.NotEmpty(t, key, "derived key should not be empty")
 
@@ -232,7 +232,7 @@ func TestDeriveKeyForAddress_NotInIndex(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	key, err := deriveKeyForAddress("1NOTFOUND", addrIndex, seed)
+	key, err := deriveKeyForAddress(chain.BSV, "1NOTFOUND", addrIndex, seed)
 	require.Error(t, err)
 	assert.Nil(t, key)
 	assert.Contains(t, err.Error(), "address not found in wallet")
@@ -250,10 +250,41 @@ func TestDeriveKeyForAddress_DerivationError(t *testing.T) {
 	// Invalid seed
 	invalidSeed := []byte{0x01, 0x02}
 
-	key, err := deriveKeyForAddress("1ABC", addrIndex, invalidSeed)
+	key, err := deriveKeyForAddress(chain.BSV, "1ABC", addrIndex, invalidSeed)
 	require.Error(t, err)
 	assert.Nil(t, key)
 	assert.Contains(t, err.Error(), "deriving key for address")
+}
+
+// TestDeriveKeysForUTXOs_BTCvsBSVDistinctCoinTypes is the core correctness proof
+// that threading the chain ID selects the right BIP44 coin type: BTC (coin type
+// 0) must derive a DIFFERENT key than BSV (coin type 236) for the same seed and
+// index. A regression here would mean BTC transactions are signed with BSV keys.
+func TestDeriveKeysForUTXOs_BTCvsBSVDistinctCoinTypes(t *testing.T) {
+	t.Parallel()
+
+	seed := getTestSeed(t)
+	addresses := []wallet.Address{{Address: "addr0", Index: 0}}
+	utxos := []chain.UTXO{{Address: "addr0", TxID: "tx1", Vout: 0, Amount: 1000}}
+
+	bsvKeys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
+	require.NoError(t, err)
+	defer zeroKeyMap(bsvKeys)
+
+	btcKeys, err := deriveKeysForUTXOs(chain.BTC, utxos, addresses, seed)
+	require.NoError(t, err)
+	defer zeroKeyMap(btcKeys)
+
+	require.NotEmpty(t, bsvKeys["addr0"])
+	require.NotEmpty(t, btcKeys["addr0"])
+	assert.NotEqual(t, bsvKeys["addr0"], btcKeys["addr0"],
+		"BTC coin-type-0 keys must differ from BSV coin-type-236 for the same seed/index")
+
+	// The BTC key must equal a direct coin-type-0 derivation.
+	direct, err := wallet.DerivePrivateKeyForChain(seed, chain.BTC, 0)
+	require.NoError(t, err)
+	defer wallet.ZeroBytes(direct)
+	assert.Equal(t, direct, btcKeys["addr0"])
 }
 
 // TestZeroKeyMap_EmptyMap tests zeroing an empty map.

@@ -20,6 +20,9 @@ type ConfigProvider interface {
 	GetBSVNetwork() string
 	GetBSVFeeStrategy() string
 	GetBSVMinMiners() int
+	GetBTCAPIKey() string
+	GetBTCNetwork() string
+	GetBTCFeeStrategy() string
 }
 
 // CacheProvider provides balance cache operations.

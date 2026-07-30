@@ -237,7 +237,7 @@ func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, e
 	}
 
 	// Derive private keys for all addresses that have UTXOs being spent
-	privateKeys, keyErr := deriveKeysForUTXOs(sendUTXOs, req.Addresses, req.Seed)
+	privateKeys, keyErr := deriveKeysForUTXOs(chain.BSV, sendUTXOs, req.Addresses, req.Seed)
 	if keyErr != nil {
 		return nil, fmt.Errorf("deriving private keys: %w", keyErr)
 	}

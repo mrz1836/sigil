@@ -33,7 +33,7 @@ func TestSend_Dispatch_UnsupportedChain(t *testing.T) {
 	})
 
 	req := &SendRequest{
-		ChainID:   chain.BTC, // Not implemented yet
+		ChainID:   chain.BCH, // Not implemented yet
 		To:        "1ABC",
 		AmountStr: "0.001",
 	}
@@ -249,7 +249,7 @@ func TestDeriveKeysForUTXOs_Success(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := DeriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := DeriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.NoError(t, err)
 	assert.NotNil(t, keys)
 	assert.Len(t, keys, 2)
@@ -280,7 +280,7 @@ func TestDeriveKeysForUTXOs_AddressNotFound(t *testing.T) {
 
 	seed := getTestSeed(t)
 
-	keys, err := DeriveKeysForUTXOs(utxos, addresses, seed)
+	keys, err := DeriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 	require.Error(t, err)
 	assert.Nil(t, keys)
 	assert.Contains(t, err.Error(), "1NOTFOUND")
@@ -414,6 +414,9 @@ type mockConfigProvider struct {
 	bsvAPIKey          string
 	bsvFeeStrategy     string
 	bsvMinMiners       int
+	btcAPIKey          string
+	btcNetwork         string
+	btcFeeStrategy     string
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -424,6 +427,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		bsvAPIKey:       "test-key",
 		bsvFeeStrategy:  "fast",
 		bsvMinMiners:    2,
+		btcFeeStrategy:  "normal",
 	}
 }
 
@@ -435,6 +439,14 @@ func (m *mockConfigProvider) GetBSVAPIKey() string          { return m.bsvAPIKey
 func (m *mockConfigProvider) GetBSVNetwork() string         { return "main" }
 func (m *mockConfigProvider) GetBSVFeeStrategy() string     { return m.bsvFeeStrategy }
 func (m *mockConfigProvider) GetBSVMinMiners() int          { return m.bsvMinMiners }
+func (m *mockConfigProvider) GetBTCAPIKey() string          { return m.btcAPIKey }
+func (m *mockConfigProvider) GetBTCNetwork() string {
+	if m.btcNetwork == "" {
+		return "main"
+	}
+	return m.btcNetwork
+}
+func (m *mockConfigProvider) GetBTCFeeStrategy() string { return m.btcFeeStrategy }
 
 type mockStorageProvider struct {
 	updateMetaErr error

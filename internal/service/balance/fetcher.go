@@ -63,15 +63,14 @@ type ethRPCBalanceClient interface {
 	Close()
 }
 
-type bsvBalanceClient interface {
-	GetNativeBalance(ctx context.Context, address string) (*bsv.Balance, error)
-	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*bsv.Balance, error)
-}
-
-type btcBalanceClient interface {
-	GetNativeBalance(ctx context.Context, address string) (*btc.Balance, error)
-	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*btc.Balance, error)
-}
+// bsvBalanceClient and btcBalanceClient are the per-chain names for the balance
+// surface. Because bsv.Balance and btc.Balance are both aliases of chain.Balance,
+// the two contracts are identical to utxoBalanceClient; the distinct names are
+// kept for factory/test readability.
+type (
+	bsvBalanceClient = utxoBalanceClient
+	btcBalanceClient = utxoBalanceClient
+)
 
 func defaultETHClientFactory(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error) {
 	return eth.NewClient(rpcURL, opts)

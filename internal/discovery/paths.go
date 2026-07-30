@@ -179,8 +179,9 @@ func SchemesForWallet(walletName string) []PathScheme {
 	return matches
 }
 
-// SortByPriority returns schemes sorted by priority (ascending).
-// A stable sort preserves the input order of schemes that share a priority.
+// SortByPriority returns schemes sorted by priority (ascending), without mutating
+// the input. A stable sort preserves the input order of schemes that share a
+// priority. A nil input returns a non-nil empty slice.
 func SortByPriority(schemes []PathScheme) []PathScheme {
 	// Copy to avoid mutating the input. Use make (not slices.Clone) so a nil
 	// input yields a non-nil empty slice, matching the documented contract.

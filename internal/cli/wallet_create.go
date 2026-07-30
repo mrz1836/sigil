@@ -96,8 +96,8 @@ type bsvClientAdapter struct {
 	client *bsv.Client
 }
 
-// ListUTXOs implements utxostore.ChainClient by converting bsv.UTXO to chain.UTXO.
-// bsv.UTXO is an alias for chain.UTXO, so no conversion is needed.
+// ListUTXOs implements utxostore.ChainClient. bsv.UTXO is an alias for
+// chain.UTXO, so the client's result is returned directly (no conversion).
 func (a *bsvClientAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
 	return a.client.ListUTXOs(ctx, address)
 }

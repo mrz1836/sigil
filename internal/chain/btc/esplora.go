@@ -183,10 +183,10 @@ func (e *esploraHTTP) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	header := map[string]string{}
+	var header map[string]string
 	if e.apiKey != "" {
 		// Send the key in a header (not the URL) to avoid leaking it in logs.
-		header["Authorization"] = "Bearer " + e.apiKey
+		header = map[string]string{"Authorization": "Bearer " + e.apiKey}
 	}
 
 	resp, err := httpx.Do(ctx, e.httpClient, &httpx.Request{

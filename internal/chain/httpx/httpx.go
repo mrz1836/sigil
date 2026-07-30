@@ -63,6 +63,11 @@ func Do(ctx context.Context, client *http.Client, req *Request) (*Response, erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Cap the read at MaxBodyBytes as a DoS guard. We deliberately do NOT drain
+	// the remainder before closing: draining an over-cap body would reintroduce
+	// the unbounded read this cap exists to prevent. The cost is that a connection
+	// serving an over-cap (abnormal) response is not reused — an acceptable trade
+	// for a funds-handling client.
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, req.MaxBodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)

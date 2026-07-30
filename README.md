@@ -149,7 +149,7 @@ Creates a new HD wallet with BIP39 mnemonic phrase.
 sigil balance show --wallet main
 ```
 
-Displays balances across all supported chains (ETH, USDC, BSV).
+Displays balances across all supported chains (ETH, USDC, BSV, BTC).
 
 <br>
 
@@ -201,6 +201,17 @@ sigil tx send --wallet tnet --to <testnet-address> --amount 0.00001 --chain bsv
 The BSV network is a per-wallet setting stamped at creation (or via `--network test`,
 `SIGIL_BSV_NETWORK=test`, or `networks.bsv.network` in config). See the
 [CLI Documentation](docs/CLI.md#bsv-testnet) for details.
+
+Bitcoin (BTC) uses the same per-wallet mechanism for **testnet4** (`--network test`,
+`SIGIL_BTC_NETWORK=test`, or `networks.btc.network`), served by mempool.space:
+
+```bash
+# On a testnet wallet, receive a BTC testnet4 address (starts with m/n or tb1q)
+sigil receive --wallet tnet --chain btc
+# Fund from a testnet4 faucet, then send (pay any address type, incl. bech32)
+sigil tx send --wallet tnet --to tb1q... --amount 0.00001 --chain btc
+# Explorer: https://mempool.space/testnet4
+```
 
 <br>
 
@@ -257,9 +268,9 @@ View the comprehensive documentation for Sigil:
 | Chain | Status | Description |
 |-------|--------|-------------|
 | ✅ Bitcoin SV (BSV) | **Supported** | UTXO-based transaction support (mainnet + testnet) |
+| ✅ Bitcoin (BTC) | **Supported** | UTXO-based transaction support (mainnet + testnet4) |
 | ✅ Ethereum (ETH) | **Supported** | Full transaction and balance support |
 | ✅ USDC | **Supported** | ERC-20 token on Ethereum network |
-| 🚧 Bitcoin (BTC) | **Planned** | Coming in future release |
 | 🚧 Bitcoin Cash (BCH) | **Planned** | Coming in future release |
 
 <br/>

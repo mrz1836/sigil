@@ -30,5 +30,7 @@ type BalanceProvider interface {
 type ConfigProvider interface {
 	GetBSVAPIKey() string
 	GetBSVNetwork() string
+	GetBTCAPIKey() string
+	GetBTCNetwork() string
 	GetETHEtherscanAPIKey() string
 }

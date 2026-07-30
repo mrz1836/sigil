@@ -15,9 +15,11 @@ func (s *Service) CheckAddress(ctx context.Context, req *CheckRequest) (*CheckRe
 	switch req.ChainID {
 	case chain.BSV:
 		return s.checkBSV(ctx, req.Address)
+	case chain.BTC:
+		return s.checkBTC(ctx, req.Address)
 	case chain.ETH:
 		return s.checkETH(ctx, req.Address)
-	case chain.BTC, chain.BCH, chain.LTC:
+	case chain.BCH, chain.LTC:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedChain, req.ChainID)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnknownChain, req.ChainID)
@@ -59,6 +61,37 @@ func (s *Service) checkBSV(ctx context.Context, address string) (*CheckResult, e
 	}
 
 	return result, nil
+}
+
+// checkBTC checks a BTC address by refreshing UTXOs and returning results.
+func (s *Service) checkBTC(ctx context.Context, address string) (*CheckResult, error) {
+	adapter := s.createBTCAdapter(ctx)
+	if err := s.utxoStore.RefreshAddress(ctx, address, chain.BTC, adapter); err != nil {
+		return nil, fmt.Errorf("refreshing BTC address: %w", err)
+	}
+
+	balance := s.utxoStore.GetAddressBalance(chain.BTC, address)
+	storeUTXOs := s.utxoStore.GetUTXOs(chain.BTC, address)
+	meta := s.utxoStore.GetAddress(chain.BTC, address)
+
+	utxos := make([]UTXO, 0, len(storeUTXOs))
+	for _, u := range storeUTXOs {
+		utxos = append(utxos, UTXO{
+			TxID:          u.TxID,
+			Vout:          u.Vout,
+			Amount:        u.Amount,
+			Confirmations: u.Confirmations,
+		})
+	}
+
+	return &CheckResult{
+		Address:     address,
+		ChainID:     chain.BTC,
+		Balance:     balance,
+		UTXOs:       utxos,
+		HasActivity: meta != nil && meta.HasActivity,
+		Label:       getLabel(meta),
+	}, nil
 }
 
 // checkETH checks an ETH address by fetching balance (no UTXOs for account-based chains).

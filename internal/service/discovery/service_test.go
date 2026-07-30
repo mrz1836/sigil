@@ -45,6 +45,65 @@ func TestRefreshBatch_BSV_UpdatesUTXOs(t *testing.T) {
 	assert.NotNil(t, utxoProvider.addresses[string(chain.BSV)+":1ABC123"])
 }
 
+func TestRefreshBatch_BTC_UpdatesUTXOs(t *testing.T) {
+	t.Parallel()
+
+	utxoProvider := newMockUTXOProvider()
+	balanceProvider := newMockBalanceProvider()
+	configProvider := newMockConfigProvider()
+
+	service := NewService(&Config{
+		UTXOStore:      utxoProvider,
+		BalanceService: balanceProvider,
+		Config:         configProvider,
+	})
+
+	req := &RefreshRequest{
+		ChainID:   chain.BTC,
+		Addresses: []string{"1BTCADDR"},
+	}
+
+	results, err := service.RefreshBatch(context.Background(), req)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	assert.True(t, results[0].Success)
+	require.NoError(t, results[0].Error)
+	assert.Equal(t, "1BTCADDR", results[0].Address)
+	// Verify UTXO store was refreshed under the BTC chain key.
+	assert.NotNil(t, utxoProvider.addresses[string(chain.BTC)+":1BTCADDR"])
+}
+
+func TestCheckAddress_BTC_ReturnsBalanceAndUTXOs(t *testing.T) {
+	t.Parallel()
+
+	utxoProvider := newMockUTXOProvider()
+	balanceProvider := newMockBalanceProvider()
+	configProvider := newMockConfigProvider()
+
+	// Seed a UTXO in the store under the BTC chain key.
+	utxoProvider.utxos[string(chain.BTC)+":1BTCADDR"] = []*utxostore.StoredUTXO{
+		{ChainID: chain.BTC, TxID: "tx1", Vout: 0, Amount: 12345, Address: "1BTCADDR"},
+	}
+
+	service := NewService(&Config{
+		UTXOStore:      utxoProvider,
+		BalanceService: balanceProvider,
+		Config:         configProvider,
+	})
+
+	result, err := service.CheckAddress(context.Background(), &CheckRequest{
+		ChainID: chain.BTC,
+		Address: "1BTCADDR",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, chain.BTC, result.ChainID)
+	assert.Equal(t, uint64(12345), result.Balance)
+	require.Len(t, result.UTXOs, 1)
+	assert.Equal(t, "tx1", result.UTXOs[0].TxID)
+}
+
 func TestRefreshBatch_ETH_UpdatesBalance(t *testing.T) {
 	t.Parallel()
 
@@ -118,8 +177,8 @@ func TestRefreshBatch_UnsupportedChain(t *testing.T) {
 	})
 
 	req := &RefreshRequest{
-		ChainID:   chain.BTC,
-		Addresses: []string{"1BTCADDRESS"},
+		ChainID:   chain.BCH,
+		Addresses: []string{"1BCHADDRESS"},
 	}
 
 	results, err := service.RefreshBatch(context.Background(), req)
@@ -323,11 +382,6 @@ func TestCheckAddress_UnsupportedChain(t *testing.T) {
 		chainID chain.ID
 		address string
 	}{
-		{
-			name:    "BTC unsupported",
-			chainID: chain.BTC,
-			address: "1BTCAddress",
-		},
 		{
 			name:    "BCH unsupported",
 			chainID: chain.BCH,
@@ -655,12 +709,14 @@ func (m *mockBalanceProvider) setBalance(chainID chain.ID, address, amount, symb
 
 type mockConfigProvider struct {
 	bsvAPIKey          string
+	btcAPIKey          string
 	ethEtherscanAPIKey string
 }
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{ //nolint:gosec // G101: test data, not real credentials
 		bsvAPIKey:          "test-bsv-key",
+		btcAPIKey:          "test-btc-key",
 		ethEtherscanAPIKey: "test-etherscan-key",
 	}
 }
@@ -670,6 +726,14 @@ func (m *mockConfigProvider) GetBSVAPIKey() string {
 }
 
 func (m *mockConfigProvider) GetBSVNetwork() string {
+	return "main"
+}
+
+func (m *mockConfigProvider) GetBTCAPIKey() string {
+	return m.btcAPIKey
+}
+
+func (m *mockConfigProvider) GetBTCNetwork() string {
 	return "main"
 }
 

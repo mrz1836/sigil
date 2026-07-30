@@ -696,6 +696,7 @@ func newMockAgentStore(tempDir string) *mockAgentStore {
 	}
 }
 
+//nolint:unparam // walletName is part of the helper's shape; all cases use the "test" wallet
 func (m *mockAgentStore) addAgent(walletName, token string, seed []byte, cred *agent.Credential) {
 	key := walletName + ":" + token
 	m.agents[key] = mockAgent{

@@ -66,7 +66,7 @@ func generateWalletSeed(wordCount int, usePassphrase bool) (mnemonic string, see
 // network stamps the wallet's BSV network ("main"/"test") before deriving so its
 // addresses are encoded for the correct network.
 func createAndSaveWallet(name string, seed []byte, storage *wallet.FileStorage, network string) (*wallet.Wallet, error) {
-	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV})
+	w, err := wallet.NewWallet(name, []wallet.ChainID{wallet.ChainETH, wallet.ChainBSV, wallet.ChainBTC})
 	if err != nil {
 		return nil, err
 	}

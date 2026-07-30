@@ -39,6 +39,9 @@ type mockConfigProvider struct {
 	bsvBroadcast       string
 	bsvFeeStrategy     string
 	bsvMinMiners       int
+	btcAPIKey          string
+	btcNetwork         string
+	btcFeeStrategy     string
 	logLevel           string
 	logFile            string
 	outputFormat       string
@@ -86,6 +89,22 @@ func (m *mockConfigProvider) GetBSVMinMiners() int {
 		return 3
 	}
 	return m.bsvMinMiners
+}
+
+func (m *mockConfigProvider) GetBTCAPIKey() string { return m.btcAPIKey }
+
+func (m *mockConfigProvider) GetBTCNetwork() string {
+	if m.btcNetwork == "" {
+		return "main"
+	}
+	return m.btcNetwork
+}
+
+func (m *mockConfigProvider) GetBTCFeeStrategy() string {
+	if m.btcFeeStrategy == "" {
+		return "normal"
+	}
+	return m.btcFeeStrategy
 }
 
 func TestFormatCacheAge(t *testing.T) {

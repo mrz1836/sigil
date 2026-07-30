@@ -624,7 +624,7 @@ func parseChainList(s string) ([]chain.ID, error) {
 		if !ok || !id.IsMVP() {
 			return nil, sigilerr.WithSuggestion(
 				sigilerr.ErrInvalidInput,
-				fmt.Sprintf("invalid chain: %s (supported: bsv, eth)", p),
+				fmt.Sprintf("invalid chain: %s (supported: bsv, eth, btc)", p),
 			)
 		}
 		chains = append(chains, id)

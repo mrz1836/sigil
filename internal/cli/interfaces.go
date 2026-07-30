@@ -45,6 +45,15 @@ type ConfigProvider interface {
 	// GetBSVMinMiners returns the minimum number of miners for the normal fee strategy.
 	GetBSVMinMiners() int
 
+	// GetBTCAPIKey returns the BTC (Esplora) API key.
+	GetBTCAPIKey() string
+
+	// GetBTCNetwork returns the configured BTC network ("main" or "test").
+	GetBTCNetwork() string
+
+	// GetBTCFeeStrategy returns the BTC fee strategy (economy, normal, priority).
+	GetBTCFeeStrategy() string
+
 	// GetLoggingLevel returns the configured logging level.
 	GetLoggingLevel() string
 

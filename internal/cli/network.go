@@ -6,7 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
+	"github.com/mrz1836/sigil/internal/chain/btc"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -80,6 +82,54 @@ func bsvExplorerAddressLinks(network, address string) []string {
 		}
 	}
 	return []string{"https://whatsonchain.com/address/" + address}
+}
+
+// effectiveBTCNetwork resolves the network for a wallet-scoped BTC operation.
+// A wallet's own stamped network takes precedence over the global config value.
+func effectiveBTCNetwork(w *wallet.Wallet, cfg ConfigProvider) string {
+	if w != nil && w.Network != "" {
+		return normalizeNetworkString(w.Network)
+	}
+	if cfg != nil {
+		return cfg.GetBTCNetwork()
+	}
+	return "main"
+}
+
+// effectiveNetworkForChain resolves the wallet-scoped network for a UTXO chain,
+// dispatching to the chain-specific resolver so BTC honors its own config
+// fallback. For stamped wallets both resolvers return the wallet's network.
+func effectiveNetworkForChain(w *wallet.Wallet, cfg ConfigProvider, chainID chain.ID) string {
+	if chainID == chain.BTC {
+		return effectiveBTCNetwork(w, cfg)
+	}
+	return effectiveBSVNetwork(w, cfg)
+}
+
+// btcClientNetwork maps a network string ("main"/"test") to the btc package's
+// Network type used by btc.ClientOptions.
+func btcClientNetwork(network string) btc.Network {
+	if network == "test" {
+		return btc.NetworkTestnet
+	}
+	return btc.NetworkMainnet
+}
+
+// btcExplorerTxLinks returns explorer URLs for a BTC transaction on mempool.space.
+// Testnet4 lives under the /testnet4/ path prefix.
+func btcExplorerTxLinks(network, txid string) []string {
+	if network == "test" {
+		return []string{"https://mempool.space/testnet4/tx/" + txid}
+	}
+	return []string{"https://mempool.space/tx/" + txid}
+}
+
+// btcExplorerAddressLinks returns explorer URLs for a BTC address (see btcExplorerTxLinks).
+func btcExplorerAddressLinks(network, address string) []string {
+	if network == "test" {
+		return []string{"https://mempool.space/testnet4/address/" + address}
+	}
+	return []string{"https://mempool.space/address/" + address}
 }
 
 // warnNetworkConflict prints a fail-closed warning when a --network/--testnet flag

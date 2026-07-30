@@ -490,8 +490,8 @@ func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandCon
 func groupTargetsByChain(targets []refreshTarget) map[chain.ID][]refreshTarget {
 	targetsByChain := make(map[chain.ID][]refreshTarget)
 	for _, t := range targets {
-		if t.chainID == chain.BTC || t.chainID == chain.BCH {
-			// BTC and BCH not supported in MVP
+		if t.chainID == chain.BCH || t.chainID == chain.LTC {
+			// BCH and LTC not supported in MVP
 			continue
 		}
 		targetsByChain[t.chainID] = append(targetsByChain[t.chainID], t)

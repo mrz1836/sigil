@@ -76,7 +76,7 @@ func init() {
 	rootCmd.AddCommand(receiveCmd)
 
 	receiveCmd.Flags().StringVarP(&receiveWallet, "wallet", "w", "", "wallet name (required)")
-	receiveCmd.Flags().StringVarP(&receiveChain, "chain", "c", "bsv", "blockchain: eth, bsv")
+	receiveCmd.Flags().StringVarP(&receiveChain, "chain", "c", "bsv", "blockchain: eth, bsv, btc")
 	receiveCmd.Flags().BoolVar(&receiveNew, "new", false, "force generation of a new address")
 	receiveCmd.Flags().StringVarP(&receiveLabel, "label", "l", "", "label for the address")
 	receiveCmd.Flags().BoolVar(&receiveQR, "qr", false, "display QR code for the address")
@@ -116,7 +116,7 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	if !ok || !chainID.IsMVP() {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
-			fmt.Sprintf("invalid chain: %s (use eth or bsv)", receiveChain),
+			fmt.Sprintf("invalid chain: %s (use eth, bsv, or btc)", receiveChain),
 		)
 	}
 
@@ -240,7 +240,7 @@ func runReceive(cmd *cobra.Command, _ []string) error {
 	if cmdCtx.Fmt.Format() == output.FormatJSON {
 		displayReceiveJSON(cmd, addr, chainID, label, isNew)
 	} else {
-		displayReceiveText(cmd, addr, chainID, label, isNew, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
+		displayReceiveText(cmd, addr, chainID, label, isNew, effectiveNetworkForChain(wlt, cmdCtx.Cfg, chainID))
 	}
 
 	return nil
@@ -271,21 +271,31 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 		cfg := output.DefaultQRConfig()
 		_ = output.RenderQR(w, formatQRData(addr.Address), cfg)
 		outln(w)
-		outln(w, "  Scan with a mobile wallet to send BSV")
+		out(w, "  Scan with a mobile wallet to send %s\n", getChainSymbol(chainID))
 		outln(w)
 	}
 
-	// Show explorer link based on chain
+	displayAddressExplorerLinks(w, chainID, bsvNetwork, addr.Address)
+}
+
+// displayAddressExplorerLinks prints the block-explorer link(s) for an address,
+// scoped to the chain and network.
+func displayAddressExplorerLinks(w io.Writer, chainID chain.ID, network, address string) {
 	switch chainID {
 	case chain.BSV:
 		outln(w, "View on block explorer:")
-		for _, link := range bsvExplorerAddressLinks(bsvNetwork, addr.Address) {
+		for _, link := range bsvExplorerAddressLinks(network, address) {
+			out(w, "  %s\n", link)
+		}
+	case chain.BTC:
+		outln(w, "View on block explorer:")
+		for _, link := range btcExplorerAddressLinks(network, address) {
 			out(w, "  %s\n", link)
 		}
 	case chain.ETH:
 		outln(w, "View on Etherscan:")
-		out(w, "  https://etherscan.io/address/%s\n", addr.Address)
-	case chain.BTC, chain.BCH, chain.LTC:
+		out(w, "  https://etherscan.io/address/%s\n", address)
+	case chain.BCH, chain.LTC:
 		// Future chains - no explorer link yet
 	}
 }
@@ -355,18 +365,19 @@ func runReceiveCheckETH(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 // runReceiveCheckBSV dispatches BSV UTXO checking for --check mode.
 func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext, wlt *wallet.Wallet, store *utxostore.Store, currentAddr *wallet.Address, chainID chain.ID) error {
 	// Create discovery service on the wallet's network (per-wallet model).
+	network := effectiveNetworkForChain(wlt, cmdCtx.Cfg, chainID)
 	balanceSvc := balance.NewService(&balance.Config{
 		ConfigProvider: cmdCtx.Cfg,
 		CacheProvider:  nil, // Not using cache for checks
 		Metadata:       nil,
 		ForceRefresh:   true,
-		Network:        effectiveBSVNetwork(wlt, cmdCtx.Cfg),
+		Network:        network,
 	})
 	discoverySvc := discovery.NewService(&discovery.Config{
 		UTXOStore:      discovery.NewUTXOStoreAdapter(store),
 		BalanceService: balanceSvc,
 		Config:         cmdCtx.Cfg,
-		Network:        effectiveBSVNetwork(wlt, cmdCtx.Cfg),
+		Network:        network,
 	})
 
 	switch {
@@ -378,9 +389,9 @@ func runReceiveCheckBSV(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 		if err != nil {
 			return err
 		}
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, addr, chainID, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, addr, chainID, network)
 	default:
-		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, currentAddr, chainID, effectiveBSVNetwork(wlt, cmdCtx.Cfg))
+		return runReceiveCheckSingle(ctx, w, cmdCtx, store, discoverySvc, currentAddr, chainID, network)
 	}
 }
 
@@ -520,6 +531,12 @@ func runReceiveCheckAllChains(cmd *cobra.Command, cmdCtx *CommandContext, wlt *w
 	// Check BSV addresses (UTXO-based)
 	if bsvAddrs, ok := wlt.Addresses[chain.BSV]; ok && len(bsvAddrs) > 0 {
 		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, discoverySvc, chain.BSV)
+	}
+
+	// Check BTC addresses (UTXO-based). The discovery service dispatches by chain
+	// ID, and its network is the wallet's stamped network (shared by BSV/BTC).
+	if btcAddrs, ok := wlt.Addresses[chain.BTC]; ok && len(btcAddrs) > 0 {
+		runReceiveCheckAll(ctx, w, cmdCtx, wlt, store, discoverySvc, chain.BTC)
 	}
 
 	// Check ETH addresses (account-based balance)
@@ -712,22 +729,11 @@ func displayReceiveCheckText(w io.Writer, addr *wallet.Address, chainID chain.ID
 	} else {
 		outln(w, "  Status:  Funds received")
 		out(w, "  UTXOs:   %d\n", len(utxos))
-		out(w, "  Balance: %d satoshis (%.8f BSV)\n", balance, float64(balance)/1e8)
+		out(w, "  Balance: %d satoshis (%.8f %s)\n", balance, float64(balance)/1e8, getChainSymbol(chainID))
 	}
 	outln(w)
 
-	switch chainID {
-	case chain.BSV:
-		outln(w, "View on block explorer:")
-		for _, link := range bsvExplorerAddressLinks(bsvNetwork, addr.Address) {
-			out(w, "  %s\n", link)
-		}
-	case chain.ETH:
-		outln(w, "View on Etherscan:")
-		out(w, "  https://etherscan.io/address/%s\n", addr.Address)
-	case chain.BTC, chain.BCH, chain.LTC:
-		// Future chains
-	}
+	displayAddressExplorerLinks(w, chainID, bsvNetwork, addr.Address)
 }
 
 // displayReceiveCheckJSON shows the check result for a single address in JSON format.

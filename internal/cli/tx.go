@@ -105,7 +105,7 @@ func init() {
 	txSendCmd.Flags().StringVar(&txWallet, "wallet", "", "wallet name (required)")
 	txSendCmd.Flags().StringVar(&txTo, "to", "", "recipient address (required)")
 	txSendCmd.Flags().StringVar(&txAmount, "amount", "", "amount to send, or 'all' for entire balance (required)")
-	txSendCmd.Flags().StringVar(&txChain, "chain", "eth", "blockchain: eth, bsv")
+	txSendCmd.Flags().StringVar(&txChain, "chain", "eth", "blockchain: eth, bsv, btc")
 	txSendCmd.Flags().StringVar(&txToken, "token", "", "ERC-20 token symbol (e.g., USDC) - ETH only")
 	txSendCmd.Flags().StringVar(&txGasSpeed, "gas", "medium", "gas speed: slow, medium, fast")
 	txSendCmd.Flags().BoolVar(&txConfirm, "yes", false, "skip confirmation prompt")
@@ -127,7 +127,7 @@ func runTxSend(cmd *cobra.Command, _ []string) error {
 	if !ok || !chainID.IsMVP() {
 		return sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
-			fmt.Sprintf("invalid chain: %s (use eth or bsv)", txChain),
+			fmt.Sprintf("invalid chain: %s (use eth, bsv, or btc)", txChain),
 		)
 	}
 
@@ -190,7 +190,10 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 
 	// The wallet's stamped network governs this send (per-wallet model).
 	warnNetworkConflict(cmd, wlt)
-	bsvNetwork := effectiveBSVNetwork(wlt, cc.Cfg)
+	network := effectiveBSVNetwork(wlt, cc.Cfg)
+	if chainID == chain.BTC {
+		network = effectiveBTCNetwork(wlt, cc.Cfg)
+	}
 
 	// Create transaction service
 	txService := cc.TransactionService
@@ -212,8 +215,8 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 		FromAddress:   addresses[0].Address,
 		Token:         txToken,
 		GasSpeed:      txGasSpeed,
-		Addresses:     addresses, // For BSV multi-address
-		Network:       bsvNetwork,
+		Addresses:     addresses, // For BSV/BTC multi-address
+		Network:       network,
 		Confirm:       txConfirm,
 		Seed:          seed,
 		ValidateUTXOs: txValidate, // Enable UTXO validation if requested
@@ -244,18 +247,20 @@ func runTxSendWithService(ctx context.Context, cmd *cobra.Command, chainID chain
 		return err
 	}
 
-	// Display result
+	displaySendResult(cmd, chainID, result, network)
+	return nil
+}
+
+// displaySendResult renders the send result using the chain-appropriate formatter.
+func displaySendResult(cmd *cobra.Command, chainID chain.ID, result *transaction.SendResult, network string) {
 	switch chainID {
 	case chain.BSV:
-		displayBSVTxResult(cmd, convertToBSVTransactionResult(result), bsvNetwork)
-	case chain.ETH:
-		displayTxResult(cmd, convertToETHTransactionResult(result))
-	case chain.BTC, chain.BCH, chain.LTC:
-		// BTC, BCH, and LTC are not yet supported for transactions
+		displayBSVTxResult(cmd, convertToBSVTransactionResult(result), network)
+	case chain.BTC:
+		displayBTCTxResult(cmd, convertToBTCTransactionResult(result), network)
+	case chain.ETH, chain.BCH, chain.LTC:
 		displayTxResult(cmd, convertToETHTransactionResult(result))
 	}
-
-	return nil
 }
 
 // promptTransactionConfirmation prompts the user to confirm the transaction.
@@ -266,8 +271,10 @@ func promptTransactionConfirmation(ctx context.Context, cmd *cobra.Command, chai
 		return promptETHConfirmation(ctx, cmd, req)
 	case chain.BSV:
 		return promptBSVConfirmation(ctx, cmd, req, addresses)
-	case chain.BTC, chain.BCH, chain.LTC:
-		// BTC, BCH, and LTC are not yet supported for transactions
+	case chain.BTC:
+		return promptBTCConfirmation(ctx, cmd, req, addresses)
+	case chain.BCH, chain.LTC:
+		// BCH and LTC are not yet supported for transactions
 		return false, sigilerr.WithSuggestion(
 			sigilerr.ErrInvalidInput,
 			fmt.Sprintf("chain %s is not yet supported for transactions", chainID),
@@ -863,9 +870,11 @@ func logTxError(cc *CommandContext, format string, args ...any) {
 // errAddressNotInWallet indicates a UTXO references an address not found in the wallet.
 var errAddressNotInWallet = errors.New("address not found in wallet")
 
-// deriveKeysForUTXOs derives private keys for each unique address that appears in the UTXO set.
-// Returns a map of address → private key. The caller must zero all keys after use.
-func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
+// deriveKeysForUTXOs derives private keys for each unique address that appears in
+// the UTXO set, using the chain's BIP44 coin type. The caller must zero all keys.
+//
+//nolint:unparam // chainID is threaded for chain-correctness (BTC vs BSV coin types)
+func deriveKeysForUTXOs(chainID chain.ID, utxos []chain.UTXO, addresses []wallet.Address, seed []byte) (map[string][]byte, error) {
 	// Build address → index lookup
 	addrIndex := make(map[string]uint32, len(addresses))
 	for _, addr := range addresses {
@@ -878,7 +887,7 @@ func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []b
 	// Derive private key for each unique address
 	keys := make(map[string][]byte, len(needed))
 	for addr := range needed {
-		key, err := deriveKeyForAddress(addr, addrIndex, seed)
+		key, err := deriveKeyForAddress(chainID, addr, addrIndex, seed)
 		if err != nil {
 			zeroKeyMap(keys)
 			return nil, err
@@ -889,13 +898,13 @@ func deriveKeysForUTXOs(utxos []chain.UTXO, addresses []wallet.Address, seed []b
 	return keys, nil
 }
 
-// deriveKeyForAddress derives a private key for a single address using the index lookup.
-func deriveKeyForAddress(addr string, addrIndex map[string]uint32, seed []byte) ([]byte, error) {
+// deriveKeyForAddress derives a private key for a single address on the given chain.
+func deriveKeyForAddress(chainID chain.ID, addr string, addrIndex map[string]uint32, seed []byte) ([]byte, error) {
 	index, ok := addrIndex[addr]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errAddressNotInWallet, addr)
 	}
-	privKey, err := wallet.DerivePrivateKeyForChain(seed, wallet.ChainBSV, index)
+	privKey, err := wallet.DerivePrivateKeyForChain(seed, chainID, index)
 	if err != nil {
 		return nil, fmt.Errorf("deriving key for address %s (index %d): %w", addr, index, err)
 	}

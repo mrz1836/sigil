@@ -1130,7 +1130,7 @@ func TestDeriveKeysForUTXOs(t *testing.T) {
 			{TxID: "bb", Amount: 30000, Address: a2.Address},
 		}
 
-		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 		require.NoError(t, err)
 		defer func() {
 			for _, k := range keys {
@@ -1158,7 +1158,7 @@ func TestDeriveKeysForUTXOs(t *testing.T) {
 			{TxID: "ee", Amount: 30000, Address: a1.Address},
 		}
 
-		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 		require.NoError(t, err)
 		defer func() {
 			for _, k := range keys {
@@ -1178,7 +1178,7 @@ func TestDeriveKeysForUTXOs(t *testing.T) {
 			{TxID: "gg", Amount: 30000, Address: "1UnknownAddressNotInWallet"},
 		}
 
-		keys, err := deriveKeysForUTXOs(utxos, addresses, seed)
+		keys, err := deriveKeysForUTXOs(chain.BSV, utxos, addresses, seed)
 		require.Error(t, err)
 		assert.Nil(t, keys)
 		assert.Contains(t, err.Error(), "not found in wallet")
@@ -1187,7 +1187,7 @@ func TestDeriveKeysForUTXOs(t *testing.T) {
 	t.Run("empty UTXOs returns empty key map", func(t *testing.T) {
 		t.Parallel()
 
-		keys, err := deriveKeysForUTXOs([]chain.UTXO{}, addresses, seed)
+		keys, err := deriveKeysForUTXOs(chain.BSV, []chain.UTXO{}, addresses, seed)
 		require.NoError(t, err)
 		assert.Empty(t, keys)
 	})

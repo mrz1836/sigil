@@ -116,6 +116,7 @@ func TestCreateAndSaveWallet_HappyPath(t *testing.T) {
 	assert.Equal(t, "create_test", w.Name)
 	assert.NotEmpty(t, w.Addresses[wallet.ChainETH])
 	assert.NotEmpty(t, w.Addresses[wallet.ChainBSV])
+	assert.NotEmpty(t, w.Addresses[wallet.ChainBTC], "new wallets derive BTC addresses at creation")
 
 	// Verify wallet was persisted
 	exists, err := storage.Exists("create_test")

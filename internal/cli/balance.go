@@ -287,6 +287,15 @@ func createBalanceProgressCallback(w io.Writer) balance.ProgressCallback {
 				out(w, "  ✓ BSV complete\n")
 			}
 
+		case "fetching_btc":
+			if !phaseStarted["fetching_btc"] {
+				out(w, "Fetching BTC balances (%d addresses)...\n", update.TotalAddresses)
+				phaseStarted["fetching_btc"] = true
+			}
+			if update.CompletedAddresses > 0 && update.CompletedAddresses == update.TotalAddresses {
+				out(w, "  ✓ BTC complete\n")
+			}
+
 		case "fetching_eth":
 			if !phaseStarted["fetching_eth"] {
 				out(w, "Fetching ETH balances (%d addresses)...\n", update.TotalAddresses)

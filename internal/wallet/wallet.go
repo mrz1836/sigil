@@ -121,7 +121,7 @@ func NewWallet(name string, enabledChains []ChainID) (*Wallet, error) {
 	}
 
 	if len(enabledChains) == 0 {
-		enabledChains = []ChainID{ChainETH, ChainBSV}
+		enabledChains = []ChainID{ChainETH, ChainBSV, ChainBTC}
 	}
 
 	return &Wallet{

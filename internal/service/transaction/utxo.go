@@ -18,59 +18,31 @@ import (
 // btc client's own provider rate-limiter throttles the actual HTTP calls).
 const btcAggregateConcurrency = 5
 
-// aggregateBSVUTXOs fetches UTXOs from all wallet addresses concurrently and merges them.
-// Migrated from cli/tx.go lines 998-1041
-func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+// utxoLister is the ListUTXOs surface shared by the BSV and BTC clients (both
+// return []chain.UTXO).
+type utxoLister interface {
+	ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error)
+}
+
+// aggregateUTXOs fetches UTXOs from all wallet addresses concurrently and merges
+// them in address order. A positive concurrency bounds the fan-out with a worker
+// pool (for rate-limited providers such as BTC's Esplora); concurrency <= 0 fans
+// out unbounded (BSV, whose WhatsOnChain provider handles its own rate limiting).
+func aggregateUTXOs(ctx context.Context, client utxoLister, addresses []wallet.Address, concurrency int) ([]chain.UTXO, error) {
 	type result struct {
 		utxos []chain.UTXO
 		err   error
 	}
 
-	results := make([]result, len(addresses))
-	var wg sync.WaitGroup
-
-	for i, addr := range addresses {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			utxos, err := client.ListUTXOs(ctx, addr.Address)
-			if err != nil {
-				results[i] = result{err: fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)}
-				return
-			}
-			// bsv.UTXO is an alias for chain.UTXO; no conversion needed.
-			results[i] = result{utxos: utxos}
-		}()
-	}
-	wg.Wait()
-
-	var allUTXOs []chain.UTXO
-	for _, r := range results {
-		if r.err != nil {
-			return nil, r.err
-		}
-		allUTXOs = append(allUTXOs, r.utxos...)
-	}
-	return allUTXOs, nil
-}
-
-// AggregateBSVUTXOs is the exported version for external use.
-func AggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
-	return aggregateBSVUTXOs(ctx, client, addresses)
-}
-
-// aggregateBTCUTXOs fetches UTXOs from all wallet addresses and merges them. It
-// uses a bounded worker pool (unlike BSV's unbounded goroutines) to stay within
-// the Esplora provider's rate limits. btc.Client.ListUTXOs already returns
-// chain.UTXO, so no conversion is needed.
-func aggregateBTCUTXOs(ctx context.Context, client *btc.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
-	type result struct {
-		utxos []chain.UTXO
-		err   error
+	// A positive concurrency bounds the fan-out; otherwise size the semaphore to
+	// the address count so every goroutine runs immediately (unbounded).
+	limit := concurrency
+	if limit <= 0 {
+		limit = len(addresses)
 	}
 
 	results := make([]result, len(addresses))
-	sem := make(chan struct{}, btcAggregateConcurrency)
+	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
 
 	for i, addr := range addresses {
@@ -98,6 +70,23 @@ func aggregateBTCUTXOs(ctx context.Context, client *btc.Client, addresses []wall
 		allUTXOs = append(allUTXOs, r.utxos...)
 	}
 	return allUTXOs, nil
+}
+
+// aggregateBSVUTXOs fetches UTXOs from all wallet addresses with an unbounded
+// fan-out (the WhatsOnChain provider handles rate limiting).
+func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+	return aggregateUTXOs(ctx, client, addresses, 0)
+}
+
+// AggregateBSVUTXOs is the exported version for external use.
+func AggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+	return aggregateBSVUTXOs(ctx, client, addresses)
+}
+
+// aggregateBTCUTXOs fetches UTXOs from all wallet addresses using a bounded worker
+// pool to stay within the Esplora provider's rate limits.
+func aggregateBTCUTXOs(ctx context.Context, client *btc.Client, addresses []wallet.Address) ([]chain.UTXO, error) {
+	return aggregateUTXOs(ctx, client, addresses, btcAggregateConcurrency)
 }
 
 // AggregateBTCUTXOs is the exported version for external use.

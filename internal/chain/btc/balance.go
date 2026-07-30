@@ -6,17 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/metrics"
 )
 
-// Balance represents a balance result with metadata.
-type Balance struct {
-	Address     string
-	Amount      *big.Int
-	Unconfirmed *big.Int // Unconfirmed (mempool) balance delta in satoshis (can be negative)
-	Symbol      string
-	Decimals    int
-}
+// Balance is an alias for chain.Balance (identical fields) so the BTC balance
+// client and the service layer share one type.
+type Balance = chain.Balance
 
 // GetNativeBalance retrieves the native BTC balance including unconfirmed data.
 // Confirmed balance is chain funded − spent; the unconfirmed delta is the mempool

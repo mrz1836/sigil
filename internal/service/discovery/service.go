@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
@@ -46,72 +47,55 @@ func NewService(cfg *Config) *Service {
 	}
 }
 
-// bsvNetwork returns the effective BSV network: the per-service override if set,
-// otherwise the ConfigProvider's value.
-func (s *Service) bsvNetwork() string {
+// networkFor returns the effective network for a Bitcoin-family chain: the
+// per-service override if set, otherwise the ConfigProvider's value.
+func (s *Service) networkFor(chainID chain.ID) string {
 	if s.network != "" {
 		return s.network
+	}
+	if chainID == chain.BTC {
+		return s.config.GetBTCNetwork()
 	}
 	return s.config.GetBSVNetwork()
 }
 
-// createBSVAdapter creates a BSV client adapter for UTXO refresh operations.
-func (s *Service) createBSVAdapter(ctx context.Context) *bsvRefreshAdapter {
-	apiKey := s.config.GetBSVAPIKey()
-	client := bsv.NewClient(ctx, &bsv.ClientOptions{
-		APIKey:  apiKey,
-		Network: bsv.Network(s.bsvNetwork()),
-	})
-	return &bsvRefreshAdapter{client: client}
+// utxoLister is the ListUTXOs surface shared by the BSV and BTC clients (both
+// return []chain.UTXO).
+type utxoLister interface {
+	ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error)
 }
 
-// bsvRefreshAdapter adapts a BSV client to the ChainClient interface.
-type bsvRefreshAdapter struct {
-	client *bsv.Client
+// refreshAdapter adapts a Bitcoin-family client to the utxostore ChainClient
+// interface. The BSV and BTC clients differ only in construction; both list
+// UTXOs as []chain.UTXO, so one adapter serves both.
+type refreshAdapter struct {
+	client utxoLister
 }
 
-// ListUTXOs fetches UTXOs for an address from the BSV chain.
-// bsv.UTXO is an alias for chain.UTXO, so no conversion is needed.
-func (a *bsvRefreshAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
+// ListUTXOs fetches UTXOs for an address from the underlying chain client.
+func (a *refreshAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
 	return a.client.ListUTXOs(ctx, address)
 }
 
-// btcNetwork returns the effective BTC network: the per-service override if set,
-// otherwise the ConfigProvider's value.
-func (s *Service) btcNetwork() string {
-	if s.network != "" {
-		return s.network
+// createUTXOAdapter builds the refresh adapter for a Bitcoin-family chain.
+func (s *Service) createUTXOAdapter(ctx context.Context, chainID chain.ID) *refreshAdapter {
+	if chainID == chain.BTC {
+		return &refreshAdapter{client: btc.NewClient(ctx, &btc.ClientOptions{
+			APIKey:  s.config.GetBTCAPIKey(),
+			Network: btc.Network(s.networkFor(chainID)),
+		})}
 	}
-	return s.config.GetBTCNetwork()
-}
-
-// createBTCAdapter creates a BTC client adapter for UTXO refresh operations.
-func (s *Service) createBTCAdapter(ctx context.Context) *btcRefreshAdapter {
-	client := btc.NewClient(ctx, &btc.ClientOptions{
-		APIKey:  s.config.GetBTCAPIKey(),
-		Network: btc.Network(s.btcNetwork()),
-	})
-	return &btcRefreshAdapter{client: client}
-}
-
-// btcRefreshAdapter adapts a BTC client to the ChainClient interface.
-type btcRefreshAdapter struct {
-	client *btc.Client
-}
-
-// ListUTXOs fetches UTXOs for an address from the BTC chain. btc.Client.ListUTXOs
-// already returns chain.UTXO, so no conversion is required.
-func (a *btcRefreshAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
-	return a.client.ListUTXOs(ctx, address)
+	return &refreshAdapter{client: bsv.NewClient(ctx, &bsv.ClientOptions{
+		APIKey:  s.config.GetBSVAPIKey(),
+		Network: bsv.Network(s.networkFor(chainID)),
+	})}
 }
 
 // RefreshAddress performs chain-specific address refresh.
 func (s *Service) refreshAddress(ctx context.Context, chainID chain.ID, address string) error {
 	switch chainID {
-	case chain.BSV:
-		return s.refreshBSV(ctx, address)
-	case chain.BTC:
-		return s.refreshBTC(ctx, address)
+	case chain.BSV, chain.BTC:
+		return s.refreshUTXOChain(ctx, chainID, address)
 	case chain.ETH:
 		return s.refreshETH(ctx, address)
 	case chain.BCH, chain.LTC:
@@ -121,44 +105,23 @@ func (s *Service) refreshAddress(ctx context.Context, chainID chain.ID, address 
 	}
 }
 
-// refreshBSV refreshes a BSV address (UTXO scan + balance update).
-func (s *Service) refreshBSV(ctx context.Context, address string) error {
-	// Step 1: Refresh UTXOs in store
-	adapter := s.createBSVAdapter(ctx)
-	err := s.utxoStore.RefreshAddress(ctx, address, chain.BSV, adapter)
-	if err != nil {
-		return fmt.Errorf("refreshing BSV UTXOs: %w", err)
+// refreshUTXOChain refreshes a Bitcoin-family address: it rescans UTXOs into the
+// local store and then force-updates the balance cache.
+func (s *Service) refreshUTXOChain(ctx context.Context, chainID chain.ID, address string) error {
+	// Step 1: Refresh UTXOs in store.
+	label := strings.ToUpper(string(chainID))
+	adapter := s.createUTXOAdapter(ctx, chainID)
+	if err := s.utxoStore.RefreshAddress(ctx, address, chainID, adapter); err != nil {
+		return fmt.Errorf("refreshing %s UTXOs: %w", label, err)
 	}
 
-	// Step 2: Update balance cache
-	_, err = s.balanceService.FetchBalance(ctx, &balance.FetchRequest{
-		ChainID:      chain.BSV,
+	// Step 2: Update balance cache.
+	if _, err := s.balanceService.FetchBalance(ctx, &balance.FetchRequest{
+		ChainID:      chainID,
 		Address:      address,
 		ForceRefresh: true,
-	})
-	if err != nil {
-		return fmt.Errorf("updating BSV balance: %w", err)
-	}
-
-	return nil
-}
-
-// refreshBTC refreshes a BTC address (UTXO scan + balance update).
-func (s *Service) refreshBTC(ctx context.Context, address string) error {
-	// Step 1: Refresh UTXOs in store
-	adapter := s.createBTCAdapter(ctx)
-	if err := s.utxoStore.RefreshAddress(ctx, address, chain.BTC, adapter); err != nil {
-		return fmt.Errorf("refreshing BTC UTXOs: %w", err)
-	}
-
-	// Step 2: Update balance cache
-	_, err := s.balanceService.FetchBalance(ctx, &balance.FetchRequest{
-		ChainID:      chain.BTC,
-		Address:      address,
-		ForceRefresh: true,
-	})
-	if err != nil {
-		return fmt.Errorf("updating BTC balance: %w", err)
+	}); err != nil {
+		return fmt.Errorf("updating %s balance: %w", label, err)
 	}
 
 	return nil

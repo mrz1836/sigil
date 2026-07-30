@@ -321,7 +321,7 @@ func TestGetCachedBSVBalances(t *testing.T) {
 			}
 
 			fetcher := NewFetcher(cfg, cache)
-			entries, stale, err := fetcher.getCachedBSVBalances(tt.address)
+			entries, stale, err := fetcher.getCachedUTXOBalance(chain.BSV, tt.address)
 
 			if tt.wantErr {
 				require.Error(t, err)

@@ -425,51 +425,54 @@ func (f *Fetcher) getCachedETHBalances(address string) ([]CacheEntry, bool, erro
 	return entries, stale, nil
 }
 
-// fetchBSV fetches BSV balances.
-func (f *Fetcher) fetchBSV(ctx context.Context, address string) ([]CacheEntry, bool, error) {
-	// Trust very fresh cache entries (set by a recent tx send) over the
-	// network, which may not have indexed the transaction yet.
-	if entry, exists, age := f.cache.Get(chain.BSV, address, ""); exists && age < postSendCacheTrust {
+// utxoBalanceClient is the read-only balance surface shared by the BTC and BSV
+// clients (both return *chain.Balance for these calls).
+type utxoBalanceClient interface {
+	GetNativeBalance(ctx context.Context, address string) (*chain.Balance, error)
+	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*chain.Balance, error)
+}
+
+// utxoCacheEntry builds a native-balance cache entry for a Bitcoin-family chain.
+func utxoCacheEntry(chainID chain.ID, address string, bal *chain.Balance) CacheEntry {
+	var unconfirmedStr string
+	if bal.Unconfirmed != nil && bal.Unconfirmed.Sign() != 0 {
+		unconfirmedStr = chain.FormatSignedDecimalAmount(bal.Unconfirmed, bal.Decimals)
+	}
+	return CacheEntry{
+		Chain:       chainID,
+		Address:     address,
+		Balance:     chain.FormatDecimalAmount(bal.Amount, bal.Decimals),
+		Unconfirmed: unconfirmedStr,
+		Symbol:      bal.Symbol,
+		Decimals:    bal.Decimals,
+		UpdatedAt:   time.Now().UTC(),
+	}
+}
+
+// fetchUTXOBalance fetches the native balance for a Bitcoin-family chain: it
+// trusts very fresh cache entries (set by a recent send, which the network may
+// not have indexed yet) and falls back to cache on network error. Shared core of
+// fetchBSV and fetchBTC.
+func (f *Fetcher) fetchUTXOBalance(ctx context.Context, chainID chain.ID, address string, client utxoBalanceClient) ([]CacheEntry, bool, error) {
+	if entry, exists, age := f.cache.Get(chainID, address, ""); exists && age < postSendCacheTrust {
 		return []CacheEntry{*entry}, false, nil
 	}
 
-	entries := make([]CacheEntry, 0, 1)
-	var stale bool
-
-	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
-
-	// Fetch BSV balance
-	bsvBalance, err := client.GetNativeBalance(ctx, address)
+	bal, err := client.GetNativeBalance(ctx, address)
 	if err != nil {
-		// Fall back to cache
-		return f.getCachedBSVBalances(address)
+		return f.getCachedUTXOBalance(chainID, address)
 	}
 
-	// Format unconfirmed (only set if non-zero)
-	var unconfirmedStr string
-	if bsvBalance.Unconfirmed != nil && bsvBalance.Unconfirmed.Sign() != 0 {
-		unconfirmedStr = chain.FormatSignedDecimalAmount(bsvBalance.Unconfirmed, bsvBalance.Decimals)
-	}
-
-	// Store in cache
-	entry := CacheEntry{
-		Chain:       chain.BSV,
-		Address:     address,
-		Balance:     chain.FormatDecimalAmount(bsvBalance.Amount, bsvBalance.Decimals),
-		Unconfirmed: unconfirmedStr,
-		Symbol:      bsvBalance.Symbol,
-		Decimals:    bsvBalance.Decimals,
-		UpdatedAt:   time.Now().UTC(),
-	}
+	entry := utxoCacheEntry(chainID, address, bal)
 	f.cache.Set(entry)
-	entries = append(entries, entry)
-
-	return entries, stale, nil
+	return []CacheEntry{entry}, false, nil
 }
 
-// getCachedBSVBalances returns cached BSV balances if available.
-func (f *Fetcher) getCachedBSVBalances(address string) ([]CacheEntry, bool, error) {
-	entry, exists, age := f.cache.Get(chain.BSV, address, "")
+// getCachedUTXOBalance returns the cached native balance for a Bitcoin-family
+// chain, or ErrCacheNotFound. Shared core of getCachedBSVBalances and
+// getCachedBTCBalances.
+func (f *Fetcher) getCachedUTXOBalance(chainID chain.ID, address string) ([]CacheEntry, bool, error) {
+	entry, exists, age := f.cache.Get(chainID, address, "")
 	if !exists {
 		metrics.Global.RecordCacheMiss()
 		return nil, true, sigilerr.ErrCacheNotFound
@@ -480,22 +483,21 @@ func (f *Fetcher) getCachedBSVBalances(address string) ([]CacheEntry, bool, erro
 	return []CacheEntry{*entry}, stale, nil
 }
 
-// fetchBSVBulk fetches balances for multiple BSV addresses using bulk API.
-// Returns a map of address -> entries. More efficient than individual calls.
+// fetchUTXOBulk fetches balances for multiple addresses on a Bitcoin-family
+// chain: it honors post-send cache trust, bulk-fetches the rest, and falls back
+// to individual fetch then cache for any address missing from the bulk response.
+// Shared core of fetchBSVBulk and fetchBTCBulk; chainName labels the wrapped error.
 //
-//nolint:gocognit,gocyclo // Complex business logic for bulk balance fetching with caching
-func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
+//nolint:gocognit,gocyclo // Bulk fetch with caching and per-address fallback
+func (f *Fetcher) fetchUTXOBulk(ctx context.Context, chainID chain.ID, addresses []string, client utxoBalanceClient, chainName string) (map[string][]CacheEntry, error) {
 	if len(addresses) == 0 {
 		return make(map[string][]CacheEntry), nil
 	}
 
-	// Check post-send cache trust for all addresses
 	addressesToFetch := make([]string, 0, len(addresses))
 	results := make(map[string][]CacheEntry)
-
 	for _, addr := range addresses {
-		if entry, exists, age := f.cache.Get(chain.BSV, addr, ""); exists && age < postSendCacheTrust {
-			// Use trusted fresh cache
+		if entry, exists, age := f.cache.Get(chainID, addr, ""); exists && age < postSendCacheTrust {
 			results[addr] = []CacheEntry{*entry}
 		} else {
 			addressesToFetch = append(addressesToFetch, addr)
@@ -506,190 +508,62 @@ func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[str
 		return results, nil
 	}
 
-	// Bulk fetch remaining addresses
-	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
 	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
 	if err != nil {
-		// On error, fall back to cached data for all addresses
 		for _, addr := range addressesToFetch {
-			if cachedEntries, _, cacheErr := f.getCachedBSVBalances(addr); cacheErr == nil {
+			if cachedEntries, _, cacheErr := f.getCachedUTXOBalance(chainID, addr); cacheErr == nil {
 				results[addr] = cachedEntries
 			}
 		}
-		return results, sigilerr.Wrap(err, "bulk BSV fetch failed, using cached data")
+		return results, sigilerr.Wrap(err, "bulk %s fetch failed, using cached data", chainName)
 	}
 
-	// Convert bulk results to cache entries
 	for addr, balance := range bulkBalances {
-		var unconfirmedStr string
-		if balance.Unconfirmed != nil && balance.Unconfirmed.Sign() != 0 {
-			unconfirmedStr = chain.FormatSignedDecimalAmount(balance.Unconfirmed, balance.Decimals)
-		}
-
-		entry := CacheEntry{
-			Chain:       chain.BSV,
-			Address:     addr,
-			Balance:     chain.FormatDecimalAmount(balance.Amount, balance.Decimals),
-			Unconfirmed: unconfirmedStr,
-			Symbol:      balance.Symbol,
-			Decimals:    balance.Decimals,
-			UpdatedAt:   time.Now().UTC(),
-		}
-
+		entry := utxoCacheEntry(chainID, addr, balance)
 		f.cache.Set(entry)
 		results[addr] = []CacheEntry{entry}
 	}
 
-	// Handle addresses not in bulk response (API returned no data for them).
-	// This includes:
-	// 1. Addresses completely absent from the bulk API response
-	// 2. Addresses with nil Balance (filtered out by GetBulkNativeBalance)
-	// Fall back to individual fetch for these addresses.
+	// Addresses missing from the bulk response (absent, or nil balance filtered
+	// out) fall back to individual fetch, then cache.
 	for _, addr := range addressesToFetch {
 		if _, found := results[addr]; found {
 			continue
 		}
-
-		// Address was not in bulk response, try individual fetch
-		entries, _, err := f.fetchBSV(ctx, addr)
-		if err == nil && len(entries) > 0 {
-			results[addr] = entries
-			continue
-		}
-
-		// If individual fetch also fails, try to use cached data
-		if cachedEntries, _, cacheErr := f.getCachedBSVBalances(addr); cacheErr == nil {
-			results[addr] = cachedEntries
-		}
-	}
-
-	return results, nil
-}
-
-// fetchBTC fetches BTC balances.
-func (f *Fetcher) fetchBTC(ctx context.Context, address string) ([]CacheEntry, bool, error) {
-	// Trust very fresh cache entries (set by a recent tx send) over the
-	// network, which may not have indexed the transaction yet.
-	if entry, exists, age := f.cache.Get(chain.BTC, address, ""); exists && age < postSendCacheTrust {
-		return []CacheEntry{*entry}, false, nil
-	}
-
-	entries := make([]CacheEntry, 0, 1)
-	var stale bool
-
-	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
-
-	btcBalance, err := client.GetNativeBalance(ctx, address)
-	if err != nil {
-		// Fall back to cache
-		return f.getCachedBTCBalances(address)
-	}
-
-	// Format unconfirmed (only set if non-zero)
-	var unconfirmedStr string
-	if btcBalance.Unconfirmed != nil && btcBalance.Unconfirmed.Sign() != 0 {
-		unconfirmedStr = chain.FormatSignedDecimalAmount(btcBalance.Unconfirmed, btcBalance.Decimals)
-	}
-
-	entry := CacheEntry{
-		Chain:       chain.BTC,
-		Address:     address,
-		Balance:     chain.FormatDecimalAmount(btcBalance.Amount, btcBalance.Decimals),
-		Unconfirmed: unconfirmedStr,
-		Symbol:      btcBalance.Symbol,
-		Decimals:    btcBalance.Decimals,
-		UpdatedAt:   time.Now().UTC(),
-	}
-	f.cache.Set(entry)
-	entries = append(entries, entry)
-
-	return entries, stale, nil
-}
-
-// getCachedBTCBalances returns cached BTC balances if available.
-func (f *Fetcher) getCachedBTCBalances(address string) ([]CacheEntry, bool, error) {
-	entry, exists, age := f.cache.Get(chain.BTC, address, "")
-	if !exists {
-		metrics.Global.RecordCacheMiss()
-		return nil, true, sigilerr.ErrCacheNotFound
-	}
-	metrics.Global.RecordCacheHit()
-
-	stale := age > cache.DefaultStaleness
-	return []CacheEntry{*entry}, stale, nil
-}
-
-// fetchBTCBulk fetches balances for multiple BTC addresses. Esplora has no bulk
-// endpoint, so btc.Client.GetBulkNativeBalance fans out per-address (rate
-// limited). Mirrors fetchBSVBulk's caching + per-address fallback.
-//
-//nolint:gocognit,gocyclo // Complex business logic for bulk balance fetching with caching
-func (f *Fetcher) fetchBTCBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
-	if len(addresses) == 0 {
-		return make(map[string][]CacheEntry), nil
-	}
-
-	addressesToFetch := make([]string, 0, len(addresses))
-	results := make(map[string][]CacheEntry)
-
-	for _, addr := range addresses {
-		if entry, exists, age := f.cache.Get(chain.BTC, addr, ""); exists && age < postSendCacheTrust {
-			results[addr] = []CacheEntry{*entry}
-		} else {
-			addressesToFetch = append(addressesToFetch, addr)
-		}
-	}
-
-	if len(addressesToFetch) == 0 {
-		return results, nil
-	}
-
-	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
-	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
-	if err != nil {
-		for _, addr := range addressesToFetch {
-			if cachedEntries, _, cacheErr := f.getCachedBTCBalances(addr); cacheErr == nil {
-				results[addr] = cachedEntries
-			}
-		}
-		return results, sigilerr.Wrap(err, "bulk BTC fetch failed, using cached data")
-	}
-
-	for addr, balance := range bulkBalances {
-		var unconfirmedStr string
-		if balance.Unconfirmed != nil && balance.Unconfirmed.Sign() != 0 {
-			unconfirmedStr = chain.FormatSignedDecimalAmount(balance.Unconfirmed, balance.Decimals)
-		}
-
-		entry := CacheEntry{
-			Chain:       chain.BTC,
-			Address:     addr,
-			Balance:     chain.FormatDecimalAmount(balance.Amount, balance.Decimals),
-			Unconfirmed: unconfirmedStr,
-			Symbol:      balance.Symbol,
-			Decimals:    balance.Decimals,
-			UpdatedAt:   time.Now().UTC(),
-		}
-
-		f.cache.Set(entry)
-		results[addr] = []CacheEntry{entry}
-	}
-
-	// Addresses missing from the bulk response fall back to individual fetch,
-	// then cache.
-	for _, addr := range addressesToFetch {
-		if _, found := results[addr]; found {
-			continue
-		}
-		entries, _, fetchErr := f.fetchBTC(ctx, addr)
+		entries, _, fetchErr := f.fetchUTXOBalance(ctx, chainID, addr, client)
 		if fetchErr == nil && len(entries) > 0 {
 			results[addr] = entries
 			continue
 		}
-		if cachedEntries, _, cacheErr := f.getCachedBTCBalances(addr); cacheErr == nil {
+		if cachedEntries, _, cacheErr := f.getCachedUTXOBalance(chainID, addr); cacheErr == nil {
 			results[addr] = cachedEntries
 		}
 	}
 
 	return results, nil
+}
+
+// fetchBSV fetches BSV balances.
+func (f *Fetcher) fetchBSV(ctx context.Context, address string) ([]CacheEntry, bool, error) {
+	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
+	return f.fetchUTXOBalance(ctx, chain.BSV, address, client)
+}
+
+// fetchBSVBulk fetches balances for multiple BSV addresses using the bulk API.
+func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
+	client := f.newBSVBalanceClient(ctx, &bsv.ClientOptions{Network: bsv.Network(f.bsvNetworkString())})
+	return f.fetchUTXOBulk(ctx, chain.BSV, addresses, client, "BSV")
+}
+
+// fetchBTC fetches BTC balances.
+func (f *Fetcher) fetchBTC(ctx context.Context, address string) ([]CacheEntry, bool, error) {
+	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
+	return f.fetchUTXOBalance(ctx, chain.BTC, address, client)
+}
+
+// fetchBTCBulk fetches balances for multiple BTC addresses. Esplora has no bulk
+// endpoint, so btc.Client.GetBulkNativeBalance fans out per-address (rate limited).
+func (f *Fetcher) fetchBTCBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
+	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
+	return f.fetchUTXOBulk(ctx, chain.BTC, addresses, client, "BTC")
 }

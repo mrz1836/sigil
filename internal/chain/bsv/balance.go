@@ -7,18 +7,14 @@ import (
 
 	whatsonchain "github.com/mrz1836/go-whatsonchain"
 
+	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
-// Balance represents a balance result with metadata.
-type Balance struct {
-	Address     string
-	Amount      *big.Int
-	Unconfirmed *big.Int // Unconfirmed balance delta in satoshis (can be negative)
-	Symbol      string
-	Decimals    int
-}
+// Balance is an alias for chain.Balance (identical fields) so the BSV balance
+// client and the service layer share one type.
+type Balance = chain.Balance
 
 // GetNativeBalance retrieves the native BSV balance including unconfirmed data.
 func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance, error) {

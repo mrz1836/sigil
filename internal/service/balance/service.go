@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mrz1836/sigil/internal/cache"
+	"github.com/mrz1836/sigil/internal/chain"
 )
 
 // ErrNoCachedBalance is returned when no cached balance exists for an address.
@@ -150,7 +151,7 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 	// Apply refresh policy to BSV addresses before bulk fetch
 	bsvAddressesToFetch := make([]string, 0, len(bsvAddresses))
 	for _, addr := range bsvAddresses {
-		needsFetch, cachedResult := s.processBSVAddress(addr, req.ForceRefresh)
+		needsFetch, cachedResult := s.processUTXOAddress(chain.BSV, addr, req.ForceRefresh)
 		if needsFetch {
 			bsvAddressesToFetch = append(bsvAddressesToFetch, addr)
 		} else if cachedResult != nil {
@@ -211,7 +212,7 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 	// Apply refresh policy to BTC addresses before bulk fetch
 	btcAddressesToFetch := make([]string, 0, len(btcAddresses))
 	for _, addr := range btcAddresses {
-		needsFetch, cachedResult := s.processBTCAddress(addr, req.ForceRefresh)
+		needsFetch, cachedResult := s.processUTXOAddress(chain.BTC, addr, req.ForceRefresh)
 		if needsFetch {
 			btcAddressesToFetch = append(btcAddressesToFetch, addr)
 		} else if cachedResult != nil {
@@ -379,58 +380,27 @@ func (s *Service) FetchCachedBalances(_ context.Context, req *FetchBatchRequest)
 	return batchResult, nil
 }
 
-// processBSVAddress determines if a BSV address needs fetching or can use cached data.
-// Returns (needsFetch, cachedResult).
-func (s *Service) processBSVAddress(addr string, forceRefresh bool) (bool, *FetchResult) {
-	// Skip policy check if forcing refresh or no policy configured
+// processUTXOAddress determines if a Bitcoin-family address needs fetching or can
+// use cached data, honoring the refresh policy. Returns (needsFetch, cachedResult).
+func (s *Service) processUTXOAddress(chainID chain.ID, addr string, forceRefresh bool) (bool, *FetchResult) {
+	// Skip policy check if forcing refresh or no policy configured.
 	if s.policy == nil || forceRefresh || s.force {
 		return true, nil
 	}
 
-	// Consult refresh policy
-	decision := s.policy.ShouldRefresh("bsv", addr)
-	if decision != CacheOK {
-		// RefreshRequired
+	// Consult refresh policy.
+	if s.policy.ShouldRefresh(chainID, addr) != CacheOK {
 		return true, nil
 	}
 
-	// Use cached data
-	cachedBalances := getCachedBalancesForAddress("bsv", addr, s.cache)
-	if len(cachedBalances) == 0 {
-		// No cache exists, need to fetch
-		return true, nil
-	}
-
-	result := &FetchResult{
-		ChainID:  "bsv",
-		Address:  addr,
-		Balances: make([]BalanceEntry, len(cachedBalances)),
-	}
-	for i, cached := range cachedBalances {
-		result.Balances[i] = cacheEntryToBalanceEntry(cached)
-	}
-	return false, result
-}
-
-// processBTCAddress determines if a BTC address needs fetching or can use cached data.
-// Returns (needsFetch, cachedResult).
-func (s *Service) processBTCAddress(addr string, forceRefresh bool) (bool, *FetchResult) {
-	if s.policy == nil || forceRefresh || s.force {
-		return true, nil
-	}
-
-	decision := s.policy.ShouldRefresh("btc", addr)
-	if decision != CacheOK {
-		return true, nil
-	}
-
-	cachedBalances := getCachedBalancesForAddress("btc", addr, s.cache)
+	// Use cached data when present.
+	cachedBalances := getCachedBalancesForAddress(chainID, addr, s.cache)
 	if len(cachedBalances) == 0 {
 		return true, nil
 	}
 
 	result := &FetchResult{
-		ChainID:  "btc",
+		ChainID:  chainID,
 		Address:  addr,
 		Balances: make([]BalanceEntry, len(cachedBalances)),
 	}

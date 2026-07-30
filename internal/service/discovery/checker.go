@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/utxostore"
@@ -13,10 +14,8 @@ import (
 // For ETH: fetches balance only (account-based chain has no UTXOs).
 func (s *Service) CheckAddress(ctx context.Context, req *CheckRequest) (*CheckResult, error) {
 	switch req.ChainID {
-	case chain.BSV:
-		return s.checkBSV(ctx, req.Address)
-	case chain.BTC:
-		return s.checkBTC(ctx, req.Address)
+	case chain.BSV, chain.BTC:
+		return s.checkUTXOChain(ctx, req.ChainID, req.Address)
 	case chain.ETH:
 		return s.checkETH(ctx, req.Address)
 	case chain.BCH, chain.LTC:
@@ -26,53 +25,18 @@ func (s *Service) CheckAddress(ctx context.Context, req *CheckRequest) (*CheckRe
 	}
 }
 
-// checkBSV checks a BSV address by refreshing UTXOs and returning results.
-func (s *Service) checkBSV(ctx context.Context, address string) (*CheckResult, error) {
-	// Refresh UTXOs
-	adapter := s.createBSVAdapter(ctx)
-	err := s.utxoStore.RefreshAddress(ctx, address, chain.BSV, adapter)
-	if err != nil {
-		return nil, fmt.Errorf("refreshing BSV address: %w", err)
+// checkUTXOChain checks a Bitcoin-family address by refreshing UTXOs into the
+// store and returning its balance + UTXO list. Shared core of the BSV and BTC
+// activity checks.
+func (s *Service) checkUTXOChain(ctx context.Context, chainID chain.ID, address string) (*CheckResult, error) {
+	adapter := s.createUTXOAdapter(ctx, chainID)
+	if err := s.utxoStore.RefreshAddress(ctx, address, chainID, adapter); err != nil {
+		return nil, fmt.Errorf("refreshing %s address: %w", strings.ToUpper(string(chainID)), err)
 	}
 
-	// Get balance and UTXOs from store
-	balance := s.utxoStore.GetAddressBalance(chain.BSV, address)
-	storeUTXOs := s.utxoStore.GetUTXOs(chain.BSV, address)
-	meta := s.utxoStore.GetAddress(chain.BSV, address)
-
-	// Convert UTXOs to service type
-	utxos := make([]UTXO, 0, len(storeUTXOs))
-	for _, u := range storeUTXOs {
-		utxos = append(utxos, UTXO{
-			TxID:          u.TxID,
-			Vout:          u.Vout,
-			Amount:        u.Amount,
-			Confirmations: u.Confirmations,
-		})
-	}
-
-	result := &CheckResult{
-		Address:     address,
-		ChainID:     chain.BSV,
-		Balance:     balance,
-		UTXOs:       utxos,
-		HasActivity: meta != nil && meta.HasActivity,
-		Label:       getLabel(meta),
-	}
-
-	return result, nil
-}
-
-// checkBTC checks a BTC address by refreshing UTXOs and returning results.
-func (s *Service) checkBTC(ctx context.Context, address string) (*CheckResult, error) {
-	adapter := s.createBTCAdapter(ctx)
-	if err := s.utxoStore.RefreshAddress(ctx, address, chain.BTC, adapter); err != nil {
-		return nil, fmt.Errorf("refreshing BTC address: %w", err)
-	}
-
-	balance := s.utxoStore.GetAddressBalance(chain.BTC, address)
-	storeUTXOs := s.utxoStore.GetUTXOs(chain.BTC, address)
-	meta := s.utxoStore.GetAddress(chain.BTC, address)
+	balance := s.utxoStore.GetAddressBalance(chainID, address)
+	storeUTXOs := s.utxoStore.GetUTXOs(chainID, address)
+	meta := s.utxoStore.GetAddress(chainID, address)
 
 	utxos := make([]UTXO, 0, len(storeUTXOs))
 	for _, u := range storeUTXOs {
@@ -86,7 +50,7 @@ func (s *Service) checkBTC(ctx context.Context, address string) (*CheckResult, e
 
 	return &CheckResult{
 		Address:     address,
-		ChainID:     chain.BTC,
+		ChainID:     chainID,
 		Balance:     balance,
 		UTXOs:       utxos,
 		HasActivity: meta != nil && meta.HasActivity,

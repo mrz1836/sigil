@@ -30,6 +30,9 @@ const (
 	EnvBSVFeeStrategy  = "SIGIL_BSV_FEE_STRATEGY"
 	EnvBSVMinMiners    = "SIGIL_BSV_MIN_MINERS"
 	EnvBSVNetwork      = "SIGIL_BSV_NETWORK"
+	EnvBTCAPIKey       = "SIGIL_BTC_API_KEY" // #nosec G101 -- false positive, this is a const name not a credential
+	EnvBTCFeeStrategy  = "SIGIL_BTC_FEE_STRATEGY"
+	EnvBTCNetwork      = "SIGIL_BTC_NETWORK"
 	EnvAgentToken      = "SIGIL_AGENT_TOKEN" //nolint:gosec // G101 -- false positive, this is a const name not a credential
 	EnvAgentXpub       = "SIGIL_AGENT_XPUB"
 )
@@ -97,6 +100,29 @@ func ApplyEnvironment(cfg *Config) {
 	if cfg.Networks.BSV.APIKey == "" {
 		if v := os.Getenv(EnvWOCAPIKey); v != "" {
 			cfg.Networks.BSV.APIKey = strings.TrimSpace(v)
+		}
+	}
+
+	if v := os.Getenv(EnvBTCAPIKey); v != "" {
+		cfg.Networks.BTC.APIKey = strings.TrimSpace(v)
+	}
+
+	// SIGIL_BTC_FEE_STRATEGY overrides BTC fee strategy (silently ignore invalid values)
+	if v := os.Getenv(EnvBTCFeeStrategy); v != "" {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "economy" || v == "normal" || v == "priority" {
+			cfg.Fees.BTCFeeStrategy = v
+		}
+	}
+
+	// SIGIL_BTC_NETWORK selects mainnet or testnet4
+	if v := os.Getenv(EnvBTCNetwork); v != "" {
+		if n, ok := NormalizeBTCNetwork(v); ok {
+			cfg.Networks.BTC.Network = n
+		} else {
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("SIGIL_BTC_NETWORK: invalid value %q (use main or test); defaulting to main", v))
+			cfg.Networks.BTC.Network = "main"
 		}
 	}
 

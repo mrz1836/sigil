@@ -50,7 +50,7 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, "age", cfg.Encryption.Method)
 	assert.True(t, cfg.Networks.ETH.Enabled)
 	assert.True(t, cfg.Networks.BSV.Enabled)
-	assert.False(t, cfg.Networks.BTC.Enabled)
+	assert.True(t, cfg.Networks.BTC.Enabled)
 	assert.False(t, cfg.Networks.BCH.Enabled)
 	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.API)
 	assert.Equal(t, "whatsonchain", cfg.Networks.BSV.Broadcast)
@@ -714,7 +714,7 @@ func TestDefaults_ComprehensiveValidation(t *testing.T) {
 	assert.Empty(t, cfg.Networks.BSV.APIKey)
 
 	// Networks - BTC
-	assert.False(t, cfg.Networks.BTC.Enabled)
+	assert.True(t, cfg.Networks.BTC.Enabled)
 
 	// Networks - BCH
 	assert.False(t, cfg.Networks.BCH.Enabled)
@@ -832,7 +832,9 @@ func TestDefaults_NetworkDefaults(t *testing.T) {
 	// BTC network defaults
 	t.Run("BTC", func(t *testing.T) {
 		btc := cfg.Networks.BTC
-		assert.False(t, btc.Enabled, "BTC should be disabled by default")
+		assert.True(t, btc.Enabled, "BTC should be enabled by default")
+		assert.Equal(t, "main", btc.Network, "BTC should default to mainnet")
+		assert.Equal(t, "https://mempool.space/api", btc.API, "BTC API should default to mempool.space")
 	})
 
 	// BCH network defaults

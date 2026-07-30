@@ -46,8 +46,11 @@ func Defaults() *Config {
 				APIKey:    "",
 			},
 			BTC: BTCNetworkConfig{
-				Enabled: false, // Phase 2
-				API:     "mempool",
+				Enabled:   true,
+				Network:   "main",
+				API:       "https://mempool.space/api",
+				Broadcast: "mempool",
+				APIKey:    "",
 			},
 			BCH: BCHNetworkConfig{
 				Enabled: false, // Phase 2
@@ -61,6 +64,7 @@ func Defaults() *Config {
 			ETHGasStrategy:      "medium",
 			BSVFeeStrategy:      "normal",
 			BSVMinMiners:        3,
+			BTCFeeStrategy:      "normal",
 		},
 		Derivation: DerivationConfig{
 			DefaultAccount: 0,

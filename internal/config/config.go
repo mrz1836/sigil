@@ -72,8 +72,14 @@ type BSVNetworkConfig struct {
 
 // BTCNetworkConfig defines BTC network settings.
 type BTCNetworkConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	API     string `yaml:"api"`
+	Enabled bool `yaml:"enabled"`
+	// Network selects the BTC chain: "main" (default) or "test" (testnet4).
+	Network string `yaml:"network"`
+	// API and Broadcast are reserved provider selectors kept for config
+	// back-compat; the Esplora base URL is derived from Network.
+	API       string `yaml:"api"`
+	Broadcast string `yaml:"broadcast"`
+	APIKey    string `yaml:"api_key"`
 }
 
 // BCHNetworkConfig defines BCH network settings.
@@ -90,6 +96,7 @@ type FeesConfig struct {
 	ETHGasStrategy      string `yaml:"eth_gas_strategy"`
 	BSVFeeStrategy      string `yaml:"bsv_fee_strategy"`
 	BSVMinMiners        int    `yaml:"bsv_min_miners"`
+	BTCFeeStrategy      string `yaml:"btc_fee_strategy"`
 }
 
 // DerivationConfig defines key derivation settings.
@@ -213,6 +220,38 @@ func (c *Config) GetBSVFeeStrategy() string {
 // GetBSVMinMiners returns the minimum number of miners for the normal fee strategy.
 func (c *Config) GetBSVMinMiners() int {
 	return c.Fees.BSVMinMiners
+}
+
+// GetBTCAPIKey returns the BTC (Esplora) API key.
+func (c *Config) GetBTCAPIKey() string {
+	return c.Networks.BTC.APIKey
+}
+
+// GetBTCNetwork returns the normalized BTC network ("main" or "test"),
+// defaulting to "main" for empty or unrecognized values.
+func (c *Config) GetBTCNetwork() string {
+	n, _ := NormalizeBTCNetwork(c.Networks.BTC.Network)
+	return n
+}
+
+// NormalizeBTCNetwork maps a user-supplied network string to its canonical form.
+// It accepts "main"/"mainnet" and "test"/"testnet" (case-insensitive), returning
+// the canonical "main" or "test". The empty string resolves to "main". The bool
+// is false only when the value was non-empty but unrecognized (invalid input).
+func NormalizeBTCNetwork(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "main", "mainnet":
+		return "main", true
+	case "test", "testnet", "testnet4":
+		return "test", true
+	default:
+		return "main", false
+	}
+}
+
+// GetBTCFeeStrategy returns the BTC fee strategy (economy, normal, priority).
+func (c *Config) GetBTCFeeStrategy() string {
+	return c.Fees.BTCFeeStrategy
 }
 
 // GetLoggingLevel returns the configured logging level.

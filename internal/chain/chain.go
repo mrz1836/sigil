@@ -113,9 +113,9 @@ func (id ID) IsValid() bool {
 // IsMVP returns true if the chain is supported in MVP (Phase 1).
 func (id ID) IsMVP() bool {
 	switch id {
-	case ETH, BSV:
+	case ETH, BSV, BTC:
 		return true
-	case BTC, BCH, LTC:
+	case BCH, LTC:
 		return false
 	default:
 		return false
@@ -271,7 +271,7 @@ type UTXO struct {
 
 // SupportedChains returns the list of MVP-supported chain IDs.
 func SupportedChains() []ID {
-	return []ID{ETH, BSV}
+	return []ID{ETH, BSV, BTC}
 }
 
 // AllChains returns all known chain IDs.

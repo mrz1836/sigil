@@ -129,8 +129,15 @@ func TestDefaultFactory_NewChain(t *testing.T) {
 		}
 	})
 
-	t.Run("future chain BTC returns ErrUnsupportedChain", func(t *testing.T) {
+	t.Run("BTC is supported and returns ErrValidationOnly", func(t *testing.T) {
 		_, err := factory.NewChain(context.Background(), BTC, "http://localhost")
+		if !errors.Is(err, ErrValidationOnly) {
+			t.Errorf("NewChain() error = %v, want %v", err, ErrValidationOnly)
+		}
+	})
+
+	t.Run("future chain BCH returns ErrUnsupportedChain", func(t *testing.T) {
+		_, err := factory.NewChain(context.Background(), BCH, "http://localhost")
 		if !errors.Is(err, ErrUnsupportedChain) {
 			t.Errorf("NewChain() error = %v, want %v", err, ErrUnsupportedChain)
 		}
@@ -145,7 +152,7 @@ func TestIsSupportedChain(t *testing.T) {
 	}{
 		{"ETH", ETH, true},
 		{"BSV", BSV, true},
-		{"BTC", BTC, false},
+		{"BTC", BTC, true},
 		{"BCH", BCH, false},
 		{"unknown", ID("unknown"), false},
 		{"empty", ID(""), false},

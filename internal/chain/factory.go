@@ -106,9 +106,9 @@ func (f *DefaultFactory) NewChain(_ context.Context, id ID, _ string) (Chain, er
 // IsSupportedChain returns true if the chain ID is supported by sigil.
 func IsSupportedChain(id ID) bool {
 	switch id {
-	case ETH, BSV:
+	case ETH, BSV, BTC:
 		return true
-	case BTC, BCH, LTC:
+	case BCH, LTC:
 		// Planned but not yet implemented
 		return false
 	default:

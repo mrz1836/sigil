@@ -110,7 +110,7 @@ func TestID_IsMVP(t *testing.T) {
 	}{
 		{"ETH", ETH, true},
 		{"BSV", BSV, true},
-		{"BTC", BTC, false},
+		{"BTC", BTC, true},
 		{"BCH", BCH, false},
 		{"unknown", ID("unknown"), false},
 		{"empty", ID(""), false},
@@ -158,11 +158,11 @@ func TestParseChainID(t *testing.T) {
 func TestSupportedChains(t *testing.T) {
 	chains := SupportedChains()
 
-	if len(chains) != 2 {
-		t.Errorf("SupportedChains() returned %d chains, want 2", len(chains))
+	if len(chains) != 3 {
+		t.Errorf("SupportedChains() returned %d chains, want 3", len(chains))
 	}
 
-	expected := map[ID]bool{ETH: true, BSV: true}
+	expected := map[ID]bool{ETH: true, BSV: true, BTC: true}
 	for _, c := range chains {
 		if !expected[c] {
 			t.Errorf("SupportedChains() contains unexpected chain %q", c)

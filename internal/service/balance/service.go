@@ -148,14 +148,18 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 		})
 	}
 
-	// Apply refresh policy to BSV addresses before bulk fetch
+	// Apply refresh policy to BSV addresses before bulk fetch. Cached results are
+	// appended under mu because the per-chain fetch goroutines (launched below)
+	// append to batchResult.Results concurrently.
 	bsvAddressesToFetch := make([]string, 0, len(bsvAddresses))
 	for _, addr := range bsvAddresses {
 		needsFetch, cachedResult := s.processUTXOAddress(chain.BSV, addr, req.ForceRefresh)
 		if needsFetch {
 			bsvAddressesToFetch = append(bsvAddressesToFetch, addr)
 		} else if cachedResult != nil {
+			mu.Lock()
 			batchResult.Results = append(batchResult.Results, cachedResult)
+			mu.Unlock()
 		}
 	}
 
@@ -209,14 +213,17 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 		}()
 	}
 
-	// Apply refresh policy to BTC addresses before bulk fetch
+	// Apply refresh policy to BTC addresses before bulk fetch. This runs while the
+	// BSV fetch goroutine may already be appending, so guard the shared slice.
 	btcAddressesToFetch := make([]string, 0, len(btcAddresses))
 	for _, addr := range btcAddresses {
 		needsFetch, cachedResult := s.processUTXOAddress(chain.BTC, addr, req.ForceRefresh)
 		if needsFetch {
 			btcAddressesToFetch = append(btcAddressesToFetch, addr)
 		} else if cachedResult != nil {
+			mu.Lock()
 			batchResult.Results = append(batchResult.Results, cachedResult)
+			mu.Unlock()
 		}
 	}
 

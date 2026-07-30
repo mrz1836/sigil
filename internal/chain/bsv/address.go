@@ -2,12 +2,11 @@ package bsv
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
 
+	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
 	sigilerrors "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -25,9 +24,6 @@ const (
 
 	// payloadLen is the length of the address payload (RIPEMD-160 hash).
 	payloadLen = 20
-
-	// Base58 alphabet (excludes 0, O, I, l).
-	base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 )
 
 var (
@@ -39,18 +35,7 @@ var (
 
 	// ErrInvalidAddressLength indicates the address has wrong length.
 	ErrInvalidAddressLength = errors.New("invalid address length")
-
-	// base58AlphabetMap maps base58 characters to their values.
-	//nolint:gochecknoglobals // Required for base58 encoding/decoding
-	base58AlphabetMap = make(map[rune]int)
 )
-
-//nolint:gochecknoinits // Required for base58 alphabet map initialization
-func init() {
-	for i, c := range base58Alphabet {
-		base58AlphabetMap[c] = i
-	}
-}
 
 // IsValidAddress checks if a mainnet BSV address is valid (format only).
 func IsValidAddress(address string) bool {
@@ -166,86 +151,23 @@ func EncodeBase58Check(version byte, payload []byte) string {
 	return base58Encode(full)
 }
 
-// base58Decode decodes a base58 string to bytes.
+// base58Decode decodes a base58 string to bytes. It delegates to the single
+// audited Base58 implementation in internal/wallet/bitcoin (as the BTC client
+// does) so there is one reviewed crypto path; outputs are identical.
 func base58Decode(s string) ([]byte, error) {
-	if s == "" {
+	decoded, err := bitcoin.Base58Decode(s)
+	if err != nil {
 		return nil, ErrInvalidBase58
 	}
-
-	// Count leading '1's (which represent leading zero bytes)
-	leadingOnes := 0
-	for _, c := range s {
-		if c == '1' {
-			leadingOnes++
-		} else {
-			break
-		}
-	}
-
-	// Convert base58 to big integer
-	result := big.NewInt(0)
-	base := big.NewInt(58)
-
-	for _, c := range s {
-		value, ok := base58AlphabetMap[c]
-		if !ok {
-			return nil, fmt.Errorf("%w: invalid character '%c'", ErrInvalidBase58, c)
-		}
-
-		result.Mul(result, base)
-		result.Add(result, big.NewInt(int64(value)))
-	}
-
-	// Convert to bytes
-	decoded := result.Bytes()
-
-	// Add leading zero bytes
-	output := make([]byte, leadingOnes+len(decoded))
-	copy(output[leadingOnes:], decoded)
-
-	return output, nil
+	return decoded, nil
 }
 
-// base58Encode encodes bytes to base58.
+// base58Encode encodes bytes to base58 via the canonical implementation.
 func base58Encode(input []byte) string {
-	// Count leading zeros
-	leadingZeros := 0
-	for _, b := range input {
-		if b == 0 {
-			leadingZeros++
-		} else {
-			break
-		}
-	}
-
-	// Convert to big integer
-	x := new(big.Int).SetBytes(input)
-	base := big.NewInt(58)
-	zero := big.NewInt(0)
-	mod := new(big.Int)
-
-	var result []byte
-	for x.Cmp(zero) > 0 {
-		x.DivMod(x, base, mod)
-		result = append(result, base58Alphabet[mod.Int64()])
-	}
-
-	// Add leading '1's for each leading zero byte
-	for range leadingZeros {
-		result = append(result, '1')
-	}
-
-	// Reverse the result
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
-
-	return string(result)
+	return bitcoin.Base58Encode(input)
 }
 
 // doubleSHA256Checksum computes the first 4 bytes of double SHA256.
 func doubleSHA256Checksum(data []byte) []byte {
-	first := sha256.Sum256(data)
-	second := sha256.Sum256(first[:])
-	return second[:checksumLen]
+	return bitcoin.DoubleSHA256(data)[:checksumLen]
 }

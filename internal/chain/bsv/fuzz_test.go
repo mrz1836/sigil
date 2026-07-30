@@ -2,6 +2,7 @@ package bsv
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/mrz1836/sigil/internal/chain"
@@ -137,8 +138,10 @@ func FuzzBase58Encode(f *testing.F) {
 
 func validateBase58Chars(t *testing.T, encoded string, input []byte) {
 	t.Helper()
+	// Base58 alphabet (excludes 0, O, I, l).
+	const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 	for _, c := range encoded {
-		if _, ok := base58AlphabetMap[c]; !ok {
+		if !strings.ContainsRune(base58Alphabet, c) {
 			t.Errorf("base58Encode returned invalid character '%c' for input %v", c, input)
 		}
 	}

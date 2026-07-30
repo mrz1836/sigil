@@ -97,25 +97,9 @@ type bsvClientAdapter struct {
 }
 
 // ListUTXOs implements utxostore.ChainClient by converting bsv.UTXO to chain.UTXO.
+// bsv.UTXO is an alias for chain.UTXO, so no conversion is needed.
 func (a *bsvClientAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
-	bsvUTXOs, err := a.client.ListUTXOs(ctx, address)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert bsv.UTXO to chain.UTXO
-	chainUTXOs := make([]chain.UTXO, len(bsvUTXOs))
-	for i, u := range bsvUTXOs {
-		chainUTXOs[i] = chain.UTXO{
-			TxID:          u.TxID,
-			Vout:          u.Vout,
-			Amount:        u.Amount,
-			ScriptPubKey:  u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		}
-	}
-	return chainUTXOs, nil
+	return a.client.ListUTXOs(ctx, address)
 }
 
 // scanWalletUTXOs scans a wallet for UTXOs and reports results.

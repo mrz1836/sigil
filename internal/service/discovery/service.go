@@ -71,25 +71,9 @@ type bsvRefreshAdapter struct {
 }
 
 // ListUTXOs fetches UTXOs for an address from the BSV chain.
+// bsv.UTXO is an alias for chain.UTXO, so no conversion is needed.
 func (a *bsvRefreshAdapter) ListUTXOs(ctx context.Context, address string) ([]chain.UTXO, error) {
-	utxos, err := a.client.ListUTXOs(ctx, address)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert BSV UTXOs to generic chain.UTXO format
-	result := make([]chain.UTXO, len(utxos))
-	for i, u := range utxos {
-		result[i] = chain.UTXO{
-			TxID:          u.TxID,
-			Vout:          u.Vout,
-			Amount:        u.Amount,
-			ScriptPubKey:  u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		}
-	}
-	return result, nil
+	return a.client.ListUTXOs(ctx, address)
 }
 
 // btcNetwork returns the effective BTC network: the per-service override if set,

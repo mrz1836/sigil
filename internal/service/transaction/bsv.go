@@ -104,20 +104,8 @@ func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, e
 		}
 		bulkOps := bsv.NewBulkOperations(client.GetWOCClient(), bulkOpts)
 
-		// Convert to bsv.UTXO format
-		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
-		for i, u := range allUTXOs {
-			bsvUTXOs[i] = bsv.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
-
-		// Validate
-		statuses, validateErr := bulkOps.BulkUTXOValidation(ctx, bsvUTXOs)
+		// Validate (bsv.UTXO is an alias for chain.UTXO; no conversion needed).
+		statuses, validateErr := bulkOps.BulkUTXOValidation(ctx, allUTXOs)
 		if validateErr != nil {
 			if s.logger != nil {
 				s.logger.Error("bsv send: UTXO validation failed: %v", validateErr)
@@ -176,36 +164,12 @@ func (s *Service) sendBSV(ctx context.Context, req *SendRequest) (*SendResult, e
 			return nil, sigilerr.WithSuggestion(sigilerr.ErrInsufficientFunds, "no UTXOs found across any wallet address")
 		}
 
-		// Convert to bsv.UTXO for SelectUTXOs, preserving address info
-		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
-		for i, u := range allUTXOs {
-			bsvUTXOs[i] = bsv.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
-
-		selected, _, selErr := client.SelectUTXOs(bsvUTXOs, amount.Uint64(), feeQuote.StandardRate)
+		// bsv.UTXO is an alias for chain.UTXO; no conversion needed.
+		selected, _, selErr := client.SelectUTXOs(allUTXOs, amount.Uint64(), feeQuote.StandardRate)
 		if selErr != nil {
 			return nil, selErr
 		}
-
-		// Convert selected back to chain.UTXO
-		sendUTXOs = make([]chain.UTXO, len(selected))
-		for i, u := range selected {
-			sendUTXOs[i] = chain.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
+		sendUTXOs = selected
 
 		estimatedFee = bsv.EstimateFeeForTx(len(selected), 2, feeQuote.StandardRate)
 		displayAmount = req.AmountStr

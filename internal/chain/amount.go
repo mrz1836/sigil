@@ -105,6 +105,24 @@ func FormatDecimalAmount(amount *big.Int, decimalPlaces int) string {
 	return result
 }
 
+// FormatFixedDecimal converts a big.Int to a fixed-precision decimal string with
+// exactly decimalPlaces fractional digits. Unlike FormatDecimalAmount it does not
+// trim trailing zeros, so 100000000 with 8 decimals returns "1.00000000". A nil
+// amount is treated as zero.
+func FormatFixedDecimal(amount *big.Int, decimalPlaces int) string {
+	if amount == nil {
+		amount = new(big.Int)
+	}
+
+	str := amount.String()
+	for len(str) <= decimalPlaces {
+		str = "0" + str
+	}
+
+	decimalPos := len(str) - decimalPlaces
+	return str[:decimalPos] + "." + str[decimalPos:]
+}
+
 // FormatSignedDecimalAmount formats a possibly-negative amount with the correct decimals.
 // For negative values, it formats the absolute value then prepends "-".
 // Trailing zeros after the decimal point are removed.

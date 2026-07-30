@@ -257,21 +257,7 @@ func (c *Client) ValidateAddress(address string) error {
 
 // FormatAmount converts a big.Int (wei) to a human-readable ETH string.
 func (c *Client) FormatAmount(amount *big.Int) string {
-	if amount == nil {
-		return "0.000000000000000000"
-	}
-
-	// Convert to string with all digits
-	str := amount.String()
-
-	// Pad with leading zeros if necessary
-	for len(str) <= decimals {
-		str = "0" + str
-	}
-
-	// Insert decimal point
-	decimalPos := len(str) - decimals
-	return str[:decimalPos] + "." + str[decimalPos:]
+	return chain.FormatFixedDecimal(amount, decimals)
 }
 
 // ParseAmount converts a human-readable ETH string to big.Int (wei).

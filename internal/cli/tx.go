@@ -457,21 +457,9 @@ func prepareBSVConfirmation(
 			)
 		}
 
-		// Convert to bsv.UTXO for selection
-		bsvUTXOs := make([]bsv.UTXO, len(allUTXOs))
-		for i, u := range allUTXOs {
-			bsvUTXOs[i] = bsv.UTXO{
-				TxID:          u.TxID,
-				Vout:          u.Vout,
-				Amount:        u.Amount,
-				ScriptPubKey:  u.ScriptPubKey,
-				Address:       u.Address,
-				Confirmations: u.Confirmations,
-			}
-		}
-
-		// Select UTXOs needed for this transaction
-		selected, _, err := bsvClient.SelectUTXOs(bsvUTXOs, amount.Uint64(), feeQuote.StandardRate)
+		// Select UTXOs needed for this transaction.
+		// bsv.UTXO is an alias for chain.UTXO, so no conversion is needed.
+		selected, _, err := bsvClient.SelectUTXOs(allUTXOs, amount.Uint64(), feeQuote.StandardRate)
 		if err != nil {
 			return nil, err
 		}

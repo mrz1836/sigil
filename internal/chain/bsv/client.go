@@ -247,15 +247,9 @@ type BalanceResponse struct {
 	Unconfirmed int64 `json:"unconfirmed"`
 }
 
-// UTXO represents an unspent transaction output.
-type UTXO struct {
-	TxID          string
-	Vout          uint32
-	Amount        uint64
-	ScriptPubKey  string
-	Address       string
-	Confirmations uint32
-}
+// UTXO is an unspent transaction output. It is an alias for chain.UTXO (fields
+// map 1:1) so the BSV service layer needs no conversion between the two.
+type UTXO = chain.UTXO
 
 // GetBalance retrieves the BSV balance for an address.
 func (c *Client) GetBalance(ctx context.Context, address string) (*big.Int, error) {
@@ -408,21 +402,7 @@ func (c *Client) ValidateAddress(address string) error {
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BSV string.
 func (c *Client) FormatAmount(amount *big.Int) string {
-	if amount == nil {
-		return "0.00000000"
-	}
-
-	// Convert to string with all digits
-	str := amount.String()
-
-	// Pad with leading zeros if necessary
-	for len(str) <= decimals {
-		str = "0" + str
-	}
-
-	// Insert decimal point
-	decimalPos := len(str) - decimals
-	return str[:decimalPos] + "." + str[decimalPos:]
+	return chain.FormatFixedDecimal(amount, decimals)
 }
 
 // ParseAmount converts a human-readable BSV string to big.Int (satoshis).

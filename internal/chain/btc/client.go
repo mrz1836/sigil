@@ -323,17 +323,7 @@ func (c *Client) ValidateAddress(address string) error {
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BTC string.
 func (c *Client) FormatAmount(amount *big.Int) string {
-	if amount == nil {
-		return "0.00000000"
-	}
-
-	str := amount.String()
-	for len(str) <= decimals {
-		str = "0" + str
-	}
-
-	decimalPos := len(str) - decimals
-	return str[:decimalPos] + "." + str[decimalPos:]
+	return chain.FormatFixedDecimal(amount, decimals)
 }
 
 // ParseAmount converts a human-readable BTC string to big.Int (satoshis).

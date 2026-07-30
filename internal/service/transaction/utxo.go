@@ -38,18 +38,8 @@ func aggregateBSVUTXOs(ctx context.Context, client *bsv.Client, addresses []wall
 				results[i] = result{err: fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)}
 				return
 			}
-			converted := make([]chain.UTXO, len(utxos))
-			for j, u := range utxos {
-				converted[j] = chain.UTXO{
-					TxID:          u.TxID,
-					Vout:          u.Vout,
-					Amount:        u.Amount,
-					ScriptPubKey:  u.ScriptPubKey,
-					Address:       u.Address,
-					Confirmations: u.Confirmations,
-				}
-			}
-			results[i] = result{utxos: converted}
+			// bsv.UTXO is an alias for chain.UTXO; no conversion needed.
+			results[i] = result{utxos: utxos}
 		}()
 	}
 	wg.Wait()

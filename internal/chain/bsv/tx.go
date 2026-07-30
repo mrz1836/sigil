@@ -489,19 +489,12 @@ func addInputsToTxMultiKey(tx *transaction.Transaction, utxos []UTXO, unlockers 
 	return nil
 }
 
-// convertChainUTXOs converts chain.UTXO slice to bsv.UTXO slice.
+// convertChainUTXOs copies a chain.UTXO slice into a fresh bsv.UTXO slice. Since
+// bsv.UTXO is an alias for chain.UTXO this is a straight element copy (kept as a
+// helper so callers still receive an independent slice).
 func convertChainUTXOs(utxos []chain.UTXO) []UTXO {
 	result := make([]UTXO, len(utxos))
-	for i, u := range utxos {
-		result[i] = UTXO{
-			TxID:          u.TxID,
-			Vout:          u.Vout,
-			Amount:        u.Amount,
-			ScriptPubKey:  u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		}
-	}
+	copy(result, utxos)
 	return result
 }
 

@@ -366,6 +366,26 @@ func New(code, message string) *SigilError {
 	}
 }
 
+// cloneSigilError returns a shallow copy of err as a *SigilError so callers can
+// override a single field without mutating the original. When err is already a
+// *SigilError the copy preserves every field (including Cause); otherwise a
+// GENERAL_ERROR copy is created with err as the cause. The bool reports whether
+// err unwrapped to a *SigilError.
+func cloneSigilError(err error) (*SigilError, bool) {
+	var se *SigilError
+	if errors.As(err, &se) {
+		clone := *se
+		return &clone, true
+	}
+
+	return &SigilError{
+		Code:     "GENERAL_ERROR",
+		Message:  err.Error(),
+		Cause:    err,
+		ExitCode: ExitGeneral,
+	}, false
+}
+
 // Wrap wraps an error with additional context.
 func Wrap(err error, format string, args ...any) error {
 	if err == nil {
@@ -373,25 +393,14 @@ func Wrap(err error, format string, args ...any) error {
 	}
 
 	msg := fmt.Sprintf(format, args...)
-
-	var se *SigilError
-	if errors.As(err, &se) {
-		return &SigilError{
-			Code:       se.Code,
-			Message:    fmt.Sprintf("%s: %s", msg, se.Message),
-			Details:    se.Details,
-			Suggestion: se.Suggestion,
-			Cause:      err,
-			ExitCode:   se.ExitCode,
-		}
+	clone, wasSigil := cloneSigilError(err)
+	if wasSigil {
+		clone.Message = fmt.Sprintf("%s: %s", msg, clone.Message)
+	} else {
+		clone.Message = msg
 	}
-
-	return &SigilError{
-		Code:     "GENERAL_ERROR",
-		Message:  msg,
-		Cause:    err,
-		ExitCode: ExitGeneral,
-	}
+	clone.Cause = err
+	return clone
 }
 
 // WithDetails adds details to an error.
@@ -400,25 +409,9 @@ func WithDetails(err error, details map[string]string) error {
 		return nil
 	}
 
-	var se *SigilError
-	if errors.As(err, &se) {
-		return &SigilError{
-			Code:       se.Code,
-			Message:    se.Message,
-			Details:    details,
-			Suggestion: se.Suggestion,
-			Cause:      se.Cause,
-			ExitCode:   se.ExitCode,
-		}
-	}
-
-	return &SigilError{
-		Code:     "GENERAL_ERROR",
-		Message:  err.Error(),
-		Details:  details,
-		Cause:    err,
-		ExitCode: ExitGeneral,
-	}
+	clone, _ := cloneSigilError(err)
+	clone.Details = details
+	return clone
 }
 
 // WithSuggestion adds a suggestion to an error.
@@ -427,25 +420,9 @@ func WithSuggestion(err error, suggestion string) error {
 		return nil
 	}
 
-	var se *SigilError
-	if errors.As(err, &se) {
-		return &SigilError{
-			Code:       se.Code,
-			Message:    se.Message,
-			Details:    se.Details,
-			Suggestion: suggestion,
-			Cause:      se.Cause,
-			ExitCode:   se.ExitCode,
-		}
-	}
-
-	return &SigilError{
-		Code:       "GENERAL_ERROR",
-		Message:    err.Error(),
-		Suggestion: suggestion,
-		Cause:      err,
-		ExitCode:   ExitGeneral,
-	}
+	clone, _ := cloneSigilError(err)
+	clone.Suggestion = suggestion
+	return clone
 }
 
 // ExitCode returns the appropriate exit code for an error.

@@ -10,6 +10,7 @@ import (
 	"github.com/mrz1836/sigil/internal/cache"
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
+	"github.com/mrz1836/sigil/internal/chain/btc"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/chain/eth/etherscan"
 	"github.com/mrz1836/sigil/internal/metrics"
@@ -24,13 +25,15 @@ type Fetcher struct {
 	cfg   ConfigProvider
 	cache CacheProvider
 
-	// bsvNetwork optionally overrides the ConfigProvider's BSV network (e.g. to
-	// use a loaded wallet's stamped network). Empty means fall back to config.
+	// bsvNetwork / btcNetwork optionally override the ConfigProvider's network
+	// (e.g. to use a loaded wallet's stamped network). Empty means fall back to config.
 	bsvNetwork string
+	btcNetwork string
 
 	newETHClient       func(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error)
 	newEtherscanClient func(apiKey string, opts *etherscan.ClientOptions) (ethBalanceReader, error)
 	newBSVClient       func(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient
+	newBTCClient       func(ctx context.Context, opts *btc.ClientOptions) btcBalanceClient
 	retryETHBalance    func(ctx context.Context, operation func() (*eth.Balance, error)) (*eth.Balance, error)
 
 	fetchETHViaRPCOverride       func(ctx context.Context, address string) ([]CacheEntry, bool, error)
@@ -45,6 +48,7 @@ func NewFetcher(cfg ConfigProvider, cache CacheProvider) *Fetcher {
 		newETHClient:       defaultETHClientFactory,
 		newEtherscanClient: defaultEtherscanClientFactory,
 		newBSVClient:       defaultBSVClientFactory,
+		newBTCClient:       defaultBTCClientFactory,
 		retryETHBalance:    chain.Retry[*eth.Balance],
 	}
 }
@@ -64,6 +68,11 @@ type bsvBalanceClient interface {
 	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*bsv.Balance, error)
 }
 
+type btcBalanceClient interface {
+	GetNativeBalance(ctx context.Context, address string) (*btc.Balance, error)
+	GetBulkNativeBalance(ctx context.Context, addresses []string) (map[string]*btc.Balance, error)
+}
+
 func defaultETHClientFactory(rpcURL string, opts *eth.ClientOptions) (ethRPCBalanceClient, error) {
 	return eth.NewClient(rpcURL, opts)
 }
@@ -74,6 +83,10 @@ func defaultEtherscanClientFactory(apiKey string, opts *etherscan.ClientOptions)
 
 func defaultBSVClientFactory(ctx context.Context, opts *bsv.ClientOptions) bsvBalanceClient {
 	return bsv.NewClient(ctx, opts)
+}
+
+func defaultBTCClientFactory(ctx context.Context, opts *btc.ClientOptions) btcBalanceClient {
+	return btc.NewClient(ctx, opts)
 }
 
 // postSendCacheTrust is the duration after a send during which locally-computed
@@ -89,8 +102,10 @@ func (f *Fetcher) FetchForChain(ctx context.Context, chainID chain.ID, address s
 		return f.fetchETH(ctx, address)
 	case chain.BSV:
 		return f.fetchBSV(ctx, address)
-	case chain.BTC, chain.BCH, chain.LTC:
-		// BTC, BCH, and LTC not supported in MVP
+	case chain.BTC:
+		return f.fetchBTC(ctx, address)
+	case chain.BCH, chain.LTC:
+		// BCH and LTC not supported in MVP
 		return nil, false, nil
 	default:
 		return nil, false, fmt.Errorf("%w: %s", ErrUnsupportedChain, chainID)
@@ -104,6 +119,15 @@ func (f *Fetcher) bsvNetworkString() string {
 		return f.bsvNetwork
 	}
 	return f.cfg.GetBSVNetwork()
+}
+
+// btcNetworkString returns the effective BTC network: the per-fetcher override
+// (a loaded wallet's network) if set, otherwise the ConfigProvider's value.
+func (f *Fetcher) btcNetworkString() string {
+	if f.btcNetwork != "" {
+		return f.btcNetwork
+	}
+	return f.cfg.GetBTCNetwork()
 }
 
 // fetchETH fetches ETH and USDC balances using the configured provider with failover.
@@ -176,6 +200,13 @@ func (f *Fetcher) newBSVBalanceClient(ctx context.Context, opts *bsv.ClientOptio
 		return f.newBSVClient(ctx, opts)
 	}
 	return defaultBSVClientFactory(ctx, opts)
+}
+
+func (f *Fetcher) newBTCBalanceClient(ctx context.Context, opts *btc.ClientOptions) btcBalanceClient {
+	if f.newBTCClient != nil {
+		return f.newBTCClient(ctx, opts)
+	}
+	return defaultBTCClientFactory(ctx, opts)
 }
 
 func (f *Fetcher) retryETHBalanceCall(ctx context.Context, operation func() (*eth.Balance, error)) (*eth.Balance, error) {
@@ -528,6 +559,134 @@ func (f *Fetcher) fetchBSVBulk(ctx context.Context, addresses []string) (map[str
 
 		// If individual fetch also fails, try to use cached data
 		if cachedEntries, _, cacheErr := f.getCachedBSVBalances(addr); cacheErr == nil {
+			results[addr] = cachedEntries
+		}
+	}
+
+	return results, nil
+}
+
+// fetchBTC fetches BTC balances.
+func (f *Fetcher) fetchBTC(ctx context.Context, address string) ([]CacheEntry, bool, error) {
+	// Trust very fresh cache entries (set by a recent tx send) over the
+	// network, which may not have indexed the transaction yet.
+	if entry, exists, age := f.cache.Get(chain.BTC, address, ""); exists && age < postSendCacheTrust {
+		return []CacheEntry{*entry}, false, nil
+	}
+
+	entries := make([]CacheEntry, 0, 1)
+	var stale bool
+
+	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
+
+	btcBalance, err := client.GetNativeBalance(ctx, address)
+	if err != nil {
+		// Fall back to cache
+		return f.getCachedBTCBalances(address)
+	}
+
+	// Format unconfirmed (only set if non-zero)
+	var unconfirmedStr string
+	if btcBalance.Unconfirmed != nil && btcBalance.Unconfirmed.Sign() != 0 {
+		unconfirmedStr = chain.FormatSignedDecimalAmount(btcBalance.Unconfirmed, btcBalance.Decimals)
+	}
+
+	entry := CacheEntry{
+		Chain:       chain.BTC,
+		Address:     address,
+		Balance:     chain.FormatDecimalAmount(btcBalance.Amount, btcBalance.Decimals),
+		Unconfirmed: unconfirmedStr,
+		Symbol:      btcBalance.Symbol,
+		Decimals:    btcBalance.Decimals,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	f.cache.Set(entry)
+	entries = append(entries, entry)
+
+	return entries, stale, nil
+}
+
+// getCachedBTCBalances returns cached BTC balances if available.
+func (f *Fetcher) getCachedBTCBalances(address string) ([]CacheEntry, bool, error) {
+	entry, exists, age := f.cache.Get(chain.BTC, address, "")
+	if !exists {
+		metrics.Global.RecordCacheMiss()
+		return nil, true, sigilerr.ErrCacheNotFound
+	}
+	metrics.Global.RecordCacheHit()
+
+	stale := age > cache.DefaultStaleness
+	return []CacheEntry{*entry}, stale, nil
+}
+
+// fetchBTCBulk fetches balances for multiple BTC addresses. Esplora has no bulk
+// endpoint, so btc.Client.GetBulkNativeBalance fans out per-address (rate
+// limited). Mirrors fetchBSVBulk's caching + per-address fallback.
+//
+//nolint:gocognit,gocyclo // Complex business logic for bulk balance fetching with caching
+func (f *Fetcher) fetchBTCBulk(ctx context.Context, addresses []string) (map[string][]CacheEntry, error) {
+	if len(addresses) == 0 {
+		return make(map[string][]CacheEntry), nil
+	}
+
+	addressesToFetch := make([]string, 0, len(addresses))
+	results := make(map[string][]CacheEntry)
+
+	for _, addr := range addresses {
+		if entry, exists, age := f.cache.Get(chain.BTC, addr, ""); exists && age < postSendCacheTrust {
+			results[addr] = []CacheEntry{*entry}
+		} else {
+			addressesToFetch = append(addressesToFetch, addr)
+		}
+	}
+
+	if len(addressesToFetch) == 0 {
+		return results, nil
+	}
+
+	client := f.newBTCBalanceClient(ctx, &btc.ClientOptions{Network: btc.Network(f.btcNetworkString())})
+	bulkBalances, err := client.GetBulkNativeBalance(ctx, addressesToFetch)
+	if err != nil {
+		for _, addr := range addressesToFetch {
+			if cachedEntries, _, cacheErr := f.getCachedBTCBalances(addr); cacheErr == nil {
+				results[addr] = cachedEntries
+			}
+		}
+		return results, sigilerr.Wrap(err, "bulk BTC fetch failed, using cached data")
+	}
+
+	for addr, balance := range bulkBalances {
+		var unconfirmedStr string
+		if balance.Unconfirmed != nil && balance.Unconfirmed.Sign() != 0 {
+			unconfirmedStr = chain.FormatSignedDecimalAmount(balance.Unconfirmed, balance.Decimals)
+		}
+
+		entry := CacheEntry{
+			Chain:       chain.BTC,
+			Address:     addr,
+			Balance:     chain.FormatDecimalAmount(balance.Amount, balance.Decimals),
+			Unconfirmed: unconfirmedStr,
+			Symbol:      balance.Symbol,
+			Decimals:    balance.Decimals,
+			UpdatedAt:   time.Now().UTC(),
+		}
+
+		f.cache.Set(entry)
+		results[addr] = []CacheEntry{entry}
+	}
+
+	// Addresses missing from the bulk response fall back to individual fetch,
+	// then cache.
+	for _, addr := range addressesToFetch {
+		if _, found := results[addr]; found {
+			continue
+		}
+		entries, _, fetchErr := f.fetchBTC(ctx, addr)
+		if fetchErr == nil && len(entries) > 0 {
+			results[addr] = entries
+			continue
+		}
+		if cachedEntries, _, cacheErr := f.getCachedBTCBalances(addr); cacheErr == nil {
 			results[addr] = cachedEntries
 		}
 	}

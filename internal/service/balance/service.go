@@ -20,9 +20,9 @@ type Config struct {
 	CacheProvider  CacheProvider
 	Metadata       AddressMetadataProvider
 	ForceRefresh   bool
-	// Network optionally overrides the BSV network from ConfigProvider, so a
+	// Network optionally overrides the BSV/BTC network from ConfigProvider, so a
 	// wallet's stamped network (main/test) governs its balance queries. Empty
-	// falls back to ConfigProvider.GetBSVNetwork().
+	// falls back to ConfigProvider.GetBSVNetwork()/GetBTCNetwork().
 	Network string
 }
 
@@ -38,6 +38,7 @@ type Service struct {
 func NewService(cfg *Config) *Service {
 	fetcher := NewFetcher(cfg.ConfigProvider, cfg.CacheProvider)
 	fetcher.bsvNetwork = cfg.Network
+	fetcher.btcNetwork = cfg.Network
 
 	var policy *RefreshPolicy
 	if cfg.Metadata != nil && cfg.CacheProvider != nil && !cfg.ForceRefresh {
@@ -114,12 +115,17 @@ func (s *Service) FetchBalance(ctx context.Context, req *FetchRequest) (*FetchRe
 func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*FetchBatchResult, error) {
 	// Group addresses by chain for bulk operations
 	bsvAddresses := make([]string, 0)
+	btcAddresses := make([]string, 0)
 	otherAddresses := make([]AddressInput, 0)
 
 	for _, addr := range req.Addresses {
-		if addr.ChainID == "bsv" {
+		//nolint:exhaustive // Only BSV/BTC have bulk paths; all other chains use default
+		switch addr.ChainID {
+		case "bsv":
 			bsvAddresses = append(bsvAddresses, addr.Address)
-		} else {
+		case "btc":
+			btcAddresses = append(btcAddresses, addr.Address)
+		default:
 			otherAddresses = append(otherAddresses, addr)
 		}
 	}
@@ -197,6 +203,65 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 					TotalAddresses:     len(bsvAddressesToFetch),
 					CompletedAddresses: len(bsvAddressesToFetch),
 					Message:            fmt.Sprintf("Completed %d BSV addresses", len(bsvAddressesToFetch)),
+				})
+			}
+		}()
+	}
+
+	// Apply refresh policy to BTC addresses before bulk fetch
+	btcAddressesToFetch := make([]string, 0, len(btcAddresses))
+	for _, addr := range btcAddresses {
+		needsFetch, cachedResult := s.processBTCAddress(addr, req.ForceRefresh)
+		if needsFetch {
+			btcAddressesToFetch = append(btcAddressesToFetch, addr)
+		} else if cachedResult != nil {
+			batchResult.Results = append(batchResult.Results, cachedResult)
+		}
+	}
+
+	// Fetch BTC addresses that need refresh (if any)
+	if len(btcAddressesToFetch) > 0 {
+		if req.ProgressCallback != nil {
+			req.ProgressCallback(ProgressUpdate{
+				Phase:          "fetching_btc",
+				ChainID:        "btc",
+				TotalAddresses: len(btcAddressesToFetch),
+				Message:        fmt.Sprintf("Fetching %d BTC addresses", len(btcAddressesToFetch)),
+			})
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			bulkResults, err := s.fetcher.fetchBTCBulk(ctx, btcAddressesToFetch)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				batchResult.Errors = append(batchResult.Errors, err)
+			}
+
+			for addr, entries := range bulkResults {
+				result := &FetchResult{
+					ChainID:  "btc",
+					Address:  addr,
+					Balances: make([]BalanceEntry, len(entries)),
+				}
+				for i, entry := range entries {
+					result.Balances[i] = cacheEntryToBalanceEntry(entry)
+				}
+				batchResult.Results = append(batchResult.Results, result)
+			}
+
+			if req.ProgressCallback != nil {
+				req.ProgressCallback(ProgressUpdate{
+					Phase:              "fetching_btc",
+					ChainID:            "btc",
+					TotalAddresses:     len(btcAddressesToFetch),
+					CompletedAddresses: len(btcAddressesToFetch),
+					Message:            fmt.Sprintf("Completed %d BTC addresses", len(btcAddressesToFetch)),
 				})
 			}
 		}()
@@ -338,6 +403,34 @@ func (s *Service) processBSVAddress(addr string, forceRefresh bool) (bool, *Fetc
 
 	result := &FetchResult{
 		ChainID:  "bsv",
+		Address:  addr,
+		Balances: make([]BalanceEntry, len(cachedBalances)),
+	}
+	for i, cached := range cachedBalances {
+		result.Balances[i] = cacheEntryToBalanceEntry(cached)
+	}
+	return false, result
+}
+
+// processBTCAddress determines if a BTC address needs fetching or can use cached data.
+// Returns (needsFetch, cachedResult).
+func (s *Service) processBTCAddress(addr string, forceRefresh bool) (bool, *FetchResult) {
+	if s.policy == nil || forceRefresh || s.force {
+		return true, nil
+	}
+
+	decision := s.policy.ShouldRefresh("btc", addr)
+	if decision != CacheOK {
+		return true, nil
+	}
+
+	cachedBalances := getCachedBalancesForAddress("btc", addr, s.cache)
+	if len(cachedBalances) == 0 {
+		return true, nil
+	}
+
+	result := &FetchResult{
+		ChainID:  "btc",
 		Address:  addr,
 		Balances: make([]BalanceEntry, len(cachedBalances)),
 	}

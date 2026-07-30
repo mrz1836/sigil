@@ -14,6 +14,7 @@ type ConfigProvider interface {
 	GetETHProvider() string
 	GetETHEtherscanAPIKey() string
 	GetBSVNetwork() string
+	GetBTCNetwork() string
 }
 
 // CacheProvider provides balance cache operations.

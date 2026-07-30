@@ -31,6 +31,7 @@ type mockConfigProvider struct {
 	ethFallbackRPCs    []string
 	ethEtherscanAPIKey string
 	bsvNetwork         string
+	btcNetwork         string
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -48,6 +49,13 @@ func (m *mockConfigProvider) GetBSVNetwork() string {
 		return "main"
 	}
 	return m.bsvNetwork
+}
+
+func (m *mockConfigProvider) GetBTCNetwork() string {
+	if m.btcNetwork == "" {
+		return "main"
+	}
+	return m.btcNetwork
 }
 
 func (m *mockConfigProvider) GetETHProvider() string {
@@ -81,6 +89,7 @@ func TestNewFetcher(t *testing.T) {
 	assert.NotNil(t, fetcher.newETHClient)
 	assert.NotNil(t, fetcher.newEtherscanClient)
 	assert.NotNil(t, fetcher.newBSVClient)
+	assert.NotNil(t, fetcher.newBTCClient)
 	assert.NotNil(t, fetcher.retryETHBalance)
 }
 
@@ -99,12 +108,6 @@ func TestFetchForChain_Dispatch(t *testing.T) {
 		wantErr bool
 		errType error
 	}{
-		{
-			name:    "BTC not supported",
-			chainID: chain.BTC,
-			address: "1BTC",
-			wantErr: false, // Returns nil, not error
-		},
 		{
 			name:    "BCH not supported",
 			chainID: chain.BCH,

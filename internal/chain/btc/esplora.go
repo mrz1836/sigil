@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -183,26 +183,23 @@ func (e *esploraHTTP) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.baseURL+path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
+	header := map[string]string{}
 	if e.apiKey != "" {
 		// Send the key in a header (not the URL) to avoid leaking it in logs.
-		req.Header.Set("Authorization", "Bearer "+e.apiKey)
+		header["Authorization"] = "Bearer " + e.apiKey
 	}
 
-	resp, err := e.httpClient.Do(req)
+	resp, err := httpx.Do(ctx, e.httpClient, &httpx.Request{
+		Method:       http.MethodGet,
+		URL:          e.baseURL + path,
+		Header:       header,
+		MaxBodyBytes: maxResponseBody,
+	})
 	if err != nil {
-		// Transport-level failures are transient — retry.
+		// Transport-level failures (build/send/read) are transient — retry.
 		return nil, chain.WrapRetryable(fmt.Errorf("%w: %w", sigilerr.ErrNetworkError, err))
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
-	if readErr != nil {
-		return nil, chain.WrapRetryable(fmt.Errorf("%w: reading response: %w", sigilerr.ErrNetworkError, readErr))
-	}
+	body := resp.Body
 
 	switch {
 	case resp.StatusCode == http.StatusOK:
@@ -211,21 +208,13 @@ func (e *esploraHTTP) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, chain.ErrRateLimited
 	case resp.StatusCode == http.StatusBadRequest:
 		// Non-retryable; endpoint methods classify (e.g. too-many-UTXOs).
-		return nil, &httpStatusError{Code: resp.StatusCode, Body: truncateBody(string(body))}
+		return nil, &httpStatusError{Code: resp.StatusCode, Body: httpx.TruncateBody(string(body), maxTruncateLen)}
 	case resp.StatusCode >= http.StatusInternalServerError:
 		return nil, chain.WrapRetryable(fmt.Errorf("%w: status %d", sigilerr.ErrNetworkError, resp.StatusCode))
 	default:
-		return nil, fmt.Errorf("%w: status %d: %s", sigilerr.ErrNetworkError, resp.StatusCode, truncateBody(string(body)))
+		return nil, fmt.Errorf("%w: status %d: %s", sigilerr.ErrNetworkError, resp.StatusCode, httpx.TruncateBody(string(body), maxTruncateLen))
 	}
 }
 
 // maxTruncateLen bounds error-body text captured in wrapped errors.
 const maxTruncateLen = 256
-
-// truncateBody truncates a string to maxTruncateLen characters.
-func truncateBody(s string) string {
-	if len(s) <= maxTruncateLen {
-		return s
-	}
-	return s[:maxTruncateLen] + "..."
-}

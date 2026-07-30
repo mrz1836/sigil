@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -75,7 +76,7 @@ func (c *Client) BroadcastRawTransaction(ctx context.Context, rawTx []byte) (str
 	if resp.StatusCode != http.StatusOK {
 		return "", sigilerr.WithDetails(ErrAPIError, map[string]string{
 			"status": fmt.Sprintf("%d", resp.StatusCode),
-			"body":   truncateBody(string(body), 512),
+			"body":   httpx.TruncateBody(string(body), 512),
 		})
 	}
 

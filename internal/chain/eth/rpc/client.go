@@ -2,13 +2,11 @@
 package rpc
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -17,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -359,8 +358,6 @@ func (c *Client) Close() {
 }
 
 // callInternal performs the actual JSON-RPC call.
-//
-//nolint:gocognit,gocyclo // Rate limiting and error handling add necessary branches
 func (c *Client) callInternal(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
 	if c.rateLimiter != nil {
 		if err := c.rateLimiter.Wait(ctx, c.url); err != nil {
@@ -384,31 +381,23 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	httpResp, err := httpx.Do(ctx, c.httpClient, &httpx.Request{
+		Method:       http.MethodPost,
+		URL:          c.url,
+		Body:         body,
+		Header:       map[string]string{"Content-Type": "application/json"},
+		MaxBodyBytes: maxResponseBody,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("creating HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	httpResp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("sending HTTP request: %w", err)
-	}
-	// Body.Close error is intentionally ignored as it only fails if the
-	// connection is already broken, and there's no recovery action.
-	defer func() { _ = httpResp.Body.Close() }()
-
-	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBody))
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
+		return nil, err
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, c.handleHTTPError(httpResp, respBody)
+		return nil, c.handleHTTPError(httpResp)
 	}
 
 	var resp response
-	if err := json.Unmarshal(respBody, &resp); err != nil {
+	if err := json.Unmarshal(httpResp.Body, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshaling response: %w", err)
 	}
 
@@ -423,28 +412,24 @@ func (c *Client) callInternal(ctx context.Context, method string, params ...any)
 }
 
 // handleHTTPError creates an appropriate error based on HTTP status code and response.
-func (c *Client) handleHTTPError(httpResp *http.Response, respBody []byte) error {
+func (c *Client) handleHTTPError(resp *httpx.Response) error {
 	details := map[string]string{
-		"status": strconv.Itoa(httpResp.StatusCode),
+		"status": strconv.Itoa(resp.StatusCode),
 	}
-	if retryAfter := httpResp.Header.Get("Retry-After"); retryAfter != "" {
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 		details["retry_after"] = retryAfter
 	}
 
-	body := strings.TrimSpace(string(respBody))
-	if body != "" {
-		if len(body) > 512 {
-			body = body[:512] + "..."
-		}
-		details["body"] = body
+	if body := strings.TrimSpace(string(resp.Body)); body != "" {
+		details["body"] = httpx.TruncateBody(body, 512)
 	}
 
 	switch {
-	case httpResp.StatusCode == http.StatusTooManyRequests:
+	case resp.StatusCode == http.StatusTooManyRequests:
 		return sigilerr.WithDetails(ErrRPCRateLimited, details)
-	case httpResp.StatusCode == http.StatusRequestTimeout || httpResp.StatusCode == http.StatusGatewayTimeout:
+	case resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusGatewayTimeout:
 		return sigilerr.WithDetails(ErrRPCTimeout, details)
-	case httpResp.StatusCode >= http.StatusInternalServerError:
+	case resp.StatusCode >= http.StatusInternalServerError:
 		return sigilerr.WithDetails(ErrRPCRetryable, details)
 	default:
 		return sigilerr.WithDetails(ErrRPCRequest, details)

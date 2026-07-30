@@ -374,23 +374,3 @@ func TestDefaultBaseURL(t *testing.T) {
 		assert.Equal(t, "https://api.etherscan.io/v2", DefaultBaseURL)
 	})
 }
-
-func TestTruncateBody(t *testing.T) {
-	t.Parallel()
-
-	t.Run("short string unchanged", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, "hello", truncateBody("hello", 10))
-	})
-
-	t.Run("long string truncated", func(t *testing.T) {
-		t.Parallel()
-		result := truncateBody("hello world", 5)
-		assert.Equal(t, "hello...", result)
-	})
-
-	t.Run("exact length unchanged", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, "hello", truncateBody("hello", 5))
-	})
-}

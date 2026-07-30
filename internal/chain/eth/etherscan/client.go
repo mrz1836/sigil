@@ -6,12 +6,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -125,25 +125,18 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) (string, erro
 
 	reqURL := fmt.Sprintf("%s/api?%s", c.baseURL, params.Encode())
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
-	}
-
-	// Send API key in header rather than URL query parameters to avoid
+	// Send the API key in a header rather than URL query parameters to avoid
 	// leaking it in server logs, proxy logs, and URL history.
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := httpx.Do(ctx, c.httpClient, &httpx.Request{
+		Method:       http.MethodGet,
+		URL:          reqURL,
+		Header:       map[string]string{"Authorization": "Bearer " + c.apiKey},
+		MaxBodyBytes: maxResponseBody,
+	})
 	if err != nil {
-		return "", fmt.Errorf("sending request: %w", err)
+		return "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
-	if err != nil {
-		return "", fmt.Errorf("reading response: %w", err)
-	}
+	body := resp.Body
 
 	// Handle HTTP-level rate limiting
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -155,7 +148,7 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) (string, erro
 	if resp.StatusCode != http.StatusOK {
 		return "", sigilerr.WithDetails(ErrAPIError, map[string]string{
 			"status": fmt.Sprintf("%d", resp.StatusCode),
-			"body":   truncateBody(string(body), 512),
+			"body":   httpx.TruncateBody(string(body), 512),
 		})
 	}
 
@@ -171,17 +164,9 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) (string, erro
 		}
 		return "", sigilerr.WithDetails(ErrAPIError, map[string]string{
 			"message": apiResp.Message,
-			"result":  truncateBody(apiResp.Result, 256),
+			"result":  httpx.TruncateBody(apiResp.Result, 256),
 		})
 	}
 
 	return apiResp.Result, nil
-}
-
-// truncateBody truncates a string to maxLen characters.
-func truncateBody(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }

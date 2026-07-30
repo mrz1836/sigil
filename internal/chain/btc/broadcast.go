@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
@@ -85,7 +86,7 @@ func interpretBroadcastResponse(statusCode int, text string) (string, error) {
 			}
 			return "", errAlreadyKnown
 		}
-		return "", fmt.Errorf("%w: status %d: %s", ErrBroadcastFailed, statusCode, truncateBody(text))
+		return "", fmt.Errorf("%w: status %d: %s", ErrBroadcastFailed, statusCode, httpx.TruncateBody(text, maxTruncateLen))
 	}
 
 	if isValidTxID(text) {
@@ -95,7 +96,7 @@ func interpretBroadcastResponse(statusCode int, text string) (string, error) {
 	if extracted := extractTxID(text); extracted != "" {
 		return extracted, nil
 	}
-	return "", fmt.Errorf("%w: unexpected response: %s", ErrBroadcastFailed, truncateBody(text))
+	return "", fmt.Errorf("%w: unexpected response: %s", ErrBroadcastFailed, httpx.TruncateBody(text, maxTruncateLen))
 }
 
 // MempoolBroadcaster broadcasts via the mempool.space Esplora POST /tx endpoint.

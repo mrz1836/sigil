@@ -109,21 +109,34 @@
 
 ## 🚀 Installation
 
-**Sigil** requires a [supported release of Go](https://golang.org/doc/devel/release.html#policy).
-
-### Install via go install
+Install the latest prebuilt release for your platform with a single copy‑paste. It
+lands in `~/.local/bin` — a user‑writable directory, so no `sudo`, and `sigil update`
+can self‑update in place afterward:
 
 ```bash
-go install github.com/mrz1836/sigil/cmd/sigil@latest
+# Install the latest sigil release into ~/.local/bin
+VER=$(curl -fsSL https://api.github.com/repos/mrz1836/sigil/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | tr -d v)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+mkdir -p ~/.local/bin
+curl -fsSL "https://github.com/mrz1836/sigil/releases/download/v${VER}/sigil_${VER}_${OS}_${ARCH}.tar.gz" | tar -xzf - -C ~/.local/bin sigil
+sigil --version
 ```
 
-### Build from source
+If `sigil` isn't found afterward, add `~/.local/bin` to your `PATH` (put
+`export PATH="$HOME/.local/bin:$PATH"` in your `~/.zshrc` or `~/.bashrc`).
+
+<details>
+<summary><strong>Build from source (contributors)</strong></summary>
+
+Requires a [supported release of Go](https://golang.org/doc/devel/release.html#policy).
 
 ```bash
 git clone https://github.com/mrz1836/sigil.git
 cd sigil
 go build -o bin/sigil ./cmd/sigil
 ```
+
+</details>
 
 <br/>
 
@@ -227,18 +240,29 @@ Creates an encrypted backup of your wallet.
 
 ### Keep sigil up to date
 
+`sigil update` (alias `sigil upgrade`) downloads the latest release, verifies its
+SHA‑256 checksum against the published `sigil_<ver>_checksums.txt`, and atomically
+replaces the running binary — no `sudo` when it lives in `~/.local/bin`.
+
 ```bash
-# Check for a new release
-sigil upgrade --check
-
-# Install the latest release
-sigil upgrade
-
-# If you're running a dev/commit build, add --force
-sigil upgrade --force
+sigil update            # download & install the latest release
+sigil update --check    # report whether a newer version is available
+sigil update --force    # reinstall the latest even if already current
+sigil update --verbose  # narrate each step
 ```
 
-Downloads the latest binary from GitHub, verifies SHA256, and replaces in-place. See [`upgrade`](docs/CLI.md#upgrade) for flags.
+Every other command also runs a passive, cached background check and prints a one‑line
+"a new version is available" notice. It never blocks or fails a command, is skipped for
+development builds, and is silenced by `SIGIL_NO_UPDATE_CHECK=1` (or the shared
+`NO_UPDATE_CHECK` / `CI`). A GitHub token, if you hit API rate limits, is read from
+`SIGIL_GITHUB_TOKEN`, then `GITHUB_TOKEN`, then `GH_TOKEN`.
+
+> **Heads up:** a binary that another installer owns — `go install`'s `~/go/bin`, or a
+> Homebrew prefix — is **refused** by `sigil update` rather than overwritten (that would
+> break the tool that owns it). Install the release binary into `~/.local/bin` as above
+> to keep self‑update working.
+
+See [`update`](docs/CLI.md#update) for flags.
 
 <br/>
 

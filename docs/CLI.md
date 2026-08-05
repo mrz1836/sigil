@@ -26,11 +26,18 @@ Sigil is a terminal-based multi-chain cryptocurrency wallet for power users. It 
 
 ## Installation
 
+Install the latest prebuilt release into `~/.local/bin` (user‑writable, so no `sudo`,
+and [`sigil update`](#update) can self‑update in place afterward):
+
 ```bash
-go install github.com/mrz1836/sigil/cmd/sigil@latest
+VER=$(curl -fsSL https://api.github.com/repos/mrz1836/sigil/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | tr -d v)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+mkdir -p ~/.local/bin
+curl -fsSL "https://github.com/mrz1836/sigil/releases/download/v${VER}/sigil_${VER}_${OS}_${ARCH}.tar.gz" | tar -xzf - -C ~/.local/bin sigil
+sigil --version
 ```
 
-Or build from source:
+If `sigil` isn't found afterward, add `~/.local/bin` to your `PATH`. Or build from source:
 
 ```bash
 git clone https://github.com/mrz1836/sigil.git
@@ -1283,43 +1290,40 @@ sigil version
 
 <br>
 
-### upgrade
+### update
 
-Check for and install the latest release of sigil from GitHub.
+Download the latest sigil release, verify its SHA-256 checksum, and atomically replace the running binary. Also available as `sigil upgrade`.
 
 ```bash
-sigil upgrade [flags]
+sigil update [flags]
 ```
 
 **Flags:**
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--check` | - | `false` | Check for updates without installing |
-| `--force` | `-f` | `false` | Upgrade even from a dev or commit-hash build |
-| `--use-go-install` | - | `false` | Prefer `go install` over binary download |
+| `--check` | `-c` | `false` | Report whether an update is available without installing anything |
+| `--force` | `-f` | `false` | Install the latest release even when it is not newer than the running version |
+| `--verbose` | `-v` | `false` | Narrate each step, and print the release notes with `--check` |
 
 **Examples:**
 ```bash
-# Check if an update is available (no install)
-sigil upgrade --check
+# Report whether a newer version is available (no install)
+sigil update --check
 
-# Upgrade to the latest release (binary download + SHA256 verification)
-sigil upgrade
+# Download & install the latest release (SHA-256 verified, atomic replace)
+sigil update
 
-# Upgrade from a dev build (requires --force)
-sigil upgrade --force
-
-# Use go install instead of binary download
-sigil upgrade --use-go-install
+# Reinstall the latest even from a dev or commit-hash build
+sigil update --force
 ```
 
-**Upgrade method:**
+**How it works:**
 
-By default, `upgrade` downloads the platform-specific release binary from GitHub, verifies its SHA256 checksum against the published checksums file, and replaces the running binary in-place (with a backup restored automatically on failure). The `--use-go-install` flag switches to `go install github.com/mrz1836/sigil/cmd/sigil@latest` as a fallback.
+`update` downloads the platform-specific release archive from GitHub, verifies its SHA-256 checksum against the published `sigil_<ver>_checksums.txt`, and atomically replaces the running binary — nothing is written until the download has been verified. A binary owned by another installer (`go install`'s `~/go/bin`, or a Homebrew prefix) is refused rather than overwritten, with guidance for the installer that owns it. Install the release binary into `~/.local/bin` to keep self-update working.
 
-**Dev build detection:**
+**Passive update notice:**
 
-If your current binary was built from source (version reports `dev` or a commit hash), `upgrade` will warn and exit unless `--force` is provided.
+Every other command runs a cached, non-blocking background check and prints a one-line "a new version is available" notice to stderr when applicable. It is skipped for development builds and under CI, and can be silenced with `SIGIL_NO_UPDATE_CHECK=1` (or the shared `NO_UPDATE_CHECK`). If you hit GitHub API rate limits, a token is read from `SIGIL_GITHUB_TOKEN`, then `GITHUB_TOKEN`, then `GH_TOKEN`.
 
 <br>
 

@@ -101,6 +101,13 @@ transactions across Ethereum (ETH/USDC) and Bitcoin SV (BSV) networks.`,
 func Execute(info BuildInfo) error {
 	buildInfo = info
 	rootCmd.Version = formatVersion(info)
+
+	// Register the self-update command and passive update notice. This is wired
+	// here rather than in init() because it needs the resolved build version to
+	// tell a real release apart from a development build.
+	version, _, _ := resolvedBuildInfo(info)
+	attachUpdateCommand(rootCmd, version)
+
 	err := rootCmd.Execute()
 	if err != nil {
 		formatErr(err)

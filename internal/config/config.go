@@ -113,6 +113,18 @@ type SecurityConfig struct {
 	MemoryLock          bool    `yaml:"memory_lock"`
 	SessionEnabled      bool    `yaml:"session_enabled"`
 	SessionTTLMinutes   int     `yaml:"session_ttl_minutes"`
+
+	// YubiKeyEnabled turns on the YubiKey unlock path. When false (default),
+	// enrolled wallets still load but the CLI will not attempt to construct a
+	// ykman transport for wallets that have no envelope.
+	YubiKeyEnabled bool `yaml:"yubikey_enabled"`
+	// YkmanPath is the ykman executable to invoke (bare name searches $PATH
+	// once; an absolute path pins it exactly). Default "ykman".
+	YkmanPath string `yaml:"ykman_path"`
+	// YubiKeySlot is the YubiKey OTP slot programmed for HMAC-SHA1
+	// challenge-response (1 or 2). Default 2. Touch caching reuses the session
+	// mechanism (SessionTTLMinutes), so no separate cache setting is needed.
+	YubiKeySlot int `yaml:"yubikey_slot"`
 }
 
 // OutputConfig defines output formatting settings.

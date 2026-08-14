@@ -246,55 +246,38 @@ Creates an encrypted backup of your wallet.
 
 <br>
 
-### Protect a wallet with a YubiKey (optional)
+### Protect a wallet with a YubiKey
 
-Add a **YubiKey** as an unlock factor — either alongside your password (true
-two‑factor) or on its own. Sigil re‑wraps the wallet seed under a hardware
-keyslot and removes the standalone‑password copy, so the policy you pick is
-actually enforced. Your BIP39 mnemonic (`sigil wallet restore`) remains the
-ultimate backup.
+Add a **YubiKey** as an unlock factor — password **+** YubiKey (true two‑factor) or
+YubiKey‑only. Sigil re‑wraps the wallet seed under a hardware keyslot and drops the
+password‑only copy, so the policy you pick is enforced; your BIP39 mnemonic
+(`sigil wallet restore`) stays the ultimate backup.
 
-**Prerequisites** — install Yubico's [`ykman`](https://developers.yubico.com/yubikey-manager/)
-and program a challenge‑response slot **once per key**:
-
-```bash
-ykman otp chalresp --generate --touch 2   # slot 2, generate a secret, require touch
-
-# Sanity‑check that challenge‑response works (this is exactly what sigil calls):
-ykman otp calculate 2 00112233             # prints a 40‑char hex response
-```
-
-**Try it on a throwaway wallet first** (never test on a wallet holding funds):
+**One‑time key setup** — install Yubico's [`ykman`](https://developers.yubico.com/yubikey-manager/),
+then program a challenge‑response slot (once per key):
 
 ```bash
-# 1) Create a disposable wallet
-sigil wallet create --words 12            # name it e.g. "yktest"
-
-# 2) Enroll the YubiKey (default policy = password + YubiKey), with a recovery code
-sigil wallet enroll-yubikey yktest --policy password-and-yubikey --recovery-code
-#   → enter the wallet password, then TOUCH the key when it blinks
-#   → write down the one‑time recovery code it prints
-
-# 3) Unlock: any command now prompts for the password, then a touch
-sigil wallet balance --wallet yktest      # password → touch
-sigil wallet balance --wallet yktest      # within the session cache: neither
-
-# 4) Lockout escape hatch (if the key is unavailable)
-sigil wallet recovery-code yktest         # unlock with the printed code
+brew install ykman                          # macOS  (Linux/Windows: see the ykman docs)
+ykman otp chalresp --generate --touch 2     # program slot 2 — type "y" to confirm
+ykman otp calculate 2 00112233              # sanity check → prints a 40-char response
 ```
 
-Policies: `--policy password-and-yubikey` (recommended, 2FA) or `--policy
-yubikey-only`. Add `--backup` to enroll a spare key, and `--recovery-code` for
-the printed escape hatch. The `ykman` path and OTP slot are tunable in your
-config under `security` (`ykman_path`, `yubikey_slot`; default `ykman` on
-`$PATH`, slot `2`). Existing password‑only wallets are untouched until you
-enroll.
+Plugging the key in may pop up a macOS "keyboard setup" window — that's normal, just close it.
 
-> **Note:** the YubiKey path is new. The full software path is tested against a
-> simulated key; the exact `ykman` invocation should be confirmed on your
-> hardware with the sanity‑check above before trusting it for real funds. A
-> `yubikey-only` policy proves *presence*, not *identity* (no PIN) — prefer
-> `password-and-yubikey`, and always keep a recovery code or backup key.
+**Enroll a wallet** — enter the password, then touch the key when it blinks:
+
+```bash
+sigil wallet enroll-yubikey main --policy password-and-yubikey --recovery-code
+```
+
+Every command then asks for the password and one touch, cached for the session so you touch
+once rather than per command. Add `--backup` to enroll a spare key; recover a lost key with
+`sigil wallet recovery-code main`. Existing password‑only wallets are untouched until you enroll.
+
+> **Heads up:** `yubikey-only` proves *presence*, not *identity* (no PIN) — prefer
+> `password-and-yubikey`, and always keep the printed `--recovery-code` or a `--backup` key.
+> The `ykman` path and OTP slot are tunable under `security` in your config (`ykman_path`,
+> `yubikey_slot`; default `ykman` on `$PATH`, slot `2`).
 
 <br>
 

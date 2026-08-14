@@ -39,6 +39,7 @@ var (
 type Store struct {
 	transport transport.Transport
 	slot      uint8
+	onTouch   func()
 }
 
 // NewStore builds a store from an explicit transport. Tests inject a
@@ -49,6 +50,11 @@ func NewStore(t transport.Transport, slot uint8) *Store {
 	}
 	return &Store{transport: t, slot: slot}
 }
+
+// SetTouchPrompt registers a callback fired at the exact moment the YubiKey
+// starts blinking for a touch (after any password prompt and key derivation),
+// so the CLI can print "touch your key now" at the right time.
+func (s *Store) SetTouchPrompt(fn func()) { s.onTouch = fn }
 
 // NewStoreFromConfig builds a store backed by the real ykman CLI. It returns
 // an error if ykman is missing or too old (surfaced to the user at enroll).
@@ -202,6 +208,7 @@ func (s *Store) EffectivePolicy(envelope []byte) (tumbler.Policy, error) {
 // primaryMethod builds the primary enroll/unlock method for a policy, plus the
 // owned password SecureBytes (nil for yubikey-only) the caller must Destroy.
 func (s *Store) primaryMethod(policy tumbler.Policy, password []byte, opts ...tumbler.Option) (tumbler.Method, *securebytes.SecureBytes, error) {
+	opts = append(opts, tumbler.WithTouchAnnounce(s.onTouch))
 	switch policy {
 	case tumbler.PolicyYubiKeyOnly:
 		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{Slot: s.slot}, nil, opts...), nil, nil
@@ -227,9 +234,10 @@ func (s *Store) primaryMethod(policy tumbler.Policy, password []byte, opts ...tu
 // parameters and OTP slot come from the envelope's slot, so the config here is
 // intentionally minimal.
 func (s *Store) unlockMethod(policy tumbler.Policy, passwordFn func() ([]byte, error)) (tumbler.Method, *securebytes.SecureBytes, error) {
+	touch := tumbler.WithTouchAnnounce(s.onTouch)
 	switch policy {
 	case tumbler.PolicyYubiKeyOnly:
-		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, nil), nil, nil
+		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, nil, touch), nil, nil
 	case tumbler.PolicyPasswordAndYubiKey:
 		if passwordFn == nil {
 			return nil, nil, ErrPasswordRequired
@@ -243,7 +251,7 @@ func (s *Store) unlockMethod(policy tumbler.Policy, passwordFn func() ([]byte, e
 		if err != nil {
 			return nil, nil, err
 		}
-		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, pwSB), pwSB, nil
+		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, pwSB, touch), pwSB, nil
 	default:
 		return nil, nil, fmt.Errorf("%w: %s", ErrUnsupportedPolicy, policy)
 	}

@@ -25,16 +25,19 @@ var (
 // invoke ykman. Returns nil (untyped) when there is no envelope or ykman
 // cannot be constructed; the loader then surfaces a clear error for enrolled
 // wallets and is unaffected for password-only ones.
-func maybeYubiKeyStore(name string, storage *wallet.FileStorage, ctx *CommandContext) walletservice.YubiKeyUnlocker {
+func maybeYubiKeyStore(name string, storage *wallet.FileStorage, cmd *cobra.Command) walletservice.YubiKeyUnlocker {
 	_, hasEnv, err := storage.LoadAuthPolicy(name)
 	if err != nil || !hasEnv {
 		return nil
 	}
-	sec := ctx.Cfg.GetSecurity()
+	sec := GetCmdContext(cmd).Cfg.GetSecurity()
 	store, err := yubikey.NewStoreFromConfig(sec.YkmanPath, uint8(sec.YubiKeySlot))
 	if err != nil {
 		return nil
 	}
+	store.SetTouchPrompt(func() {
+		out(cmd.ErrOrStderr(), "\n👆  Touch your YubiKey now — it's blinking...\n")
+	})
 	return store
 }
 
@@ -109,13 +112,16 @@ func runEnrollYubiKey(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("initializing YubiKey (is ykman installed?): %w", err)
 	}
+	store.SetTouchPrompt(func() {
+		out(cmd.ErrOrStderr(), "\n👆  Touch your YubiKey now — it's blinking...\n")
+	})
 
 	opts := yubikey.EnrollOptions{WithRecovery: enrollYubiKeyRecovery}
 	if policy == tumbler.PolicyPasswordAndYubiKey {
 		opts.Password = password
 	}
 
-	out(cmd.OutOrStdout(), "Touch your YubiKey when it blinks...\n")
+	out(cmd.OutOrStdout(), "Enrolling — you'll be asked to touch your key in a moment...\n")
 	res, err := store.Enroll(context.Background(), seed, policy, opts)
 	if err != nil {
 		return fmt.Errorf("enrolling YubiKey: %w", err)

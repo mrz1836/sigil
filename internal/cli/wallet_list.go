@@ -158,7 +158,7 @@ func loadWalletWithSession(name string, storage *wallet.FileStorage, cmd *cobra.
 		OnAuthMessage: func(msg string) {
 			out(cmd.ErrOrStderr(), "%s\n", msg)
 		},
-		YubiKeyStore: maybeYubiKeyStore(name, storage, ctx),
+		YubiKeyStore: maybeYubiKeyStore(name, storage, cmd),
 		OnSessionInfo: func(info *walletservice.AgentSessionInfo) {
 			// Store agent session info in command context for downstream policy enforcement
 			if info.Credential != nil {

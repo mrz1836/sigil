@@ -239,7 +239,7 @@ func (s *Service) loadWithYubiKey(name, policy string, req *LoadRequest, ctx *Lo
 	}
 
 	if ctx.OnAuthMessage != nil {
-		ctx.OnAuthMessage("[Unlocking with YubiKey — touch your key when it blinks]")
+		ctx.OnAuthMessage("[Unlocking with YubiKey…]")
 	}
 
 	seed, unlockErr := ctx.YubiKeyStore.Unlock(context.Background(), envelope, passwordFn)

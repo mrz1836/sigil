@@ -100,34 +100,3 @@ func Decrypt(ciphertext []byte, password string) ([]byte, error) {
 
 	return plaintext, nil
 }
-
-// EncryptSecure encrypts SecureBytes using age with a password-based recipient.
-func EncryptSecure(sb *SecureBytes, password string) ([]byte, error) {
-	data := sb.Bytes()
-	if data == nil {
-		return nil, nil
-	}
-	return Encrypt(data, password)
-}
-
-// DecryptSecure decrypts ciphertext into SecureBytes.
-func DecryptSecure(ciphertext []byte, password string) (*SecureBytes, error) {
-	plaintext, err := Decrypt(ciphertext, password)
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure plaintext is zeroed on all paths including errors
-	defer func() {
-		for i := range plaintext {
-			plaintext[i] = 0
-		}
-	}()
-
-	sb, err := SecureBytesFromSlice(plaintext)
-	if err != nil {
-		return nil, err
-	}
-
-	return sb, nil
-}

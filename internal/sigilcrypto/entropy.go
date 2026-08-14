@@ -19,18 +19,3 @@ func RandomBytes(n int) ([]byte, error) {
 	}
 	return b, nil
 }
-
-// SecureRandomBytes generates random bytes in a SecureBytes container.
-func SecureRandomBytes(n int) (*SecureBytes, error) {
-	sb, err := NewSecureBytes(n)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := io.ReadFull(Reader, sb.Bytes()); err != nil {
-		sb.Destroy()
-		return nil, err
-	}
-
-	return sb, nil
-}

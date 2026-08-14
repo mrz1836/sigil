@@ -66,7 +66,7 @@ func (s *Service) Create(walletName string, password []byte) (*Backup, string, e
 	defer wallet.ZeroBytes(dataJSON)
 
 	// Encrypt the data
-	encryptedData, err := sigilcrypto.Encrypt(dataJSON, string(password))
+	encryptedData, err := sigilcrypto.EncryptBytes(dataJSON, password)
 	if err != nil {
 		return nil, "", fmt.Errorf("encrypting backup: %w", err)
 	}
@@ -126,7 +126,7 @@ func (s *Service) VerifyWithDecryption(backupPath string, password []byte) (*Man
 	}
 
 	// Test decryption
-	_, err = sigilcrypto.Decrypt(backup.EncryptedData, string(password))
+	_, err = sigilcrypto.DecryptBytes(backup.EncryptedData, password)
 	if err != nil {
 		return nil, ErrDecryptionFailed
 	}
@@ -149,7 +149,7 @@ func (s *Service) Restore(backupPath string, password []byte, newWalletName stri
 	}
 
 	// Decrypt data
-	decrypted, err := sigilcrypto.Decrypt(backup.EncryptedData, string(password))
+	decrypted, err := sigilcrypto.DecryptBytes(backup.EncryptedData, password)
 	if err != nil {
 		return ErrDecryptionFailed
 	}

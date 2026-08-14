@@ -129,6 +129,12 @@ func init() {
 	walletCmd.AddCommand(walletEnrollYubiKeyCmd)
 	walletCmd.AddCommand(walletRecoveryCodeCmd)
 
+	// Nested keyslot-management group: `sigil wallet yubikey list|remove`.
+	walletCmd.AddCommand(walletYubiKeyCmd)
+	walletYubiKeyCmd.AddCommand(walletYubiKeyListCmd, walletYubiKeyRemoveCmd)
+	walletYubiKeyRemoveCmd.Flags().BoolVar(&walletYubiKeyRemoveForce, "force", false,
+		"skip the interactive confirmation prompt")
+
 	walletEnrollYubiKeyCmd.Flags().StringVar(&enrollYubiKeyPolicy, "policy", "password-and-yubikey",
 		"unlock policy: password-and-yubikey | yubikey-only")
 	walletEnrollYubiKeyCmd.Flags().BoolVar(&enrollYubiKeyBackup, "backup", false, "also enroll a backup YubiKey")

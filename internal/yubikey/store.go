@@ -183,13 +183,15 @@ func (s *Store) Unlock(ctx context.Context, envelope []byte, passwordFn func() (
 }
 
 // UnlockWithRecovery recovers the seed using a printed recovery code, for the
-// lockout escape hatch. The returned seed is a fresh []byte the caller zeroes.
-func (s *Store) UnlockWithRecovery(ctx context.Context, envelope []byte, recoveryCode string) ([]byte, error) {
+// lockout escape hatch. recoveryCode is a []byte the caller can zero; it is
+// converted to a string only at the tumbler.ParseRecoveryCode boundary (whose
+// API takes a string). The returned seed is a fresh []byte the caller zeroes.
+func (s *Store) UnlockWithRecovery(ctx context.Context, envelope, recoveryCode []byte) ([]byte, error) {
 	env, err := tumbler.ParseEnvelope(envelope)
 	if err != nil {
 		return nil, err
 	}
-	code, err := tumbler.ParseRecoveryCode(recoveryCode)
+	code, err := tumbler.ParseRecoveryCode(string(recoveryCode))
 	if err != nil {
 		return nil, err
 	}

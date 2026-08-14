@@ -92,12 +92,12 @@ func TestStore_RecoveryCode(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.RecoveryCode)
 
-	got, err := store.UnlockWithRecovery(ctx, res.Envelope, res.RecoveryCode)
+	got, err := store.UnlockWithRecovery(ctx, res.Envelope, []byte(res.RecoveryCode))
 	require.NoError(t, err)
 	assert.True(t, bytes.Equal(seed64(), got))
 
 	// A wrong recovery code fails.
-	_, err = store.UnlockWithRecovery(ctx, res.Envelope, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA")
+	_, err = store.UnlockWithRecovery(ctx, res.Envelope, []byte("AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA"))
 	require.Error(t, err)
 }
 

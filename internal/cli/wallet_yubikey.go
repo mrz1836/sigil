@@ -207,7 +207,7 @@ func runRecoveryCode(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initializing YubiKey store: %w", err)
 	}
 
-	seed, err := store.UnlockWithRecovery(context.Background(), envelope, string(code))
+	seed, err := store.UnlockWithRecovery(context.Background(), envelope, code)
 	if err != nil {
 		return fmt.Errorf("recovery unlock failed: %w", err)
 	}

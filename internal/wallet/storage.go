@@ -215,8 +215,9 @@ func (s *FileStorage) Save(wallet *Wallet, seed, password []byte) error {
 		return fmt.Errorf("creating wallet directory: %w", err)
 	}
 
-	// Encrypt the seed
-	encryptedSeed, err := sigilcrypto.Encrypt(seed, string(password))
+	// Encrypt the seed. EncryptBytes keeps the password as []byte so the caller
+	// can zero it (age copies it into an unzeroable string internally either way).
+	encryptedSeed, err := sigilcrypto.EncryptBytes(seed, password)
 	if err != nil {
 		return fmt.Errorf("encrypting seed: %w", err)
 	}
@@ -318,7 +319,7 @@ func (s *FileStorage) Load(name string, password []byte) (*Wallet, []byte, error
 	}
 
 	// Decrypt the seed
-	seed, err := sigilcrypto.Decrypt(wf.EncryptedSeed, string(password))
+	seed, err := sigilcrypto.DecryptBytes(wf.EncryptedSeed, password)
 	if err != nil {
 		return nil, nil, ErrDecryptionFailed
 	}

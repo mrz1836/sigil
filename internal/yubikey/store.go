@@ -51,11 +51,6 @@ func NewStore(t transport.Transport, slot uint8) *Store {
 	return &Store{transport: t, slot: slot}
 }
 
-// SetTouchPrompt registers a callback fired at the exact moment the YubiKey
-// starts blinking for a touch (after any password prompt and key derivation),
-// so the CLI can print "touch your key now" at the right time.
-func (s *Store) SetTouchPrompt(fn func()) { s.onTouch = fn }
-
 // NewStoreFromConfig builds a store backed by the real ykman CLI. It returns
 // an error if ykman is missing or too old (surfaced to the user at enroll).
 func NewStoreFromConfig(ykmanPath string, slot uint8) (*Store, error) {
@@ -65,6 +60,11 @@ func NewStoreFromConfig(ykmanPath string, slot uint8) (*Store, error) {
 	}
 	return NewStore(t, slot), nil
 }
+
+// SetTouchPrompt registers a callback fired at the exact moment the YubiKey
+// starts blinking for a touch (after any password prompt and key derivation),
+// so the CLI can print "touch your key now" at the right time.
+func (s *Store) SetTouchPrompt(fn func()) { s.onTouch = fn }
 
 // EnrollOptions controls the primary factor and any extra slots.
 type EnrollOptions struct {
@@ -84,6 +84,8 @@ type EnrollResult struct {
 
 // Enroll wraps seed under policy and returns the marshaled envelope. The
 // caller retains ownership of seed and opts.Password and must zero them.
+//
+//nolint:gocognit // linear enroll flow (primary factor + optional recovery slot)
 func (s *Store) Enroll(ctx context.Context, seed []byte, policy tumbler.Policy, opts EnrollOptions) (*EnrollResult, error) {
 	dek, err := securebytes.New(cloneBytes(seed))
 	if err != nil {
@@ -209,6 +211,7 @@ func (s *Store) EffectivePolicy(envelope []byte) (tumbler.Policy, error) {
 // owned password SecureBytes (nil for yubikey-only) the caller must Destroy.
 func (s *Store) primaryMethod(policy tumbler.Policy, password []byte, opts ...tumbler.Option) (tumbler.Method, *securebytes.SecureBytes, error) {
 	opts = append(opts, tumbler.WithTouchAnnounce(s.onTouch))
+	//nolint:exhaustive // only 2FA and yubikey-only are enrollable here; default rejects the rest
 	switch policy {
 	case tumbler.PolicyYubiKeyOnly:
 		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{Slot: s.slot}, nil, opts...), nil, nil
@@ -235,6 +238,7 @@ func (s *Store) primaryMethod(policy tumbler.Policy, password []byte, opts ...tu
 // intentionally minimal.
 func (s *Store) unlockMethod(policy tumbler.Policy, passwordFn func() ([]byte, error)) (tumbler.Method, *securebytes.SecureBytes, error) {
 	touch := tumbler.WithTouchAnnounce(s.onTouch)
+	//nolint:exhaustive // only 2FA and yubikey-only are unlockable here; default rejects the rest
 	switch policy {
 	case tumbler.PolicyYubiKeyOnly:
 		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, nil, touch), nil, nil

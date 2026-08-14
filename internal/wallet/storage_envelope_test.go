@@ -33,7 +33,7 @@ func TestEnvelope_LegacyWalletHasNoEnvelope(t *testing.T) {
 	assert.Empty(t, policy)
 
 	_, _, err = s.LoadEnvelope(name)
-	assert.ErrorIs(t, err, ErrNoEnvelope)
+	require.ErrorIs(t, err, ErrNoEnvelope)
 
 	// The legacy password path still works.
 	_, seed, err := s.Load(name, []byte("password"))
@@ -95,6 +95,7 @@ func TestEnvelope_PersistsAcrossReload(t *testing.T) {
 	assert.Equal(t, "password-and-yubikey", policy)
 
 	// The on-disk JSON must not contain a non-empty encrypted_seed value.
+	//nolint:gosec // G304: test reads a wallet file it just wrote under a temp dir
 	raw, err := os.ReadFile(filepath.Join(s.basePath, name+walletFileExtension))
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "\"encrypted_seed\"")

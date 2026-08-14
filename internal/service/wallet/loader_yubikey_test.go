@@ -11,12 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// errTouchTimeout is a static sentinel for the touch-timeout failure path.
+var errTouchTimeout = errors.New("touch timeout")
+
 // mockYubiKeyStore is a test double for YubiKeyUnlocker.
 type mockYubiKeyStore struct {
-	seed          []byte
-	err           error
-	passwordFnErr error
-	sawPassword   bool
+	seed        []byte
+	err         error
+	sawPassword bool
 }
 
 func (m *mockYubiKeyStore) Unlock(_ context.Context, _ []byte, passwordFn func() ([]byte, error)) ([]byte, error) {
@@ -91,10 +93,9 @@ func TestLoad_YubiKey_UnlockError(t *testing.T) {
 	cfg.security.SessionEnabled = false
 	service := NewService(&Config{Storage: storage, Config: cfg})
 
-	sentinel := errors.New("touch timeout")
-	yk := &mockYubiKeyStore{seed: seed, err: sentinel}
+	yk := &mockYubiKeyStore{seed: seed, err: errTouchTimeout}
 	_, _, err := service.Load(&LoadRequest{Name: "yk"}, &LoadContext{YubiKeyStore: yk})
-	assert.ErrorIs(t, err, sentinel)
+	assert.ErrorIs(t, err, errTouchTimeout)
 }
 
 func TestLoad_PasswordWallet_UnaffectedByYubiKeyPath(t *testing.T) {

@@ -155,7 +155,11 @@ func (s *FileStorage) UpdateEnvelope(name string, envelope []byte) error {
 	return nil
 }
 
-// readWalletFile reads and unmarshals a wallet file without decrypting.
+// readWalletFile reads and unmarshals a wallet file without decrypting. It is
+// grouped with the envelope read helpers above rather than after the exported
+// methods.
+//
+//nolint:funcorder // kept beside the cheap-read envelope helpers it supports
 func (s *FileStorage) readWalletFile(name string) (*walletFile, error) {
 	if err := ValidateWalletName(name); err != nil {
 		return nil, err
@@ -182,6 +186,8 @@ type FileStorage struct {
 }
 
 // NewFileStorage creates a new file-based storage.
+//
+//nolint:funcorder // struct+constructor kept together, below the envelope read helpers
 func NewFileStorage(basePath string) *FileStorage {
 	return &FileStorage{basePath: basePath}
 }

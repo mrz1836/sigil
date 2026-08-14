@@ -326,7 +326,10 @@ func executeMigration(_ context.Context, cmd *cobra.Command, cmdCtx *CommandCont
 	// Load target wallet
 	storage := wallet.NewFileStorage(filepath.Join(cmdCtx.Cfg.GetHome(), "wallets"))
 
-	targetWallet, targetSeed, err := loadWalletWithSession(discoverWallet, storage, cmd)
+	// The wallet loader chain takes a custom *LoadContext (not context.Context)
+	// and the YubiKey CR unlock uses its own background context for the bounded
+	// touch timeout, so the migration context is intentionally not threaded here.
+	targetWallet, targetSeed, err := loadWalletWithSession(discoverWallet, storage, cmd) //nolint:contextcheck // loader unlock owns its touch-timeout context
 	if err != nil {
 		return nil, fmt.Errorf("loading target wallet: %w", err)
 	}

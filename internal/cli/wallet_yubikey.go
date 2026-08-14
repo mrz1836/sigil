@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -12,13 +13,32 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Static errors for the enroll/recovery flows (satisfies err113).
+var (
+	errPolicyUnknown     = errors.New("unknown policy")
+	errEnvelopeExists    = errors.New("wallet already has a YubiKey envelope")
+	errUnsafeYubiKeyOnly = errors.New("yubikey-only without a backup key or recovery code is unsafe")
+)
+
 // YubiKey enroll flags.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level flag variables
 var (
 	enrollYubiKeyPolicy   string
 	enrollYubiKeyBackup   bool
 	enrollYubiKeyRecovery bool
 	enrollYubiKeyForce    bool
 )
+
+// yubiKeySlotByte narrows the configured OTP slot to the transport's uint8. The
+// slot is a small operator value (1 or 2); anything outside 1..255 falls back to
+// the conventional CR slot 2 (also what an unset 0 resolves to).
+func yubiKeySlotByte(slot int) uint8 {
+	if slot < 1 || slot > 255 {
+		return 2
+	}
+	return uint8(slot)
+}
 
 // maybeYubiKeyStore returns a YubiKey unlocker for a wallet only when the
 // wallet actually has an enrolled envelope, so password-only wallets never
@@ -31,7 +51,7 @@ func maybeYubiKeyStore(name string, storage *wallet.FileStorage, cmd *cobra.Comm
 		return nil
 	}
 	sec := GetCmdContext(cmd).Cfg.GetSecurity()
-	store, err := yubikey.NewStoreFromConfig(sec.YkmanPath, uint8(sec.YubiKeySlot))
+	store, err := yubikey.NewStoreFromConfig(sec.YkmanPath, yubiKeySlotByte(sec.YubiKeySlot))
 	if err != nil {
 		return nil
 	}
@@ -50,11 +70,13 @@ func parseYubiKeyPolicy(s string) (tumbler.Policy, error) {
 		return tumbler.PolicyYubiKeyOnly, nil
 	default:
 		return tumbler.PolicyInvalid, fmt.Errorf(
-			"unknown policy %q (use \"password-and-yubikey\" or \"yubikey-only\")", s)
+			"%w %q (use \"password-and-yubikey\" or \"yubikey-only\")", errPolicyUnknown, s)
 	}
 }
 
 // walletEnrollYubiKeyCmd protects an existing password wallet with a YubiKey.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
 var walletEnrollYubiKeyCmd = &cobra.Command{
 	Use:   "enroll-yubikey <wallet>",
 	Short: "Protect a wallet with a YubiKey (password+yubikey or yubikey-only)",
@@ -70,7 +92,7 @@ var walletEnrollYubiKeyCmd = &cobra.Command{
 	RunE: runEnrollYubiKey,
 }
 
-//nolint:gocyclo // sequential enroll flow with clear guardrails
+//nolint:gocyclo,gocognit // sequential enroll flow with clear guardrails
 func runEnrollYubiKey(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	ctx := GetCmdContext(cmd)
@@ -83,14 +105,13 @@ func runEnrollYubiKey(cmd *cobra.Command, args []string) error {
 
 	// Refuse to double-enroll.
 	if _, hasEnv, polErr := storage.LoadAuthPolicy(name); polErr == nil && hasEnv {
-		return fmt.Errorf("wallet %q already has a YubiKey envelope; remove it first", name)
+		return fmt.Errorf("%w (%q); remove it first", errEnvelopeExists, name)
 	}
 
 	// Safety: yubikey-only with no second factor is a lockout + no-PIN risk.
 	if policy == tumbler.PolicyYubiKeyOnly && !enrollYubiKeyBackup && !enrollYubiKeyRecovery && !enrollYubiKeyForce {
-		return fmt.Errorf("yubikey-only without a backup key or recovery code is unsafe " +
-			"(a lost key means permanent lockout, and the CR path has no PIN); " +
-			"re-run with --recovery-code, --backup, or --force")
+		return fmt.Errorf("%w (a lost key means permanent lockout, and the CR path has no PIN); "+
+			"re-run with --recovery-code, --backup, or --force", errUnsafeYubiKeyOnly)
 	}
 
 	// Prompt the current password: it unlocks the seed and, for
@@ -108,7 +129,7 @@ func runEnrollYubiKey(cmd *cobra.Command, args []string) error {
 	}
 	defer wallet.ZeroBytes(seed)
 
-	store, err := yubikey.NewStoreFromConfig(ctx.Cfg.GetSecurity().YkmanPath, uint8(ctx.Cfg.GetSecurity().YubiKeySlot))
+	store, err := yubikey.NewStoreFromConfig(ctx.Cfg.GetSecurity().YkmanPath, yubiKeySlotByte(ctx.Cfg.GetSecurity().YubiKeySlot))
 	if err != nil {
 		return fmt.Errorf("initializing YubiKey (is ykman installed?): %w", err)
 	}
@@ -152,6 +173,8 @@ func runEnrollYubiKey(cmd *cobra.Command, args []string) error {
 // walletRecoveryCodeCmd unlocks and re-displays a wallet using a recovery code
 // (the lockout escape hatch), by starting a session so subsequent commands
 // work normally.
+//
+//nolint:gochecknoglobals // Cobra CLI pattern requires package-level command variables
 var walletRecoveryCodeCmd = &cobra.Command{
 	Use:   "recovery-code <wallet>",
 	Short: "Unlock a YubiKey wallet using its printed recovery code",
@@ -179,7 +202,7 @@ func runRecoveryCode(cmd *cobra.Command, args []string) error {
 	}
 	defer wallet.ZeroBytes(code)
 
-	store, err := yubikey.NewStoreFromConfig(ctx.Cfg.GetSecurity().YkmanPath, uint8(ctx.Cfg.GetSecurity().YubiKeySlot))
+	store, err := yubikey.NewStoreFromConfig(ctx.Cfg.GetSecurity().YkmanPath, yubiKeySlotByte(ctx.Cfg.GetSecurity().YubiKeySlot))
 	if err != nil {
 		return fmt.Errorf("initializing YubiKey store: %w", err)
 	}

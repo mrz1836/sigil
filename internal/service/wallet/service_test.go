@@ -204,11 +204,6 @@ func (m *mockStorageProvider) LoadEnvelope(name string) ([]byte, string, error) 
 	return env, m.policies[name], nil
 }
 
-func (m *mockStorageProvider) addEnvelope(name string, envelope []byte, policy string) {
-	m.envelopes[name] = envelope
-	m.policies[name] = policy
-}
-
 func (m *mockStorageProvider) Exists(name string) (bool, error) {
 	if m.existsErr != nil {
 		return false, m.existsErr
@@ -264,4 +259,9 @@ func (m *mockStorageProvider) addWallet(w *wallet.Wallet, seed []byte) {
 	if seed != nil {
 		m.seeds[w.Name] = seed
 	}
+}
+
+func (m *mockStorageProvider) addEnvelope(name string, envelope []byte, policy string) {
+	m.envelopes[name] = envelope
+	m.policies[name] = policy
 }

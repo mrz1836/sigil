@@ -336,6 +336,46 @@ Use --migrate --wallet <name> to consolidate funds.
 
 <br>
 
+#### wallet yubikey list
+
+List the YubiKey keyslots enrolled for a wallet. This reads the stored envelope metadata only — no key or touch is required.
+
+```bash
+sigil wallet yubikey list <wallet>
+```
+
+Prints the effective unlock policy and, for each slot, its 16-hex slot ID, method (`password`, `yubikey`, `password+yubikey`, or `recovery`), and label. The slot ID is the handle you pass to `wallet yubikey remove`. Safety advisories (e.g. fewer than two unlock methods, no recovery code) are shown as a footer.
+
+**Examples:**
+```bash
+sigil wallet yubikey list main
+```
+
+#### wallet yubikey remove
+
+Revoke one keyslot from a wallet's envelope by its 16-hex slot ID (from `wallet yubikey list`). This edits only the wallet file — no key or touch is required.
+
+```bash
+sigil wallet yubikey remove <wallet> <slotID> [flags]
+```
+
+**Flags:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--force` | `false` | Skip the interactive confirmation prompt |
+
+It refuses to remove the last remaining slot, warns loudly when the result drops below two unlock methods or loses its recovery code, and does **not** rotate the seed. Removing a slot protects only this file; truly revoking a possibly-compromised key requires re-enrolling to rotate the data key (see [SECURITY.md](../.github/SECURITY.md)).
+
+**Examples:**
+```bash
+# Inspect first, then revoke a backup or recovery slot by its ID
+sigil wallet yubikey list main
+sigil wallet yubikey remove main 1a2b3c4d5e6f7080
+sigil wallet yubikey remove main 1a2b3c4d5e6f7080 --force
+```
+
+<br>
+
 ---
 
 <br>

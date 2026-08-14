@@ -274,6 +274,20 @@ Every command then asks for the password and one touch, cached for the session s
 once rather than per command. Add `--backup` to enroll a spare key; recover a lost key with
 `sigil wallet recovery-code main`. Existing password‑only wallets are untouched until you enroll.
 
+**Inspect and revoke keyslots** — no key or touch needed, these read and edit the stored
+envelope only:
+
+```bash
+sigil wallet yubikey list main                     # show the policy + every enrolled keyslot
+sigil wallet yubikey remove main <slotID>          # revoke one keyslot by its 16-hex ID
+```
+
+`list` prints each slot's 16‑hex ID, method (`password` / `yubikey` / `password+yubikey` /
+`recovery`), and label. `remove` refuses the last slot, warns loudly if the result drops below
+two unlock methods or loses its recovery code, and `--force` skips the confirmation. Removing a
+slot only edits *this* file — truly revoking a possibly‑compromised key means re‑enrolling to
+rotate the data key (see [SECURITY.md](.github/SECURITY.md)).
+
 > **Heads up:** `yubikey-only` proves *presence*, not *identity* (no PIN) — prefer
 > `password-and-yubikey`, and always keep the printed `--recovery-code` or a `--backup` key.
 > The `ykman` path and OTP slot are tunable under `security` in your config (`ykman_path`,

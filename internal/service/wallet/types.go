@@ -31,6 +31,9 @@ const (
 	AuthXpub
 	// AuthPassword uses password-based authentication.
 	AuthPassword
+	// AuthYubiKey uses a YubiKey (alone or with a password) via a tumbler
+	// envelope. Appended last so existing iota values are unchanged.
+	AuthYubiKey
 )
 
 // String returns the string representation of the auth mode.
@@ -44,6 +47,8 @@ func (a AuthMode) String() string {
 		return "xpub"
 	case AuthPassword:
 		return "password"
+	case AuthYubiKey:
+		return "yubikey"
 	default:
 		return "unknown"
 	}

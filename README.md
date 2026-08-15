@@ -246,6 +246,55 @@ Creates an encrypted backup of your wallet.
 
 <br>
 
+### Protect a wallet with a YubiKey
+
+Add a **YubiKey** as an unlock factor — password **+** YubiKey (true two‑factor) or
+YubiKey‑only. Sigil re‑wraps the wallet seed under a hardware keyslot and drops the
+password‑only copy, so the policy you pick is enforced; your BIP39 mnemonic
+(`sigil wallet restore`) stays the ultimate backup.
+
+**One‑time key setup** — install Yubico's [`ykman`](https://developers.yubico.com/yubikey-manager/),
+then program a challenge‑response slot (once per key):
+
+```bash
+brew install ykman                          # macOS  (Linux/Windows: see the ykman docs)
+ykman otp chalresp --generate --touch 2     # program slot 2 — type "y" to confirm
+ykman otp calculate 2 00112233              # sanity check → prints a 40-char response
+```
+
+Plugging the key in may pop up a macOS "keyboard setup" window — that's normal, just close it.
+
+**Enroll a wallet** — enter the password, then touch the key when it blinks:
+
+```bash
+sigil wallet enroll-yubikey main --policy password-and-yubikey --recovery-code
+```
+
+Every command then asks for the password and one touch, cached for the session so you touch
+once rather than per command. Add `--backup` to enroll a spare key; recover a lost key with
+`sigil wallet recovery-code main`. Existing password‑only wallets are untouched until you enroll.
+
+**Inspect and revoke keyslots** — no key or touch needed, these read and edit the stored
+envelope only:
+
+```bash
+sigil wallet yubikey list main                     # show the policy + every enrolled keyslot
+sigil wallet yubikey remove main <slotID>          # revoke one keyslot by its 16-hex ID
+```
+
+`list` prints each slot's 16‑hex ID, method (`password` / `yubikey` / `password+yubikey` /
+`recovery`), and label. `remove` refuses the last slot, warns loudly if the result drops below
+two unlock methods or loses its recovery code, and `--force` skips the confirmation. Removing a
+slot only edits *this* file — truly revoking a possibly‑compromised key means re‑enrolling to
+rotate the data key (see [SECURITY.md](.github/SECURITY.md)).
+
+> **Heads up:** `yubikey-only` proves *presence*, not *identity* (no PIN) — prefer
+> `password-and-yubikey`, and always keep the printed `--recovery-code` or a `--backup` key.
+> The `ykman` path and OTP slot are tunable under `security` in your config (`ykman_path`,
+> `yubikey_slot`; default `ykman` on `$PATH`, slot `2`).
+
+<br>
+
 ### Keep sigil up to date
 
 `sigil update` (alias `sigil upgrade`) downloads the latest release, verifies its
@@ -315,6 +364,7 @@ View the comprehensive documentation for Sigil:
 - 💰 **Multi-Chain Balances** — Check balances across all supported networks
 - 📤 **Transaction Management** — Create, sign, and broadcast transactions
 - 🔐 **Secure Sessions** — Encrypted session management using OS keychain
+- 🔑 **YubiKey Unlock** — Per-wallet password + YubiKey (2FA) or YubiKey-only, with recovery codes and backup keys
 - 🤖 **Agent Tokens** — Programmatic access for automation
 - 💾 **Encrypted Backups** — Secure wallet backup and restoration
 - 🧩 **UTXO Management** — Advanced coin control for Bitcoin-based chains

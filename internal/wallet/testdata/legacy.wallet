@@ -1,0 +1,14 @@
+{
+  "wallet": {
+    "name": "legacy",
+    "created_at": "0001-01-01T00:00:00Z",
+    "addresses": null,
+    "enabled_chains": null,
+    "derivation_config": {
+      "default_account": 0,
+      "address_gap": 0
+    },
+    "version": 0
+  },
+  "encrypted_seed": "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IHNjcnlwdCBBWGoyZ1Q3a0g2RG1WY0dNY0NwTUtnIDEwCjJXNHBpZzVmTkhqMFlOSGZxaHhrZ2tOaEd6NE81UkJidVZXT3BhRTVtZHMKLS0tIHlmQUhEYmlOVjh4QzVQUzJvaW5uOFpINm1mcjJjSUcwS1ZhZW9kY25VMzQK30HQcdgXGUz+iJ4NrrR86JgSgSjg0CijIiY6spFdPEePsNsAhvB68dvb6l3R0+QrjKSjQ6u1HObm8yMDxfxw5nMIVnCFAqjbUtd040lUAfuHiqpUeL6KsLYU1xMkDkfG"
+}

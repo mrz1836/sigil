@@ -36,23 +36,3 @@ func BenchmarkRandomBytes64(b *testing.B) {
 		_, _ = RandomBytes(64)
 	}
 }
-
-func BenchmarkSecureBytesCreate(b *testing.B) {
-	for range b.N {
-		sb, _ := NewSecureBytes(64)
-		sb.Destroy()
-	}
-}
-
-func BenchmarkSecureBytesFromSlice(b *testing.B) {
-	data := make([]byte, 64)
-	for i := range data {
-		data[i] = byte(i)
-	}
-
-	b.ResetTimer()
-	for range b.N {
-		sb, _ := SecureBytesFromSlice(data)
-		sb.Destroy()
-	}
-}

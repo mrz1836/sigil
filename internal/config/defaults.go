@@ -77,6 +77,9 @@ func Defaults() *Config {
 			MemoryLock:          true,
 			SessionEnabled:      true,
 			SessionTTLMinutes:   15,
+			YubiKeyEnabled:      false,   // opt-in
+			YkmanPath:           "ykman", // resolved on $PATH once
+			YubiKeySlot:         2,       // conventional CR slot
 		},
 		Output: OutputConfig{
 			DefaultFormat: "auto",

@@ -126,6 +126,22 @@ func init() {
 	walletCmd.AddCommand(walletListCmd)
 	walletCmd.AddCommand(walletShowCmd)
 	walletCmd.AddCommand(walletRestoreCmd)
+	walletCmd.AddCommand(walletEnrollYubiKeyCmd)
+	walletCmd.AddCommand(walletRecoveryCodeCmd)
+
+	// Nested keyslot-management group: `sigil wallet yubikey list|remove`.
+	walletCmd.AddCommand(walletYubiKeyCmd)
+	walletYubiKeyCmd.AddCommand(walletYubiKeyListCmd, walletYubiKeyRemoveCmd)
+	walletYubiKeyRemoveCmd.Flags().BoolVar(&walletYubiKeyRemoveForce, "force", false,
+		"skip the interactive confirmation prompt")
+
+	walletEnrollYubiKeyCmd.Flags().StringVar(&enrollYubiKeyPolicy, "policy", "password-and-yubikey",
+		"unlock policy: password-and-yubikey | yubikey-only")
+	walletEnrollYubiKeyCmd.Flags().BoolVar(&enrollYubiKeyBackup, "backup", false, "also enroll a backup YubiKey")
+	walletEnrollYubiKeyCmd.Flags().BoolVar(&enrollYubiKeyRecovery, "recovery-code", false,
+		"also generate a one-time printed recovery code")
+	walletEnrollYubiKeyCmd.Flags().BoolVar(&enrollYubiKeyForce, "force", false,
+		"allow an unsafe single-factor yubikey-only enrollment")
 
 	walletCreateCmd.Flags().IntVar(&createWords, "words", 12, "mnemonic word count (12 or 24)")
 	walletCreateCmd.Flags().BoolVar(&createPassphrase, "passphrase", false, "use a BIP39 passphrase")

@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -14,6 +15,10 @@ import (
 // This is typically populated from the CLI CommandContext.
 type LoadContext struct {
 	AgentStore *agent.FileStore
+	// YubiKeyStore recovers a seed from a tumbler envelope. Nil disables the
+	// YubiKey unlock path (enrolled wallets then fail to load with a clear
+	// message rather than silently falling back).
+	YubiKeyStore YubiKeyUnlocker
 	// OnAuthMessage is called with user-facing messages about authentication.
 	// The service calls this instead of writing directly to output.
 	OnAuthMessage func(string)
@@ -84,6 +89,12 @@ func (s *Service) Load(req *LoadRequest, ctx *LoadContext) (*LoadResult, *Sessio
 				}, nil
 		}
 		// Session invalid or error - fall through to password prompt
+	}
+
+	// Try YubiKey envelope authentication (after the session cache so a cached
+	// session unlocks with no touch, before the plain-password fallback).
+	if policy, hasEnv, polErr := s.storage.LoadAuthPolicy(req.Name); polErr == nil && hasEnv {
+		return s.loadWithYubiKey(req.Name, policy, req, ctx, sessionEnabled)
 	}
 
 	// Fall back to password-based authentication
@@ -193,6 +204,87 @@ func (s *Service) loadWithAgentToken(name, token string, ctx *LoadContext) (*Loa
 			ExpiresIn: cred.TTL(),
 			Message:   fmt.Sprintf("Agent '%s' (%s), expires in %s", cred.Label, cred.ID, formatDuration(cred.TTL())),
 		}, nil
+}
+
+// loadWithYubiKey recovers the seed via the wallet's tumbler envelope. It
+// prompts for the password only if the envelope's policy requires it (the
+// store decides), then touch happens inside the transport. On success it
+// starts a session so subsequent commands need neither password nor touch
+// until the session expires.
+func (s *Service) loadWithYubiKey(name, policy string, req *LoadRequest, ctx *LoadContext, sessionEnabled bool) (*LoadResult, *SessionInfo, error) {
+	if ctx == nil || ctx.YubiKeyStore == nil {
+		return nil, nil, sigilerr.WithSuggestion(
+			sigilerr.ErrInvalidInput,
+			fmt.Sprintf("wallet '%s' requires a YubiKey but YubiKey support is not initialized "+
+				"(install ykman and enable security.yubikey_enabled)", name),
+		)
+	}
+
+	envelope, _, envErr := s.storage.LoadEnvelope(name)
+	if envErr != nil {
+		return nil, nil, envErr
+	}
+
+	// The store invokes this only when the policy needs a password.
+	passwordFn := func() ([]byte, error) {
+		if req.PasswordFunc == nil {
+			return nil, sigilerr.WithSuggestion(
+				sigilerr.ErrInvalidInput, "no password function provided for authentication",
+			)
+		}
+		pw, promptErr := req.PasswordFunc("Enter wallet password: ")
+		if promptErr != nil {
+			return nil, promptErr
+		}
+		return []byte(pw), nil
+	}
+
+	if ctx.OnAuthMessage != nil {
+		ctx.OnAuthMessage("[Unlocking with YubiKey…]")
+	}
+
+	seed, unlockErr := ctx.YubiKeyStore.Unlock(context.Background(), envelope, passwordFn)
+	if unlockErr != nil {
+		return nil, nil, unlockErr
+	}
+
+	wlt, loadErr := s.storage.LoadMetadata(name)
+	if loadErr != nil {
+		wallet.ZeroBytes(seed)
+		return nil, nil, loadErr
+	}
+
+	s.maybeStartSession(name, seed, sessionEnabled, ctx)
+
+	return &LoadResult{
+			Wallet: wlt,
+			Seed:   seed,
+		}, &SessionInfo{
+			Mode:    AuthYubiKey,
+			Message: fmt.Sprintf("Authenticated with YubiKey (%s)", policy),
+		}, nil
+}
+
+// maybeStartSession caches the seed for the wallet if sessions are enabled and
+// available, so subsequent commands avoid re-authentication. Best-effort:
+// failures are logged, not fatal.
+func (s *Service) maybeStartSession(name string, seed []byte, sessionEnabled bool, ctx *LoadContext) {
+	if !sessionEnabled || s.sessionMgr == nil || !s.sessionMgr.Available() {
+		return
+	}
+	ttl := time.Duration(s.config.GetSecurity().SessionTTLMinutes) * time.Minute
+	if ttl < session.MinTTL {
+		ttl = session.DefaultTTL
+	}
+	if startErr := s.sessionMgr.StartSession(name, seed, ttl); startErr != nil {
+		if s.logger != nil {
+			s.logger.Debug("failed to start session: %v", startErr)
+		}
+		return
+	}
+	if ctx != nil && ctx.OnAuthMessage != nil {
+		ctx.OnAuthMessage(fmt.Sprintf("[Session started, expires in %s]", formatDuration(ttl)))
+	}
 }
 
 // loadWithXpub creates a read-only wallet context using an xpub from SIGIL_AGENT_XPUB.

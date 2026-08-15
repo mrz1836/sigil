@@ -165,18 +165,43 @@ func TestLoadMetadata_LoadError(t *testing.T) {
 type mockStorageProvider struct {
 	wallets       map[string]*wallet.Wallet
 	seeds         map[string][]byte
+	envelopes     map[string][]byte
+	policies      map[string]string
 	existsErr     error
 	loadErr       error
 	loadMetaErr   error
 	listErr       error
 	updateMetaErr error
+	authPolicyErr error
+	envelopeErr   error
 }
 
 func newMockStorageProvider() *mockStorageProvider {
 	return &mockStorageProvider{
-		wallets: make(map[string]*wallet.Wallet),
-		seeds:   make(map[string][]byte),
+		wallets:   make(map[string]*wallet.Wallet),
+		seeds:     make(map[string][]byte),
+		envelopes: make(map[string][]byte),
+		policies:  make(map[string]string),
 	}
+}
+
+func (m *mockStorageProvider) LoadAuthPolicy(name string) (string, bool, error) {
+	if m.authPolicyErr != nil {
+		return "", false, m.authPolicyErr
+	}
+	env, ok := m.envelopes[name]
+	return m.policies[name], ok && len(env) > 0, nil
+}
+
+func (m *mockStorageProvider) LoadEnvelope(name string) ([]byte, string, error) {
+	if m.envelopeErr != nil {
+		return nil, "", m.envelopeErr
+	}
+	env, ok := m.envelopes[name]
+	if !ok || len(env) == 0 {
+		return nil, "", wallet.ErrNoEnvelope
+	}
+	return env, m.policies[name], nil
 }
 
 func (m *mockStorageProvider) Exists(name string) (bool, error) {
@@ -234,4 +259,9 @@ func (m *mockStorageProvider) addWallet(w *wallet.Wallet, seed []byte) {
 	if seed != nil {
 		m.seeds[w.Name] = seed
 	}
+}
+
+func (m *mockStorageProvider) addEnvelope(name string, envelope []byte, policy string) {
+	m.envelopes[name] = envelope
+	m.policies[name] = policy
 }

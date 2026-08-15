@@ -84,35 +84,3 @@ func TestAge_InvalidCiphertext(t *testing.T) {
 	_, err := sigilcrypto.Decrypt([]byte("not valid ciphertext"), "password") // gitleaks:allow
 	assert.Error(t, err)
 }
-
-func TestAge_EncryptWithSecureBytes(t *testing.T) {
-	t.Parallel()
-	plaintext := []byte("secret wallet data")
-	password := "password123" // gitleaks:allow
-
-	sb, err := sigilcrypto.SecureBytesFromSlice(plaintext)
-	require.NoError(t, err)
-	defer sb.Destroy()
-
-	ciphertext, err := sigilcrypto.EncryptSecure(sb, password)
-	require.NoError(t, err)
-
-	decrypted, err := sigilcrypto.Decrypt(ciphertext, password)
-	require.NoError(t, err)
-	assert.Equal(t, plaintext, decrypted)
-}
-
-func TestAge_DecryptToSecureBytes(t *testing.T) {
-	t.Parallel()
-	plaintext := []byte("secret wallet data")
-	password := "password123" // gitleaks:allow
-
-	ciphertext, err := sigilcrypto.Encrypt(plaintext, password)
-	require.NoError(t, err)
-
-	sb, err := sigilcrypto.DecryptSecure(ciphertext, password)
-	require.NoError(t, err)
-	defer sb.Destroy()
-
-	assert.Equal(t, plaintext, sb.Bytes())
-}

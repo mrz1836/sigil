@@ -33,6 +33,24 @@ func SetScryptWorkFactor(factor int) {
 	scryptWorkFactor.Store(int32(factor))
 }
 
+// EncryptBytes encrypts plaintext under a []byte password. It is the
+// no-caller-side-string path: callers keep their password as a []byte they can
+// zero, and the unavoidable string conversion required by age's scrypt API
+// happens once here (age copies it into an unexported []byte it never zeroes —
+// a residual documented in SECURITY.md). Byte-compatible with Encrypt: same age
+// code path, so ciphertext from either decrypts with either.
+//
+// EncryptBytes does not mutate or retain the password slice.
+func EncryptBytes(plaintext, password []byte) ([]byte, error) {
+	return Encrypt(plaintext, string(password))
+}
+
+// DecryptBytes decrypts ciphertext under a []byte password. See EncryptBytes for
+// the string-conversion note. The caller MUST zero the returned slice.
+func DecryptBytes(ciphertext, password []byte) ([]byte, error) {
+	return Decrypt(ciphertext, string(password))
+}
+
 // Encrypt encrypts plaintext using age with a password-based recipient.
 func Encrypt(plaintext []byte, password string) ([]byte, error) {
 	recipient, err := age.NewScryptRecipient(password)
@@ -81,35 +99,4 @@ func Decrypt(ciphertext []byte, password string) ([]byte, error) {
 	}
 
 	return plaintext, nil
-}
-
-// EncryptSecure encrypts SecureBytes using age with a password-based recipient.
-func EncryptSecure(sb *SecureBytes, password string) ([]byte, error) {
-	data := sb.Bytes()
-	if data == nil {
-		return nil, nil
-	}
-	return Encrypt(data, password)
-}
-
-// DecryptSecure decrypts ciphertext into SecureBytes.
-func DecryptSecure(ciphertext []byte, password string) (*SecureBytes, error) {
-	plaintext, err := Decrypt(ciphertext, password)
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure plaintext is zeroed on all paths including errors
-	defer func() {
-		for i := range plaintext {
-			plaintext[i] = 0
-		}
-	}()
-
-	sb, err := SecureBytesFromSlice(plaintext)
-	if err != nil {
-		return nil, err
-	}
-
-	return sb, nil
 }

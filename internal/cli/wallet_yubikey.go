@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 
 	tumbler "github.com/mrz1836/go-tumbler"
+	"github.com/spf13/cobra"
+
 	walletservice "github.com/mrz1836/sigil/internal/service/wallet"
 	"github.com/mrz1836/sigil/internal/wallet"
 	"github.com/mrz1836/sigil/internal/yubikey"
-	"github.com/spf13/cobra"
 )
 
 // Static errors for the enroll/recovery flows (satisfies err113).
@@ -70,7 +71,8 @@ func parseYubiKeyPolicy(s string) (tumbler.Policy, error) {
 		return tumbler.PolicyYubiKeyOnly, nil
 	default:
 		return tumbler.PolicyInvalid, fmt.Errorf(
-			"%w %q (use \"password-and-yubikey\" or \"yubikey-only\")", errPolicyUnknown, s)
+			"%w %q (use \"password-and-yubikey\" or \"yubikey-only\")", errPolicyUnknown, s,
+		)
 	}
 }
 

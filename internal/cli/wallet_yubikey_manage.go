@@ -10,8 +10,9 @@ import (
 	"strings"
 
 	tumbler "github.com/mrz1836/go-tumbler"
-	"github.com/mrz1836/sigil/internal/wallet"
 	"github.com/spf13/cobra"
+
+	"github.com/mrz1836/sigil/internal/wallet"
 )
 
 // Static errors for the keyslot-management commands (satisfies err113 and lets

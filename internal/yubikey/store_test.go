@@ -7,9 +7,10 @@ import (
 
 	tumbler "github.com/mrz1836/go-tumbler"
 	"github.com/mrz1836/go-tumbler/transport"
-	"github.com/mrz1836/sigil/internal/yubikey"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/yubikey"
 )
 
 // seed64 is a fixed 64-byte wallet seed.

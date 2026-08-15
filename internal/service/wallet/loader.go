@@ -229,7 +229,8 @@ func (s *Service) loadWithYubiKey(name, policy string, req *LoadRequest, ctx *Lo
 	passwordFn := func() ([]byte, error) {
 		if req.PasswordFunc == nil {
 			return nil, sigilerr.WithSuggestion(
-				sigilerr.ErrInvalidInput, "no password function provided for authentication")
+				sigilerr.ErrInvalidInput, "no password function provided for authentication",
+			)
 		}
 		pw, promptErr := req.PasswordFunc("Enter wallet password: ")
 		if promptErr != nil {

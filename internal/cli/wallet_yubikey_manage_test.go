@@ -10,11 +10,12 @@ import (
 
 	tumbler "github.com/mrz1836/go-tumbler"
 	"github.com/mrz1836/go-tumbler/transport"
-	"github.com/mrz1836/sigil/internal/wallet"
-	"github.com/mrz1836/sigil/internal/yubikey"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/wallet"
+	"github.com/mrz1836/sigil/internal/yubikey"
 )
 
 // slotIDPattern matches a rendered 16-hex slot ID for golden normalization —

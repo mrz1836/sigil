@@ -6,9 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mrz1836/sigil/internal/sigilcrypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/sigilcrypto"
 )
 
 // The golden was generated once at the secure default work factor (logN=18) with

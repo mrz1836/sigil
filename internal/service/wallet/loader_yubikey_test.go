@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mrz1836/sigil/internal/wallet"
-	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/wallet"
+	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // errTouchTimeout is a static sentinel for the touch-timeout failure path.

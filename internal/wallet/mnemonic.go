@@ -4,6 +4,7 @@ package wallet
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"slices"
@@ -45,12 +46,12 @@ func GenerateMnemonic(wordCount int) (string, error) {
 
 	entropy, err := bip39.NewEntropy(bitSize)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generating entropy: %w", err)
 	}
 
 	mnemonic, err := bip39.NewMnemonic(entropy)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generating mnemonic: %w", err)
 	}
 
 	return mnemonic, nil

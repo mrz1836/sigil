@@ -339,7 +339,7 @@ func (s *FileStorage) Exists(name string) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("checking wallet file: %w", err)
 	}
 	return true, nil
 }

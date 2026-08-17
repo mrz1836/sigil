@@ -9,6 +9,8 @@
 package btc
 
 import (
+	"fmt"
+
 	"github.com/bsv-blockchain/go-sdk/script"
 
 	"github.com/mrz1836/sigil/internal/wallet/bitcoin"
@@ -202,15 +204,15 @@ func buildScript(program, prefix, suffix []byte) (*script.Script, error) {
 	s := &script.Script{}
 	if len(prefix) > 0 {
 		if err := s.AppendOpcodes(prefix...); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("appending script prefix opcodes: %w", err)
 		}
 	}
 	if err := s.AppendPushData(program); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("appending pushdata: %w", err)
 	}
 	if len(suffix) > 0 {
 		if err := s.AppendOpcodes(suffix...); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("appending script suffix opcodes: %w", err)
 		}
 	}
 	return s, nil

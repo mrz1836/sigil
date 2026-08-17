@@ -56,7 +56,7 @@ func NewStore(t transport.Transport, slot uint8) *Store {
 func NewStoreFromConfig(ykmanPath string, slot uint8) (*Store, error) {
 	t, err := transport.NewYkmanTransport(ykmanPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: init ykman transport: %w", err)
 	}
 	return NewStore(t, slot), nil
 }
@@ -110,15 +110,15 @@ func (s *Store) Enroll(ctx context.Context, seed []byte, policy tumbler.Policy, 
 	if opts.WithRecovery {
 		code, genErr := tumbler.GenerateRecoveryCode()
 		if genErr != nil {
-			return nil, genErr
+			return nil, fmt.Errorf("yubikey: generate recovery code: %w", genErr)
 		}
 		defer func() { _ = code.Destroy() }()
 		if addErr := env.AddSlot(ctx, dek, tumbler.NewRecoveryMethod(code)); addErr != nil {
-			return nil, addErr
+			return nil, fmt.Errorf("yubikey: add recovery slot: %w", addErr)
 		}
 		printed, fmtErr := tumbler.FormatRecoveryCode(code)
 		if fmtErr != nil {
-			return nil, fmtErr
+			return nil, fmt.Errorf("yubikey: format recovery code: %w", fmtErr)
 		}
 		res.RecoveryCode = printed
 	}
@@ -137,11 +137,11 @@ func (s *Store) Enroll(ctx context.Context, seed []byte, policy tumbler.Policy, 
 func (s *Store) AddBackupKey(ctx context.Context, envelope, seed, password []byte, label string) ([]byte, error) {
 	env, err := tumbler.ParseEnvelope(envelope)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: parse envelope: %w", err)
 	}
 	dek, err := securebytes.New(cloneBytes(seed))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: wrap seed: %w", err)
 	}
 	defer func() { _ = dek.Destroy() }()
 
@@ -157,7 +157,7 @@ func (s *Store) AddBackupKey(ctx context.Context, envelope, seed, password []byt
 		defer func() { _ = pwSB.Destroy() }()
 	}
 	if addErr := env.AddSlot(ctx, dek, method); addErr != nil {
-		return nil, addErr
+		return nil, fmt.Errorf("yubikey: add backup key slot: %w", addErr)
 	}
 	return env.Marshal()
 }
@@ -168,7 +168,7 @@ func (s *Store) AddBackupKey(ctx context.Context, envelope, seed, password []byt
 func (s *Store) Unlock(ctx context.Context, envelope []byte, passwordFn func() ([]byte, error)) ([]byte, error) {
 	env, err := tumbler.ParseEnvelope(envelope)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: parse envelope: %w", err)
 	}
 
 	method, pwSB, err := s.unlockMethod(env.EffectivePolicy(), passwordFn)
@@ -189,11 +189,11 @@ func (s *Store) Unlock(ctx context.Context, envelope []byte, passwordFn func() (
 func (s *Store) UnlockWithRecovery(ctx context.Context, envelope, recoveryCode []byte) ([]byte, error) {
 	env, err := tumbler.ParseEnvelope(envelope)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: parse envelope: %w", err)
 	}
 	code, err := tumbler.ParseRecoveryCode(string(recoveryCode))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: parse recovery code: %w", err)
 	}
 	defer func() { _ = code.Destroy() }()
 
@@ -204,7 +204,7 @@ func (s *Store) UnlockWithRecovery(ctx context.Context, envelope, recoveryCode [
 func (s *Store) EffectivePolicy(envelope []byte) (tumbler.Policy, error) {
 	env, err := tumbler.ParseEnvelope(envelope)
 	if err != nil {
-		return tumbler.PolicyInvalid, err
+		return tumbler.PolicyInvalid, fmt.Errorf("yubikey: parse envelope: %w", err)
 	}
 	return env.EffectivePolicy(), nil
 }
@@ -223,7 +223,7 @@ func (s *Store) primaryMethod(policy tumbler.Policy, password []byte, opts ...tu
 		}
 		pw, err := securebytes.New(cloneBytes(password))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("yubikey: wrap password: %w", err)
 		}
 		m := tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{
 			Slot: s.slot,
@@ -255,7 +255,7 @@ func (s *Store) unlockMethod(policy tumbler.Policy, passwordFn func() ([]byte, e
 		pwSB, err := securebytes.New(cloneBytes(pw))
 		zeroBytes(pw)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("yubikey: wrap password: %w", err)
 		}
 		return tumbler.NewYubiKeyMethod(s.transport, tumbler.YubiKeyConfig{}, pwSB, touch), pwSB, nil
 	default:
@@ -267,13 +267,13 @@ func (s *Store) unlockMethod(policy tumbler.Policy, passwordFn func() ([]byte, e
 func unlockToSeed(ctx context.Context, env *tumbler.Envelope, method tumbler.Method) ([]byte, error) {
 	seedSB, err := env.Unlock(ctx, method)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("yubikey: unlock envelope: %w", err)
 	}
 	defer func() { _ = seedSB.Destroy() }()
 
 	var out []byte
 	if useErr := seedSB.Use(func(b []byte) { out = cloneBytes(b) }); useErr != nil {
-		return nil, useErr
+		return nil, fmt.Errorf("yubikey: read unlocked seed: %w", useErr)
 	}
 	return out, nil
 }

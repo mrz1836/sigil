@@ -13,7 +13,8 @@ import (
 )
 
 // createTestStore creates a new UTXO store in a temporary directory for testing.
-func createTestStore(t *testing.T) *Store {
+// It accepts testing.TB so both tests and benchmarks can use it.
+func createTestStore(t testing.TB) *Store {
 	t.Helper()
 	tmpDir := t.TempDir()
 	store := New(tmpDir)
@@ -86,7 +87,9 @@ func assertAddressCount(t *testing.T, store *Store, chainID chain.ID, expected i
 }
 
 // createLargeScaleStore creates a store with many addresses and UTXOs for performance testing.
-func createLargeScaleStore(t *testing.T, chainID chain.ID, numAddresses, utxosPerAddress int, amountPerUTXO uint64) (*Store, uint64) {
+//
+//nolint:unparam // chain-generic helper; current callers happen to exercise BSV only
+func createLargeScaleStore(t testing.TB, chainID chain.ID, numAddresses, utxosPerAddress int, amountPerUTXO uint64) (*Store, uint64) {
 	t.Helper()
 	store := createTestStore(t)
 

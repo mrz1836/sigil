@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/shamir"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -104,7 +105,7 @@ func TestWalletRestore_Shamir(t *testing.T) {
 	withMockPrompts(t, []byte("testpassword123"), true)
 
 	// We need valid shares to restore. Let's generate them programmatically.
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	shares, err := shamir.Split([]byte(mnemonic), 3, 2)
 	require.NoError(t, err)
 

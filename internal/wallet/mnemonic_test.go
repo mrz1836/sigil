@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 // BIP39 test vectors from https://github.com/trezor/python-mnemonic/blob/master/vectors.json
@@ -18,7 +20,7 @@ var bip39TestVectors = []struct {
 }{
 	{
 		entropy:  "00000000000000000000000000000000",
-		mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		mnemonic: testutil.TestMnemonic,
 		seed:     "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
 	},
 	{
@@ -347,7 +349,7 @@ func TestMnemonicToSeed_WithTestVectors(t *testing.T) {
 
 func TestMnemonicToSeed_NoPassphrase(t *testing.T) {
 	t.Parallel()
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 
 	seed1, err := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, err)
@@ -361,7 +363,7 @@ func TestMnemonicToSeed_NoPassphrase(t *testing.T) {
 
 func TestMnemonicToSeed_DifferentPassphrases(t *testing.T) {
 	t.Parallel()
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 
 	seed1, err := MnemonicToSeed(mnemonic, "")
 	require.NoError(t, err)
@@ -446,7 +448,7 @@ func TestSuggestWordForMnemonic(t *testing.T) {
 		},
 		{
 			name:        "no typos",
-			mnemonic:    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+			mnemonic:    testutil.TestMnemonic,
 			typoIndices: []int{},
 			suggestions: [][]string{},
 		},

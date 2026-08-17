@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -81,7 +82,7 @@ func createTestWalletForAgent(t *testing.T, tmpDir string) {
 	require.NoError(t, err)
 
 	// Generate a test mnemonic
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, err := wallet.MnemonicToSeed(mnemonic, "")
 	require.NoError(t, err)
 	defer wallet.ZeroBytes(seed)

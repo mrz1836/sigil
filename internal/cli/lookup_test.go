@@ -14,6 +14,7 @@ import (
 
 	"github.com/mrz1836/sigil/internal/addresslookup"
 	"github.com/mrz1836/sigil/internal/discovery"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -840,7 +841,7 @@ func TestLookupCmd_Help(t *testing.T) {
 }
 
 // testMnemonic is the standard BIP39 test vector.
-const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+const testMnemonic = testutil.TestMnemonic
 
 // precomputeMnemonicAddress derives a known address from the test mnemonic for a given coin type.
 func precomputeMnemonicAddress(t *testing.T, coinType, account, change, index uint32) string {

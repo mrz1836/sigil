@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mrz1836/sigil/internal/testutil"
+)
 
 // withMockPrompts replaces prompt functions for testing and restores on cleanup.
 func withMockPrompts(t *testing.T, password []byte, confirm bool) {
@@ -32,6 +36,6 @@ func withMockPrompts(t *testing.T, password []byte, confirm bool) {
 		return "testpassphrase", nil
 	}
 	promptSeedFn = func() (string, error) {
-		return "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", nil
+		return testutil.TestMnemonic, nil
 	}
 }

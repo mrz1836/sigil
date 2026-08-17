@@ -6,13 +6,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 // Test vectors derived from well-known mnemonic and expected addresses
 // Using the standard BIP39 test vector mnemonic with no passphrase
 //
 //nolint:gochecknoglobals // BIP39 standard test vector constant
-var derivationTestMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+var derivationTestMnemonic = testutil.TestMnemonic
 
 func getTestSeed(t *testing.T) []byte {
 	t.Helper()

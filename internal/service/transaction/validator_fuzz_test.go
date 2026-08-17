@@ -6,10 +6,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// FuzzParseDecimalAmount ensures the send-path amount validator never panics on
-// arbitrary input and that every successful parse yields a non-negative result.
-// This guards the CLI transaction entry point where user-supplied amounts enter.
-func FuzzParseDecimalAmount(f *testing.F) {
+// FuzzValidatorParseDecimalAmount ensures the send-path amount validator
+// (transaction.parseDecimalAmount) never panics on arbitrary input and that
+// every successful parse yields a non-negative result. This guards the CLI
+// transaction entry point where user-supplied amounts enter. It is distinct
+// from chain.FuzzParseDecimalAmount, which fuzzes the shared chain parser.
+func FuzzValidatorParseDecimalAmount(f *testing.F) {
 	seeds := []string{
 		"", "0", "1", "1.5", "0.00000001", "21000000",
 		" 1.5 ", "\t1\n", ".", "0.", ".5", "1.2.3", "1..2",

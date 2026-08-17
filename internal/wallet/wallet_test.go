@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 // TestSuggestWalletName tests the wallet name sanitization function.
@@ -275,7 +277,7 @@ func TestSuggestWalletName_ValidatesAfterSanitization(t *testing.T) {
 // TestWallet_NilChangeAddresses tests backward compatibility when ChangeAddresses is nil.
 func TestWallet_NilChangeAddresses(t *testing.T) {
 	t.Parallel()
-	seed, err := MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	seed, err := MnemonicToSeed(testutil.TestMnemonic, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +317,7 @@ func TestWallet_NilChangeAddresses(t *testing.T) {
 // TestWallet_DeriveNextAddress_MaxIndex tests the MaxAddressDerivation limit.
 func TestWallet_DeriveNextAddress_MaxIndex(t *testing.T) {
 	t.Parallel()
-	seed, err := MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	seed, err := MnemonicToSeed(testutil.TestMnemonic, "")
 	if err != nil {
 		t.Fatal(err)
 	}

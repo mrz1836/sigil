@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/discovery"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -554,7 +555,7 @@ func TestWalletKeyDeriver_DeriveAddress(t *testing.T) {
 	t.Parallel()
 
 	seed, err := wallet.MnemonicToSeed(
-		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		testutil.TestMnemonic,
 		"",
 	)
 	require.NoError(t, err)
@@ -580,7 +581,7 @@ func TestWalletKeyDeriver_DeriveLegacyAddress(t *testing.T) {
 	t.Parallel()
 
 	seed, err := wallet.MnemonicToSeed(
-		"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		testutil.TestMnemonic,
 		"",
 	)
 	require.NoError(t, err)

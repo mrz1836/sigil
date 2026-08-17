@@ -2,6 +2,8 @@ package wallet
 
 import (
 	"testing"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 func BenchmarkGenerateMnemonic12(b *testing.B) {
@@ -17,7 +19,7 @@ func BenchmarkGenerateMnemonic24(b *testing.B) {
 }
 
 func BenchmarkDeriveAddressETH(b *testing.B) {
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	defer ZeroBytes(seed)
 
@@ -28,7 +30,7 @@ func BenchmarkDeriveAddressETH(b *testing.B) {
 }
 
 func BenchmarkDeriveAddressBSV(b *testing.B) {
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	defer ZeroBytes(seed)
 
@@ -39,7 +41,7 @@ func BenchmarkDeriveAddressBSV(b *testing.B) {
 }
 
 func BenchmarkValidateMnemonic(b *testing.B) {
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	b.ResetTimer()
 	for range b.N {
 		_ = ValidateMnemonic(mnemonic)
@@ -47,7 +49,7 @@ func BenchmarkValidateMnemonic(b *testing.B) {
 }
 
 func BenchmarkMnemonicToSeed(b *testing.B) {
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	b.ResetTimer()
 	for range b.N {
 		seed, _ := MnemonicToSeed(mnemonic, "")
@@ -56,7 +58,7 @@ func BenchmarkMnemonicToSeed(b *testing.B) {
 }
 
 func BenchmarkDerivePrivateKey(b *testing.B) {
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, _ := MnemonicToSeed(mnemonic, "")
 	defer ZeroBytes(seed)
 

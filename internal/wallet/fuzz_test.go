@@ -3,6 +3,8 @@ package wallet
 import (
 	"testing"
 	"unicode/utf8"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 // FuzzNormalizeMnemonicInput tests that normalization never panics and always
@@ -16,7 +18,7 @@ func FuzzNormalizeMnemonicInput(f *testing.F) {
 	f.Add("  abandon  abandon  ")
 	f.Add("ABANDON ABILITY")
 	f.Add("\t\n\r abandon \t ability \n")
-	f.Add("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	f.Add(testutil.TestMnemonic)
 	f.Add(string([]byte{0xFF, 0xFE})) // Invalid UTF-8
 
 	f.Fuzz(func(t *testing.T, input string) {
@@ -55,7 +57,7 @@ func FuzzNormalizeMnemonicInput(f *testing.F) {
 // and only returns nil for valid BIP39 mnemonics.
 func FuzzValidateMnemonic(f *testing.F) {
 	// Valid 12-word mnemonic
-	f.Add("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	f.Add(testutil.TestMnemonic)
 	// Invalid inputs
 	f.Add("")
 	f.Add("abandon")
@@ -127,7 +129,7 @@ func FuzzDetectTypos(f *testing.F) {
 	f.Add("abandon ability")
 	f.Add("abondon abaility") //nolint:misspell // intentional typos
 	f.Add("abandon abaility") // intentional typo
-	f.Add("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	f.Add(testutil.TestMnemonic)
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Skip excessively large inputs to prevent fuzztime context expiration
@@ -156,7 +158,7 @@ func FuzzDetectTypos(f *testing.F) {
 // FuzzDetectInputFormat tests that input format detection never panics.
 func FuzzDetectInputFormat(f *testing.F) {
 	// Mnemonic
-	f.Add("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	f.Add(testutil.TestMnemonic)
 	// WIF (uncompressed)
 	f.Add("5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ")
 	// WIF (compressed)

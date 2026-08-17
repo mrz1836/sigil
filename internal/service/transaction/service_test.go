@@ -10,11 +10,12 @@ import (
 
 	"github.com/mrz1836/sigil/internal/agent"
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
-const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+const testMnemonic = testutil.TestMnemonic
 
 func getTestSeed(t *testing.T) []byte {
 	t.Helper()

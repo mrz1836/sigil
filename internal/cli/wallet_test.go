@@ -14,6 +14,7 @@ import (
 	"github.com/mrz1836/sigil/internal/config"
 	"github.com/mrz1836/sigil/internal/output"
 	"github.com/mrz1836/sigil/internal/sigilcrypto"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
 
@@ -292,7 +293,7 @@ func TestDisplayMnemonic(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(buf)
 
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	displayMnemonic(mnemonic, cmd)
 
 	output := buf.String()
@@ -535,7 +536,7 @@ func TestWalletRestoreFromMnemonic(t *testing.T) {
 	password := []byte("test_password_123")
 
 	// Use the standard BIP39 test vector mnemonic
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 
 	// Detect format
 	format := wallet.DetectInputFormat(mnemonic)

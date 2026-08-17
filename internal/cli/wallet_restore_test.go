@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -24,7 +25,7 @@ func TestDisplayDetectedTypos_NoTypos(t *testing.T) {
 	cmd.SetOut(&buf)
 
 	// Valid 12-word mnemonic
-	displayDetectedTypos("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", cmd)
+	displayDetectedTypos(testutil.TestMnemonic, cmd)
 
 	assert.Empty(t, buf.String(), "expected no output for valid mnemonic")
 }
@@ -327,7 +328,7 @@ func TestGetSeedForRestore_FromFlag(t *testing.T) {
 		restorePassphrase = origPassphrase
 	}()
 
-	restoreInput = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	restoreInput = testutil.TestMnemonic
 	restorePassphrase = false
 
 	cmd := &cobra.Command{}
@@ -374,7 +375,7 @@ func TestProcessMnemonicInput_ValidNoPassphrase(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
 
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, err := processMnemonicInput(mnemonic, false, cmd)
 	require.NoError(t, err)
 	assert.Len(t, seed, 64, "BIP39 seed should be 64 bytes")
@@ -400,7 +401,7 @@ func TestProcessSeedInput_Mnemonic(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
 
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic := testutil.TestMnemonic
 	seed, err := processSeedInput(mnemonic, false, cmd)
 	require.NoError(t, err)
 	assert.Len(t, seed, 64, "mnemonic should produce 64-byte seed")

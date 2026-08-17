@@ -7,11 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/testutil"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 // The mnemonic below is the canonical BIP39 all-"abandon" public test vector.
-const testMnemonic12 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+const testMnemonic12 = testutil.TestMnemonic
 
 // feedStdinPipe replaces os.Stdin with a pipe pre-loaded with input and registers
 // restoration via t.Cleanup. These tests mutate the global os.Stdin, so callers

@@ -17,6 +17,7 @@ import (
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/eth"
 	"github.com/mrz1836/sigil/internal/output"
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/utxostore"
 	"github.com/mrz1836/sigil/internal/wallet"
 )
@@ -1104,7 +1105,7 @@ func TestDeriveKeysForUTXOs(t *testing.T) {
 	t.Parallel()
 
 	// Create a real seed for derivation
-	seed, err := wallet.MnemonicToSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+	seed, err := wallet.MnemonicToSeed(testutil.TestMnemonic, "")
 	require.NoError(t, err)
 
 	// Derive three addresses so we know their expected indices

@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mrz1836/sigil/internal/testutil"
 )
 
 // TestDetectInputFormat tests format auto-detection for restore input.
@@ -17,7 +19,7 @@ func TestDetectInputFormat(t *testing.T) {
 		// Mnemonic detection
 		{
 			name:     "12 word mnemonic",
-			input:    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+			input:    testutil.TestMnemonic,
 			expected: FormatMnemonic,
 		},
 		{

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mrz1836/sigil/internal/testutil"
 	"github.com/mrz1836/sigil/internal/wallet"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
@@ -233,7 +234,7 @@ func TestPromptSeedMaterial_ValidMnemonic(t *testing.T) {
 	}{
 		{
 			"12 words",
-			"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+			testutil.TestMnemonic,
 		},
 		{
 			"24 words",
@@ -320,7 +321,7 @@ func TestPromptMnemonicInteractive_24Words(t *testing.T) {
 func TestPromptMnemonicInteractive_12Words(t *testing.T) {
 	t.Parallel()
 
-	mnemonic12 := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	mnemonic12 := testutil.TestMnemonic
 
 	// Validate it's actually valid
 	err := wallet.ValidateMnemonic(mnemonic12)

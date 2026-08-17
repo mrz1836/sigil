@@ -310,7 +310,7 @@ func runAddressesRefresh(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	out(w, "Refreshing %d address(es) for wallet '%s'...\n", len(targets), addressesWallet)
@@ -459,7 +459,7 @@ func refreshTargetAddresses(ctx context.Context, w io.Writer, cmdCtx *CommandCon
 		results, _ := discoverySvc.RefreshBatch(ctx, &discovery.RefreshRequest{
 			ChainID:   chainID,
 			Addresses: addresses,
-			Timeout:   30 * time.Second,
+			Timeout:   fetchTimeout,
 		})
 
 		errs = append(errs, convertRefreshResults(results)...)
@@ -556,9 +556,9 @@ func fetchAddressBalances(cmd *cobra.Command, addresses []address.AddressInfo, b
 	}
 
 	const perAddressTimeout = 30 * time.Second
-	const maxConcurrent = 8
+	const maxConcurrent = chain.DefaultFetchConcurrency
 
-	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	type balanceTask struct {

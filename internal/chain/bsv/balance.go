@@ -29,7 +29,7 @@ func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance
 		Address:  address,
 		Amount:   big.NewInt(resp.Confirmed),
 		Symbol:   "BSV",
-		Decimals: decimals,
+		Decimals: chain.BitcoinDecimals,
 	}
 	if resp.Unconfirmed != 0 {
 		bal.Unconfirmed = big.NewInt(resp.Unconfirmed)
@@ -201,7 +201,7 @@ func (c *Client) GetBulkNativeBalance(ctx context.Context, addresses []string) (
 				Address:  addr,
 				Amount:   big.NewInt(confirmedBalance),
 				Symbol:   "BSV",
-				Decimals: decimals,
+				Decimals: chain.BitcoinDecimals,
 			}
 			if unconfirmedBalance != 0 {
 				bal.Unconfirmed = big.NewInt(unconfirmedBalance)

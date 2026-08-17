@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -113,7 +112,7 @@ func scanWalletUTXOs(w *wallet.Wallet, cmd *cobra.Command) error {
 		return fmt.Errorf("loading UTXO store: %w", err)
 	}
 
-	scanCtx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	scanCtx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	outln(cmd.OutOrStdout())

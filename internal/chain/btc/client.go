@@ -7,14 +7,12 @@ import (
 	"time"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 const (
-	// decimals is the number of decimals for BTC (satoshis).
-	decimals = 8
-
 	// defaultTimeout is the default HTTP request timeout.
 	defaultTimeout = 30 * time.Second
 )
@@ -146,7 +144,7 @@ func (c *Client) initializeProvider(opts *ClientOptions) {
 		httpClient = opts.HTTPClient
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = httpx.NewClient(defaultTimeout, nil)
 	}
 
 	c.provider = newEsploraHTTP(baseURL, apiKey, httpClient, c.logger)
@@ -169,7 +167,7 @@ func (c *Client) initializeBroadcasters(opts *ClientOptions) {
 		httpClient = opts.HTTPClient
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = httpx.NewClient(defaultTimeout, nil)
 	}
 
 	// Primary: mempool.space (matches the data provider + supports testnet4).
@@ -277,12 +275,12 @@ func (c *Client) ValidateAddress(address string) error {
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BTC string.
 func (c *Client) FormatAmount(amount *big.Int) string {
-	return chain.FormatFixedDecimal(amount, decimals)
+	return chain.FormatFixedDecimal(amount, chain.BitcoinDecimals)
 }
 
 // ParseAmount converts a human-readable BTC string to big.Int (satoshis).
 func (c *Client) ParseAmount(amount string) (*big.Int, error) {
-	return chain.ParseDecimalAmount(amount, decimals, ErrInvalidAmount)
+	return chain.ParseDecimalAmount(amount, chain.BitcoinDecimals, ErrInvalidAmount)
 }
 
 // debug logs a debug message if a logger is configured.

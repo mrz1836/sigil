@@ -5,21 +5,18 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net/http"
 	"regexp"
 	"time"
 
 	whatsonchain "github.com/mrz1836/go-whatsonchain"
 
 	"github.com/mrz1836/sigil/internal/chain"
+	"github.com/mrz1836/sigil/internal/chain/httpx"
 	"github.com/mrz1836/sigil/internal/metrics"
 	sigilerr "github.com/mrz1836/sigil/pkg/errors"
 )
 
 const (
-	// decimals is the number of decimals for BSV (satoshis).
-	decimals = 8
-
 	// defaultTimeout is the default HTTP request timeout.
 	defaultTimeout = 30 * time.Second
 
@@ -215,7 +212,7 @@ func (c *Client) initializeBroadcasters(opts *ClientOptions) {
 		&WOCSDKBroadcaster{woc: c.woc},
 		&GorillaPoolARCBroadcaster{
 			BaseURL:    GorillaPoolARCURL,
-			httpClient: &http.Client{Timeout: defaultTimeout},
+			httpClient: httpx.NewClient(defaultTimeout, nil),
 		},
 	}
 }
@@ -361,12 +358,12 @@ func (c *Client) ValidateAddress(address string) error {
 
 // FormatAmount converts a big.Int (satoshis) to a human-readable BSV string.
 func (c *Client) FormatAmount(amount *big.Int) string {
-	return chain.FormatFixedDecimal(amount, decimals)
+	return chain.FormatFixedDecimal(amount, chain.BitcoinDecimals)
 }
 
 // ParseAmount converts a human-readable BSV string to big.Int (satoshis).
 func (c *Client) ParseAmount(amount string) (*big.Int, error) {
-	return chain.ParseDecimalAmount(amount, decimals, ErrInvalidAmount)
+	return chain.ParseDecimalAmount(amount, chain.BitcoinDecimals, ErrInvalidAmount)
 }
 
 // applyOptions applies optional configuration.

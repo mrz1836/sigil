@@ -165,7 +165,7 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 	// 3. Build address list
 	addresses := buildAddressList(w, balanceChainFilter)
 
-	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	var batchResult *balance.FetchBatchResult
@@ -226,8 +226,8 @@ func runBalanceShow(cmd *cobra.Command, _ []string) error {
 		batchResult, err = balanceService.FetchBalances(ctx, &balance.FetchBatchRequest{
 			Addresses:        addresses,
 			ForceRefresh:     balanceRefresh,
-			MaxConcurrent:    8,
-			Timeout:          30 * time.Second,
+			MaxConcurrent:    chain.DefaultFetchConcurrency,
+			Timeout:          fetchTimeout,
 			ProgressCallback: progressCallback,
 		})
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
@@ -672,15 +672,15 @@ func refreshBalancesAsync(
 ) {
 	// Use background context (don't tie to command context)
 	bgCtx := context.Background()
-	bgCtx, cancel := context.WithTimeout(bgCtx, 60*time.Second)
+	bgCtx, cancel := context.WithTimeout(bgCtx, commandTimeout)
 	defer cancel()
 
 	// Fetch fresh balances using smart refresh policy
 	_, err := service.FetchBalances(bgCtx, &balance.FetchBatchRequest{
 		Addresses:     addresses,
 		ForceRefresh:  false, // Use smart refresh policy
-		MaxConcurrent: 8,
-		Timeout:       30 * time.Second,
+		MaxConcurrent: chain.DefaultFetchConcurrency,
+		Timeout:       fetchTimeout,
 	})
 
 	if err != nil && cmdCtx.Log != nil {

@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -119,7 +118,7 @@ func init() {
 //nolint:gocyclo,gocognit // CLI flow involves validation and routing
 func runTxSend(cmd *cobra.Command, _ []string) error {
 	cc := GetCmdContext(cmd)
-	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	// Validate chain
@@ -767,7 +766,9 @@ func displayTxResultText(w io.Writer, result *chain.TransactionResult) {
 	out(w, "  Fee:    %s\n", result.Fee)
 	outln(w)
 	outln(w, "Track your transaction on Etherscan:")
-	out(w, "  https://etherscan.io/tx/%s\n", result.Hash)
+	for _, link := range explorerTxLinks(chain.ETH, "", result.Hash) {
+		out(w, "  %s\n", link)
+	}
 }
 
 // displayTxResultJSON shows transaction result in JSON format.

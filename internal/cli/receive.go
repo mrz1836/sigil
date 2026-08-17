@@ -281,22 +281,13 @@ func displayReceiveText(cmd *cobra.Command, addr *wallet.Address, chainID chain.
 // displayAddressExplorerLinks prints the block-explorer link(s) for an address,
 // scoped to the chain and network.
 func displayAddressExplorerLinks(w io.Writer, chainID chain.ID, network, address string) {
-	switch chainID {
-	case chain.BSV:
-		outln(w, "View on block explorer:")
-		for _, link := range bsvExplorerAddressLinks(network, address) {
-			out(w, "  %s\n", link)
-		}
-	case chain.BTC:
-		outln(w, "View on block explorer:")
-		for _, link := range btcExplorerAddressLinks(network, address) {
-			out(w, "  %s\n", link)
-		}
-	case chain.ETH:
-		outln(w, "View on Etherscan:")
-		out(w, "  https://etherscan.io/address/%s\n", address)
-	case chain.BCH, chain.LTC:
-		// Future chains - no explorer link yet
+	links := explorerAddressLinks(chainID, network, address)
+	if len(links) == 0 {
+		return
+	}
+	outln(w, explorerLabel(chainID))
+	for _, link := range links {
+		out(w, "  %s\n", link)
 	}
 }
 
@@ -410,7 +401,7 @@ func runReceiveCheckSingle(ctx context.Context, w io.Writer, cmdCtx *CommandCont
 	result, err := discoverySvc.CheckAddress(ctx, &discovery.CheckRequest{
 		ChainID: chainID,
 		Address: addr.Address,
-		Timeout: 30 * time.Second,
+		Timeout: checkTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("checking address %s: %w", addr.Address, err)
@@ -456,7 +447,7 @@ func runReceiveCheckAll(ctx context.Context, w io.Writer, cmdCtx *CommandContext
 		result, err := discoverySvc.CheckAddress(ctx, &discovery.CheckRequest{
 			ChainID: chainID,
 			Address: addr.Address,
-			Timeout: 30 * time.Second,
+			Timeout: checkTimeout,
 		})
 		if err != nil {
 			// Get label from store for error case
@@ -626,8 +617,7 @@ func runReceiveCheckSingleETH(ctx context.Context, w io.Writer, cmdCtx *CommandC
 	outln(w)
 	out(w, "  Balance: %s ETH\n", chain.FormatDecimalAmount(balance.Amount, balance.Decimals))
 	outln(w)
-	outln(w, "View on Etherscan:")
-	out(w, "  https://etherscan.io/address/%s\n", addr.Address)
+	displayAddressExplorerLinks(w, chain.ETH, "", addr.Address)
 
 	return nil
 }

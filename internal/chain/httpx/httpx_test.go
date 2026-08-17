@@ -6,12 +6,34 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mrz1836/sigil/internal/chain/httpx"
 )
+
+func TestNewClient(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil transport uses default timeout only", func(t *testing.T) {
+		t.Parallel()
+		c := httpx.NewClient(15*time.Second, nil)
+		require.NotNil(t, c)
+		assert.Equal(t, 15*time.Second, c.Timeout)
+		assert.Nil(t, c.Transport)
+	})
+
+	t.Run("custom transport is preserved", func(t *testing.T) {
+		t.Parallel()
+		tr := &http.Transport{MaxIdleConns: 7}
+		c := httpx.NewClient(45*time.Second, tr)
+		require.NotNil(t, c)
+		assert.Equal(t, 45*time.Second, c.Timeout)
+		assert.Same(t, tr, c.Transport)
+	})
+}
 
 func TestTruncateBody(t *testing.T) {
 	t.Parallel()

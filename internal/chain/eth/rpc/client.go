@@ -116,11 +116,8 @@ func NewClientWithOptions(url string, opts *ClientOptions) *Client {
 		transport = NewDefaultTransport()
 	}
 	return &Client{
-		url: url,
-		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   45 * time.Second,
-		},
+		url:         url,
+		httpClient:  httpx.NewClient(45*time.Second, transport),
 		rateLimiter: chain.DefaultRateLimiter(),
 	}
 }

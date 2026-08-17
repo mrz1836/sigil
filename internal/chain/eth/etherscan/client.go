@@ -89,12 +89,9 @@ func NewClient(apiKey string, opts *ClientOptions) (*Client, error) {
 		apiKey:  apiKey,
 		baseURL: DefaultBaseURL,
 		chainID: DefaultChainID,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			},
-		},
+		httpClient: httpx.NewClient(httpTimeout, &http.Transport{
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}),
 		rateLimiter: chain.NewRateLimiter(5, 5), // 5 req/s, burst of 5 (Etherscan free tier)
 	}
 

@@ -701,7 +701,7 @@ func parseSatAmount(s string) (uint64, error) {
 		}
 		fracStr := parts[1]
 		// Pad or truncate to 8 decimal places (1 BSV = 100,000,000 sat)
-		const bsvDecimals = 8
+		const bsvDecimals = chain.BitcoinDecimals
 		for len(fracStr) < bsvDecimals {
 			fracStr += "0"
 		}

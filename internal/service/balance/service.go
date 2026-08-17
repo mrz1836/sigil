@@ -289,7 +289,7 @@ func (s *Service) FetchBalances(ctx context.Context, req *FetchBatchRequest) (*F
 
 		maxConcurrent := req.MaxConcurrent
 		if maxConcurrent <= 0 {
-			maxConcurrent = 8
+			maxConcurrent = chain.DefaultFetchConcurrency
 		}
 
 		sem := make(chan struct{}, maxConcurrent)

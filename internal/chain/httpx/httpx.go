@@ -11,7 +11,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+// NewClient builds an *http.Client with the given request timeout and optional
+// transport. Pass a nil transport to use http.DefaultTransport (the behavior of
+// a bare &http.Client{Timeout: ...}); pass a configured *http.Transport when a
+// client needs custom TLS, connection pooling, or proxy settings. It centralizes
+// the &http.Client{...} construction shared by Sigil's chain clients while
+// leaving each client's timeout and transport policy explicit at the call site.
+func NewClient(timeout time.Duration, transport http.RoundTripper) *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
+}
 
 // Request describes a single HTTP request for Do.
 type Request struct {

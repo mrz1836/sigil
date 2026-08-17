@@ -59,6 +59,18 @@ const (
 	CoinTypeLTC uint32 = 2
 )
 
+// Shared operational constants for chain clients and services.
+const (
+	// DefaultFetchConcurrency bounds the number of concurrent per-address chain
+	// requests (balance and UTXO fan-out) so large wallets do not overwhelm
+	// upstream APIs or exhaust connections.
+	DefaultFetchConcurrency = 8
+
+	// BitcoinDecimals is the number of decimal places for Bitcoin-family chains
+	// (BTC, BSV, BCH): 1 coin = 100,000,000 satoshis.
+	BitcoinDecimals = 8
+)
+
 // DerivationPath returns the BIP44 derivation path prefix for a chain.
 func (id ID) DerivationPath() string {
 	switch id {

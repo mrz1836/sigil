@@ -32,7 +32,7 @@ func (c *Client) GetNativeBalance(ctx context.Context, address string) (*Balance
 		Address:  address,
 		Amount:   big.NewInt(confirmed),
 		Symbol:   "BTC",
-		Decimals: decimals,
+		Decimals: chain.BitcoinDecimals,
 	}
 	if unconfirmed != 0 {
 		bal.Unconfirmed = big.NewInt(unconfirmed)

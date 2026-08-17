@@ -132,6 +132,60 @@ func btcExplorerAddressLinks(network, address string) []string {
 	return []string{"https://mempool.space/address/" + address}
 }
 
+// ethExplorerTxLinks returns the Etherscan URL for an ETH transaction. Ethereum
+// surfaces a single mainnet explorer link (testnet links are not shown).
+func ethExplorerTxLinks(txid string) []string {
+	return []string{"https://etherscan.io/tx/" + txid}
+}
+
+// ethExplorerAddressLinks returns the Etherscan URL for an ETH address (see ethExplorerTxLinks).
+func ethExplorerAddressLinks(address string) []string {
+	return []string{"https://etherscan.io/address/" + address}
+}
+
+// explorerAddressLinks returns block-explorer URLs for an address on the given
+// chain and network, dispatching to the per-chain builders. Unknown chains
+// return nil.
+func explorerAddressLinks(chainID chain.ID, network, address string) []string {
+	switch chainID {
+	case chain.BSV:
+		return bsvExplorerAddressLinks(network, address)
+	case chain.BTC:
+		return btcExplorerAddressLinks(network, address)
+	case chain.ETH:
+		return ethExplorerAddressLinks(address)
+	case chain.BCH, chain.LTC:
+		return nil // Future chains - no explorer link yet
+	default:
+		return nil
+	}
+}
+
+// explorerTxLinks returns block-explorer URLs for a transaction (see explorerAddressLinks).
+func explorerTxLinks(chainID chain.ID, network, txid string) []string {
+	switch chainID {
+	case chain.BSV:
+		return bsvExplorerTxLinks(network, txid)
+	case chain.BTC:
+		return btcExplorerTxLinks(network, txid)
+	case chain.ETH:
+		return ethExplorerTxLinks(txid)
+	case chain.BCH, chain.LTC:
+		return nil // Future chains - no explorer link yet
+	default:
+		return nil
+	}
+}
+
+// explorerLabel returns the human-readable header printed before a chain's
+// explorer links. ETH links point at Etherscan; other chains use a generic label.
+func explorerLabel(chainID chain.ID) string {
+	if chainID == chain.ETH {
+		return "View on Etherscan:"
+	}
+	return "View on block explorer:"
+}
+
 // warnNetworkConflict prints a fail-closed warning when a --network/--testnet flag
 // disagrees with a loaded wallet's stamped network. The wallet's network is honored.
 func warnNetworkConflict(cmd *cobra.Command, w *wallet.Wallet) {

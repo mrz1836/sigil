@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -210,7 +209,7 @@ func displayUTXOsJSON(w io.Writer, utxos []*utxostore.StoredUTXO) {
 // runUTXORefresh re-scans addresses and updates stored UTXOs.
 func runUTXORefresh(cmd *cobra.Command, _ []string) error {
 	cmdCtx := GetCmdContext(cmd) //nolint:govet // shadows package-level cmdCtx; consistent with addresses.go, balance.go
-	ctx, cancel := contextWithTimeout(cmd, 60*time.Second)
+	ctx, cancel := contextWithTimeout(cmd, commandTimeout)
 	defer cancel()
 
 	// Load wallet

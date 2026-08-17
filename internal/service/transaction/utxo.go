@@ -3,7 +3,8 @@ package transaction
 import (
 	"context"
 	"fmt"
-	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/mrz1836/sigil/internal/chain"
 	"github.com/mrz1836/sigil/internal/chain/bsv"
@@ -25,42 +26,42 @@ type utxoLister interface {
 }
 
 // aggregateUTXOs fetches UTXOs from all wallet addresses concurrently and merges
-// them in address order. A positive concurrency bounds the fan-out with a worker
-// pool (for rate-limited providers such as BTC's Esplora); concurrency <= 0 fans
-// out unbounded (BSV, whose WhatsOnChain provider handles its own rate limiting).
+// them in address order. A positive concurrency bounds the fan-out (for
+// rate-limited providers such as BTC's Esplora); concurrency <= 0 falls back to
+// chain.DefaultFetchConcurrency so BSV's fan-out is bounded rather than spawning
+// a goroutine and connection per address for large wallets.
+//
+// errgroup is used only to bound goroutine creation and management: each fetch
+// records its own result (or wrapped error) in an indexed slot and returns nil,
+// so the group never cancels early and the in-order scan below preserves the
+// original "first error by address index" selection.
 func aggregateUTXOs(ctx context.Context, client utxoLister, addresses []wallet.Address, concurrency int) ([]chain.UTXO, error) {
 	type result struct {
 		utxos []chain.UTXO
 		err   error
 	}
 
-	// A positive concurrency bounds the fan-out; otherwise size the semaphore to
-	// the address count so every goroutine runs immediately (unbounded).
 	limit := concurrency
 	if limit <= 0 {
-		limit = len(addresses)
+		limit = chain.DefaultFetchConcurrency
 	}
 
 	results := make([]result, len(addresses))
-	sem := make(chan struct{}, limit)
-	var wg sync.WaitGroup
+	var g errgroup.Group
+	g.SetLimit(limit)
 
 	for i, addr := range addresses {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			utxos, err := client.ListUTXOs(ctx, addr.Address)
 			if err != nil {
 				results[i] = result{err: fmt.Errorf("listing UTXOs for %s: %w", addr.Address, err)}
-				return
+				return nil
 			}
 			results[i] = result{utxos: utxos}
-		}()
+			return nil
+		})
 	}
-	wg.Wait()
+	_ = g.Wait() // fetches never return an error to the group; errors live in results
 
 	var allUTXOs []chain.UTXO
 	for _, r := range results {

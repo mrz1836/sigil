@@ -19,9 +19,3 @@ test:
   # Match CI timeout configuration (TEST_TIMEOUT_RACE_COVER in .env.base)
   # Default magex timeout is 10m which was killing tests prematurely
   timeout: 30m
-
-format:
-  # goimports has no persistent cache between runs and must type-check the
-  # full transitive import graph (~305 packages) every invocation, which can
-  # take 50s+ on this module. Default magex timeout is 2m.
-  goimports_timeout: 3m

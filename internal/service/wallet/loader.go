@@ -79,14 +79,16 @@ func (s *Service) Load(req *LoadRequest, ctx *LoadContext) (*LoadResult, *Sessio
 				ctx.OnAuthMessage(fmt.Sprintf("[Using cached session, expires in %s]", formatDuration(sess.TTL())))
 			}
 
-			return &LoadResult{
-					Wallet: wlt,
-					Seed:   seed,
-				}, &SessionInfo{
-					Mode:      AuthSession,
-					ExpiresIn: sess.TTL(),
-					Message:   fmt.Sprintf("Using cached session, expires in %s", formatDuration(sess.TTL())),
-				}, nil
+			result := &LoadResult{
+				Wallet: wlt,
+				Seed:   seed,
+			}
+			sessionInfo := &SessionInfo{
+				Mode:      AuthSession,
+				ExpiresIn: sess.TTL(),
+				Message:   fmt.Sprintf("Using cached session, expires in %s", formatDuration(sess.TTL())),
+			}
+			return result, sessionInfo, nil
 		}
 		// Session invalid or error - fall through to password prompt
 	}
@@ -137,13 +139,15 @@ func (s *Service) Load(req *LoadRequest, ctx *LoadContext) (*LoadResult, *Sessio
 		}
 	}
 
-	return &LoadResult{
-			Wallet: wlt,
-			Seed:   seed,
-		}, &SessionInfo{
-			Mode:    AuthPassword,
-			Message: "Authenticated with password",
-		}, nil
+	result := &LoadResult{
+		Wallet: wlt,
+		Seed:   seed,
+	}
+	sessionInfo := &SessionInfo{
+		Mode:    AuthPassword,
+		Message: "Authenticated with password",
+	}
+	return result, sessionInfo, nil
 }
 
 // loadWithAgentToken authenticates using an agent token from SIGIL_AGENT_TOKEN.
@@ -196,14 +200,16 @@ func (s *Service) loadWithAgentToken(name, token string, ctx *LoadContext) (*Loa
 		ctx.OnAuthMessage(fmt.Sprintf("[Agent '%s' (%s), expires in %s]", cred.Label, cred.ID, formatDuration(cred.TTL())))
 	}
 
-	return &LoadResult{
-			Wallet: wlt,
-			Seed:   seed,
-		}, &SessionInfo{
-			Mode:      AuthAgentToken,
-			ExpiresIn: cred.TTL(),
-			Message:   fmt.Sprintf("Agent '%s' (%s), expires in %s", cred.Label, cred.ID, formatDuration(cred.TTL())),
-		}, nil
+	result := &LoadResult{
+		Wallet: wlt,
+		Seed:   seed,
+	}
+	sessionInfo := &SessionInfo{
+		Mode:      AuthAgentToken,
+		ExpiresIn: cred.TTL(),
+		Message:   fmt.Sprintf("Agent '%s' (%s), expires in %s", cred.Label, cred.ID, formatDuration(cred.TTL())),
+	}
+	return result, sessionInfo, nil
 }
 
 // loadWithYubiKey recovers the seed via the wallet's tumbler envelope. It
@@ -256,13 +262,15 @@ func (s *Service) loadWithYubiKey(name, policy string, req *LoadRequest, ctx *Lo
 
 	s.maybeStartSession(name, seed, sessionEnabled, ctx)
 
-	return &LoadResult{
-			Wallet: wlt,
-			Seed:   seed,
-		}, &SessionInfo{
-			Mode:    AuthYubiKey,
-			Message: fmt.Sprintf("Authenticated with YubiKey (%s)", policy),
-		}, nil
+	result := &LoadResult{
+		Wallet: wlt,
+		Seed:   seed,
+	}
+	sessionInfo := &SessionInfo{
+		Mode:    AuthYubiKey,
+		Message: fmt.Sprintf("Authenticated with YubiKey (%s)", policy),
+	}
+	return result, sessionInfo, nil
 }
 
 // maybeStartSession caches the seed for the wallet if sessions are enabled and
@@ -310,13 +318,15 @@ func (s *Service) loadWithXpub(name, xpub string, ctx *LoadContext) (*LoadResult
 	}
 
 	// Return nil seed (read-only mode — no private key access)
-	return &LoadResult{
-			Wallet: wlt,
-			Seed:   nil,
-		}, &SessionInfo{
-			Mode:    AuthXpub,
-			Message: "xpub read-only mode — spending operations disabled",
-		}, nil
+	result := &LoadResult{
+		Wallet: wlt,
+		Seed:   nil,
+	}
+	sessionInfo := &SessionInfo{
+		Mode:    AuthXpub,
+		Message: "xpub read-only mode — spending operations disabled",
+	}
+	return result, sessionInfo, nil
 }
 
 // formatDuration formats a duration as a human-readable string.

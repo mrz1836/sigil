@@ -5,18 +5,18 @@ go 1.25.6
 require (
 	filippo.io/age v1.3.1
 	github.com/agnivade/levenshtein v1.2.1
-	github.com/bsv-blockchain/go-sdk v1.3.3
+	github.com/bsv-blockchain/go-sdk v1.3.4
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mrz1836/go-sanitize v1.5.7
-	github.com/mrz1836/go-selfupdate v0.1.3
+	github.com/mrz1836/go-selfupdate v0.1.4
 	github.com/mrz1836/go-tumbler v0.1.0
 	github.com/mrz1836/go-whatsonchain v1.0.8
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sync v0.22.0
@@ -35,5 +35,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )

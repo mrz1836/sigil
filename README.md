@@ -551,7 +551,7 @@ This command ensures all dependencies are brought up to date in a single step, i
 
 ## 🧪 Examples & Tests
 
-All unit tests run via [GitHub Actions](https://github.com/mrz1836/sigil/actions) and use [Go version 1.25.6](https://go.dev/doc/go1.25). View the [configuration file](.github/workflows/fortress.yml).
+All unit tests run via [GitHub Actions](https://github.com/mrz1836/sigil/actions) and use [Go version 1.26](https://go.dev/doc/go1.26). View the [configuration file](.github/workflows/fortress.yml).
 
 Run all tests (fast):
 

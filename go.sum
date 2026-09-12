@@ -10,8 +10,8 @@ github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KO
 github.com/agnivade/levenshtein v1.2.1/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/bsv-blockchain/go-sdk v1.4.1 h1:J2hECn17QkLXq8K8O0m0qA7yih4YmWFTX6o9Ox72Tf8=
-github.com/bsv-blockchain/go-sdk v1.4.1/go.mod h1:p2aRf3+hHx8uaQazzVBbX/iFv/vatCFbazrM7RmvT08=
+github.com/bsv-blockchain/go-sdk v1.5.0 h1:1fd7WROCzOBeLHN3t5Dbbnkqtegt7lCUmptQPhKNhgc=
+github.com/bsv-blockchain/go-sdk v1.5.0/go.mod h1:clGHSZoOwrnqJrzEw4VHYZk3JQXbrr+mnybCXZCdrt4=
 github.com/cosmos/go-bip39 v1.0.0 h1:pcomnQdrdH22njcAatO0yWojsUnCO3y2tNoV1cb6hHY=
 github.com/cosmos/go-bip39 v1.0.0/go.mod h1:RNJv0H/pOIVgxw6KS7QeX2a0Uo0aKUlfhZ4xuwvCdJw=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
@@ -64,8 +64,8 @@ github.com/mrz1836/go-selfupdate v0.1.4 h1:WXlZShndYe7GROnVufKJOeFPvnQrNyU5fTTdU
 github.com/mrz1836/go-selfupdate v0.1.4/go.mod h1:yREEv9yuDdiZ/inozWcfD39dNATgtEr7wpcszmbxupw=
 github.com/mrz1836/go-tumbler v0.2.0 h1:tzT0xujsmxwbCImCftKZ+WhnkX85HtLHhz2zGDd9Cw4=
 github.com/mrz1836/go-tumbler v0.2.0/go.mod h1:LNVpZcWMrOs/SriD6yA2MywxawqgLUlCcjTEcJ22pLE=
-github.com/mrz1836/go-whatsonchain v1.1.0 h1:m/bVHDx8t5zDcuV/l4h6ZXPcu0DQ7ZZB/p+Oy/llC1c=
-github.com/mrz1836/go-whatsonchain v1.1.0/go.mod h1:SAMQltVzWjjBSSIM9KBoLRTFuv9fIrejyEUK95qPDZI=
+github.com/mrz1836/go-whatsonchain v1.2.1 h1:vc7Zuan9+6zqrEPQpF/OKusYbBMejZAq/iwDJanRoiE=
+github.com/mrz1836/go-whatsonchain v1.2.1/go.mod h1:SAMQltVzWjjBSSIM9KBoLRTFuv9fIrejyEUK95qPDZI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

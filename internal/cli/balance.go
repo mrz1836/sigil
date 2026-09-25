@@ -462,6 +462,8 @@ func getChainSymbol(chainID wallet.ChainID) string {
 		return "BTC"
 	case wallet.ChainBCH:
 		return "BCH"
+	case wallet.ChainLTC:
+		return "LTC"
 	default:
 		return "???"
 	}

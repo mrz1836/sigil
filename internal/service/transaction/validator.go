@@ -97,50 +97,58 @@ func checkETHBalance(ctx context.Context, client *eth.Client, address string, am
 		return fmt.Errorf("getting ETH balance: %w", err)
 	}
 
-	//nolint:nestif // Balance checking logic is necessarily complex
 	if tokenAddress != "" {
-		// For ERC-20: need ETH for gas only
-		if ethBalance.Cmp(gasCost) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  client.FormatAmount(gasCost),
-					"available": client.FormatAmount(ethBalance),
-					"symbol":    "ETH",
-					"reason":    "insufficient ETH for gas",
-				},
-			)
-		}
+		return checkTokenTransferBalance(ctx, client, address, ethBalance, amount, gasCost, tokenAddress)
+	}
 
-		// Check token balance
-		tokenBalance, err := client.GetTokenBalance(ctx, address, tokenAddress)
-		if err != nil {
-			return fmt.Errorf("getting token balance: %w", err)
-		}
+	return checkNativeETHBalance(client, ethBalance, amount, gasCost)
+}
 
-		if tokenBalance.Cmp(amount) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  chain.FormatDecimalAmount(amount, eth.USDCDecimals),
-					"available": chain.FormatDecimalAmount(tokenBalance, eth.USDCDecimals),
-					"symbol":    "USDC",
-				},
-			)
-		}
-	} else {
-		// For native ETH: need amount + gas
-		totalRequired := new(big.Int).Add(amount, gasCost)
-		if ethBalance.Cmp(totalRequired) < 0 {
-			return sigilerr.WithDetails(
-				sigilerr.ErrInsufficientFunds,
-				map[string]string{
-					"required":  client.FormatAmount(totalRequired),
-					"available": client.FormatAmount(ethBalance),
-					"symbol":    "ETH",
-				},
-			)
-		}
+// checkTokenTransferBalance verifies an ERC-20 transfer: ETH for gas only, plus enough token balance.
+func checkTokenTransferBalance(ctx context.Context, client *eth.Client, address string, ethBalance, amount, gasCost *big.Int, tokenAddress string) error {
+	if ethBalance.Cmp(gasCost) < 0 {
+		return sigilerr.WithDetails(
+			sigilerr.ErrInsufficientFunds,
+			map[string]string{
+				"required":  client.FormatAmount(gasCost),
+				"available": client.FormatAmount(ethBalance),
+				"symbol":    "ETH",
+				"reason":    "insufficient ETH for gas",
+			},
+		)
+	}
+
+	tokenBalance, err := client.GetTokenBalance(ctx, address, tokenAddress)
+	if err != nil {
+		return fmt.Errorf("getting token balance: %w", err)
+	}
+
+	if tokenBalance.Cmp(amount) < 0 {
+		return sigilerr.WithDetails(
+			sigilerr.ErrInsufficientFunds,
+			map[string]string{
+				"required":  chain.FormatDecimalAmount(amount, eth.USDCDecimals),
+				"available": chain.FormatDecimalAmount(tokenBalance, eth.USDCDecimals),
+				"symbol":    "USDC",
+			},
+		)
+	}
+
+	return nil
+}
+
+// checkNativeETHBalance verifies a native ETH transfer: the balance must cover amount + gas.
+func checkNativeETHBalance(client *eth.Client, ethBalance, amount, gasCost *big.Int) error {
+	totalRequired := new(big.Int).Add(amount, gasCost)
+	if ethBalance.Cmp(totalRequired) < 0 {
+		return sigilerr.WithDetails(
+			sigilerr.ErrInsufficientFunds,
+			map[string]string{
+				"required":  client.FormatAmount(totalRequired),
+				"available": client.FormatAmount(ethBalance),
+				"symbol":    "ETH",
+			},
+		)
 	}
 
 	return nil

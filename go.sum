@@ -60,8 +60,8 @@ github.com/mdp/qrterminal/v3 v3.2.1 h1:6+yQjiiOsSuXT5n9/m60E54vdgFsw0zhADHhHLrFe
 github.com/mdp/qrterminal/v3 v3.2.1/go.mod h1:jOTmXvnBsMy5xqLniO0R++Jmjs2sTm9dFSuQ5kpz/SU=
 github.com/mrz1836/go-sanitize v1.6.0 h1:LPBKj0776BP7FnXHOdoV95pEv+j6ihriWUwz1nlfVE4=
 github.com/mrz1836/go-sanitize v1.6.0/go.mod h1:dJMz2bAJXH7/zR7t1gh+07+1VMD5exMOWvrU1P4txFk=
-github.com/mrz1836/go-selfupdate v0.1.4 h1:WXlZShndYe7GROnVufKJOeFPvnQrNyU5fTTdUQFGGpQ=
-github.com/mrz1836/go-selfupdate v0.1.4/go.mod h1:yREEv9yuDdiZ/inozWcfD39dNATgtEr7wpcszmbxupw=
+github.com/mrz1836/go-selfupdate v0.1.5 h1:mM4I7GtWuqTn/SlwUc1n1iY0SFUHgxmv/s4Sz1JFxl4=
+github.com/mrz1836/go-selfupdate v0.1.5/go.mod h1:yREEv9yuDdiZ/inozWcfD39dNATgtEr7wpcszmbxupw=
 github.com/mrz1836/go-tumbler v0.2.0 h1:tzT0xujsmxwbCImCftKZ+WhnkX85HtLHhz2zGDd9Cw4=
 github.com/mrz1836/go-tumbler v0.2.0/go.mod h1:LNVpZcWMrOs/SriD6yA2MywxawqgLUlCcjTEcJ22pLE=
 github.com/mrz1836/go-whatsonchain v1.3.0 h1:uOq5mHPTMUfiyMAFv+wqRgZXZ5L3CrObaIdShnX/yzU=

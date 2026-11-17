@@ -5,20 +5,20 @@ go 1.26.0
 require (
 	filippo.io/age v1.3.2
 	github.com/agnivade/levenshtein v1.2.2
-	github.com/bsv-blockchain/go-sdk v1.7.4
+	github.com/bsv-blockchain/go-sdk v1.7.5
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mrz1836/go-sanitize v1.6.1
-	github.com/mrz1836/go-selfupdate v0.1.5
-	github.com/mrz1836/go-tumbler v0.2.0
-	github.com/mrz1836/go-whatsonchain v1.3.0
+	github.com/mrz1836/go-selfupdate v0.1.6
+	github.com/mrz1836/go-tumbler v0.2.1
+	github.com/mrz1836/go-whatsonchain v1.3.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/stretchr/testify v1.12.1
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/term v0.48.0
 	golang.org/x/time v0.16.0

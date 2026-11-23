@@ -10,8 +10,8 @@ github.com/agnivade/levenshtein v1.2.2 h1:fI8RgiztYX1Nn5pBHHqQ9EMCCklhrmXqPRIedF
 github.com/agnivade/levenshtein v1.2.2/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/bsv-blockchain/go-sdk v1.7.5 h1:QLClmnX5m7/AUJpoSVkq7cKEInFTty3qnRZDc59ji3Q=
-github.com/bsv-blockchain/go-sdk v1.7.5/go.mod h1:+soad7WHBrvMGTpznMGJeOcQxZ3rWtLzWmcfhOSfPag=
+github.com/bsv-blockchain/go-sdk v1.7.8 h1:iRA9hPXIRxlSD4eTdAwgEZ7DONFMJQRJXsjuY4r62+Y=
+github.com/bsv-blockchain/go-sdk v1.7.8/go.mod h1:amCXCLXrvTHVVMGNKKmCx6xa2NA2aa39RyhQylj8Jko=
 github.com/cosmos/go-bip39 v1.0.0 h1:pcomnQdrdH22njcAatO0yWojsUnCO3y2tNoV1cb6hHY=
 github.com/cosmos/go-bip39 v1.0.0/go.mod h1:RNJv0H/pOIVgxw6KS7QeX2a0Uo0aKUlfhZ4xuwvCdJw=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
@@ -60,12 +60,12 @@ github.com/mdp/qrterminal/v3 v3.2.1 h1:6+yQjiiOsSuXT5n9/m60E54vdgFsw0zhADHhHLrFe
 github.com/mdp/qrterminal/v3 v3.2.1/go.mod h1:jOTmXvnBsMy5xqLniO0R++Jmjs2sTm9dFSuQ5kpz/SU=
 github.com/mrz1836/go-sanitize v1.6.1 h1:tc9BFIAfrwUzcYYSN616cD4L6gOYt3vEqpExluslLik=
 github.com/mrz1836/go-sanitize v1.6.1/go.mod h1:pvfxDJrk2WZZyNcWQ25OqRJxkiohPc9/0f3BQHcpHRY=
-github.com/mrz1836/go-selfupdate v0.1.6 h1:vf1Sxae+WuvHQQnVLUPfPjS5dbCr6t+Iavz5+OrX/VM=
-github.com/mrz1836/go-selfupdate v0.1.6/go.mod h1:yREEv9yuDdiZ/inozWcfD39dNATgtEr7wpcszmbxupw=
+github.com/mrz1836/go-selfupdate v0.1.7 h1:COjQpTXPrnnwRw5l4w+qhJzuGT+805wcadQ+wT/b3BI=
+github.com/mrz1836/go-selfupdate v0.1.7/go.mod h1:k3xpASWnOANv+f3o0w13u7ej68EJ7rniCH7kU1tikns=
 github.com/mrz1836/go-tumbler v0.2.1 h1:7GrzT/4azwwpUUPPWifHn2vfXUqRwRQqs1MlRY4QrgQ=
 github.com/mrz1836/go-tumbler v0.2.1/go.mod h1:GeFffd32lO1aXfiTScIJ0Md6+y7CP0Ih6Oijn3+KALk=
-github.com/mrz1836/go-whatsonchain v1.3.1 h1:XPk44Du+MmhxpqEyvVrenIraD+HvT72OuD+GDv1r8F0=
-github.com/mrz1836/go-whatsonchain v1.3.1/go.mod h1:SAMQltVzWjjBSSIM9KBoLRTFuv9fIrejyEUK95qPDZI=
+github.com/mrz1836/go-whatsonchain v1.4.0 h1:dUIQB8F8gwim8fUjdjdq6eSJ/ii0XAFVG32KEEyIUMc=
+github.com/mrz1836/go-whatsonchain v1.4.0/go.mod h1:SAMQltVzWjjBSSIM9KBoLRTFuv9fIrejyEUK95qPDZI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
